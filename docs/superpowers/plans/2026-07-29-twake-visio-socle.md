@@ -34,7 +34,10 @@ interdits par `twake-package-manager-audit`. Ne pas élargir ce réglage à autr
 
 **Styles :** aucun littéral `style={{…}}`. Toujours `StyleSheet.create` alimenté par `src/ui/tokens`.
 
-**Tests :** `jest` + `@testing-library/react-native`. Fichiers `*.spec.ts` / `*.spec.tsx` **colocalisés** avec la source, jamais de dossier `__tests__`. Aucun snapshot (`toMatchSnapshot` interdit). `data-testid` en kebab-case. `queryByX` + `.toBe(null)` pour asserter une absence, jamais `getByX` + `.toBeDefined()`.
+**Tests :** `jest` + `@testing-library/react-native`. Simuler `fetch` via
+`globalThis.fetch`, jamais `global.fetch` : ce dernier exigerait `"node"` dans les
+`types` du tsconfig, ce qui ferait passer `import fs from 'fs'` au typecheck dans une
+application React Native où il plante à l'exécution. Fichiers `*.spec.ts` / `*.spec.tsx` **colocalisés** avec la source, jamais de dossier `__tests__`. Aucun snapshot (`toMatchSnapshot` interdit). `data-testid` en kebab-case. `queryByX` + `.toBe(null)` pour asserter une absence, jamais `getByX` + `.toBeDefined()`.
 
 **Commits :** Conventional Commits. Sujet à l'impératif, première lettre majuscule, un seul sujet par commit. Types autorisés : `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 
@@ -787,7 +790,7 @@ const CONFIG_WITH_OIDC = {
 const CONFIG_WITHOUT_OIDC = { ...CONFIG_WITH_OIDC, oidc: undefined };
 
 function mockFetch(handler: (url: string) => Response): void {
-  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+  globalThis.fetch = jest.fn(async (input: RequestInfo | URL) =>
     handler(String(input)),
   ) as unknown as typeof fetch;
 }
@@ -852,7 +855,7 @@ describe('fetchInstanceConfig', () => {
   });
 
   it('signale un serveur injoignable', async () => {
-    global.fetch = jest.fn(async () => {
+    globalThis.fetch = jest.fn(async () => {
       throw new TypeError('network');
     }) as unknown as typeof fetch;
 
@@ -1147,7 +1150,7 @@ describe('exchangeCode', () => {
           { status: 200 },
         ),
     );
-    global.fetch = spy as unknown as typeof fetch;
+    globalThis.fetch = spy as unknown as typeof fetch;
 
     const result = await exchangeCode(CONFIG, 'the-code', PKCE.verifier);
 
@@ -1158,7 +1161,7 @@ describe('exchangeCode', () => {
   });
 
   it('renvoie une erreur typée sur refus du serveur', async () => {
-    global.fetch = jest.fn(
+    globalThis.fetch = jest.fn(
       async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }),
     ) as unknown as typeof fetch;
 
@@ -1170,7 +1173,7 @@ describe('exchangeCode', () => {
 
 describe('refreshTokens', () => {
   it('conserve l\'ancien refresh_token quand le serveur n\'en renvoie pas', async () => {
-    global.fetch = jest.fn(
+    globalThis.fetch = jest.fn(
       async () =>
         new Response(JSON.stringify({ access_token: 'at2', expires_in: 3600 }), {
           status: 200,
@@ -1185,7 +1188,7 @@ describe('refreshTokens', () => {
   });
 
   it('adopte le nouveau refresh_token en cas de rotation', async () => {
-    global.fetch = jest.fn(
+    globalThis.fetch = jest.fn(
       async () =>
         new Response(
           JSON.stringify({ access_token: 'at2', refresh_token: 'new-rt', expires_in: 3600 }),
@@ -1847,7 +1850,7 @@ describe('authedFetch', () => {
   it('joint le jeton porteur à la requête', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
     const spy = jest.fn(async () => new Response(JSON.stringify({ id: 1 }), { status: 200 }));
-    global.fetch = spy as unknown as typeof fetch;
+    globalThis.fetch = spy as unknown as typeof fetch;
 
     const result = await authedFetch<{ id: number }>(ACCOUNT, '/api/v1.0/users/me/');
 
@@ -1863,7 +1866,7 @@ describe('authedFetch', () => {
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 2 }), { status: 200 }));
-    global.fetch = spy as unknown as typeof fetch;
+    globalThis.fetch = spy as unknown as typeof fetch;
 
     const result = await authedFetch<{ id: number }>(ACCOUNT, '/api/v1.0/users/me/');
 
@@ -1875,7 +1878,7 @@ describe('authedFetch', () => {
   it('rend unauthorized quand le rafraîchissement échoue', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
     jest.spyOn(session, 'forceRefresh').mockResolvedValue(null);
-    global.fetch = jest.fn(
+    globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 401 }),
     ) as unknown as typeof fetch;
 
@@ -1886,7 +1889,7 @@ describe('authedFetch', () => {
 
   it('mappe 403 sur forbidden', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
-    global.fetch = jest.fn(
+    globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 403 }),
     ) as unknown as typeof fetch;
 
@@ -1897,7 +1900,7 @@ describe('authedFetch', () => {
 
   it('mappe une panne réseau sur network', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
-    global.fetch = jest.fn(async () => {
+    globalThis.fetch = jest.fn(async () => {
       throw new TypeError('offline');
     }) as unknown as typeof fetch;
 
