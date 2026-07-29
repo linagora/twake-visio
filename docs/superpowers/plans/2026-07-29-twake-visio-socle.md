@@ -615,6 +615,10 @@ describe('findKnownClientId', () => {
     expect(findKnownClientId('meet.linagora.com')).toBe('twake-visio');
   });
 
+  it('reconnaît la seconde instance de production', () => {
+    expect(findKnownClientId('visio.twake.app')).toBe('twake-visio');
+  });
+
   it('renvoie null pour un hôte inconnu', () => {
     expect(findKnownClientId('meet.example.org')).toBe(null);
   });
@@ -663,8 +667,11 @@ export type InstanceResult =
 ```ts
 import { DEFAULT_CLIENT_ID } from 'src/constants';
 
+// Deux instances de production partagent le même SSO et le même LiveKit.
+// Aucune des deux n'expose config.oidc à ce jour, d'où le repli de la Task 5.
 const KNOWN_CLIENT_IDS: Readonly<Record<string, string>> = {
   'meet.linagora.com': DEFAULT_CLIENT_ID,
+  'visio.twake.app': DEFAULT_CLIENT_ID,
 };
 
 export function findKnownClientId(host: string): string | null {
@@ -4146,12 +4153,30 @@ git commit -m "docs: Document repo rules and deviations from the central guideli
 
 Ces deux actions bloquent la mise en service et ne relèvent d'aucune tâche ci-dessus.
 
-**Enregistrer `twake-visio` en client public sur `sso.linagora.com`** — PKCE S256,
-redirection `twakevisio://callback`, `token_endpoint_auth_method: none`. Le document de
-découverte annonce
-`token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic']`
-et **n'inclut pas `none`**. À lever avant la Task 12, qui ne peut être validée contre le
-serveur réel sans ça.
+**Enregistrer `twake-visio` en client public sur `sso.linagora.com`.** Le SSO est
+LemonLDAP::NG, et le client web existant `livekit-meet` est un client **confidentiel**
+(il porte un `ClientSecret`) dont les redirections sont toutes en `https://`. Le client
+mobile est donc un enregistrement **nouveau et distinct**, jamais une extension de
+l'existant : ajouter `twakevisio://callback` aux redirections de `livekit-meet`
+transformerait un client confidentiel en cible de redirection locale, ce qui est
+exactement le scénario d'interception que PKCE existe pour empêcher.
+
+L'inquiétude sur `token_endpoint_auth_methods_supported`, qui n'annonce pas `none`, est
+levée : LemonLDAP::NG sait déclarer un client public, sa métadonnée de découverte ne
+l'annonce simplement pas. Réglages attendus sur le nouveau RP — **noms d'options à
+confirmer contre votre version de LemonLDAP** :
+
+| Réglage | Valeur |
+|---|---|
+| `oidcRPMetaDataOptionsClientID` | `twake-visio` |
+| `oidcRPMetaDataOptionsClientSecret` | **vide** — un client public n'en porte pas |
+| `oidcRPMetaDataOptionsPublic` | activé |
+| `oidcRPMetaDataOptionsRequirePKCE` | activé |
+| `oidcRPMetaDataOptionsRedirectUris` | `twakevisio://callback` |
+| `oidcRPMetaDataOptionsAllowOffline` | activé — sans quoi aucun `refresh_token` n'est émis |
+
+Sans `AllowOffline`, la Task 9 passe ses tests unitaires et l'application déconnecte
+l'utilisateur à chaque expiration d'`access_token`.
 
 **Activer `lasuite.oidc_resource_server` sur `meet.linagora.com`** — ajouter
 `ResourceServerAuthentication` aux `DEFAULT_AUTHENTICATION_CLASSES` et configurer
