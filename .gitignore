@@ -1,2 +1,8 @@
 
 .superpowers/
+
+/android
+/ios
+.expo/
+node_modules/
+*.log
