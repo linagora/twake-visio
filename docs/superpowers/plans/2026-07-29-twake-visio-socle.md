@@ -115,6 +115,7 @@ src/
 npx create-expo-app@latest . --template blank-typescript
 npx expo install expo-router expo-dev-client expo-linking expo-constants \
   expo-secure-store expo-web-browser expo-crypto expo-localization \
+  expo-build-properties \
   react-native-safe-area-context react-native-screens react-native-paper \
   react-native-mmkv i18next react-i18next intl-pluralrules date-fns
 npm i -D @testing-library/react-native @testing-library/jest-native \
@@ -3283,13 +3284,22 @@ export async function setCameraEnabled(room: Room, enabled: boolean): Promise<vo
   await room.localParticipant.setCameraEnabled(enabled);
 }
 
-export async function switchCamera(room: Room): Promise<void> {
-  const publication = room.localParticipant.getTrackPublications().find(
-    (p) => p.kind === 'video',
-  );
+export type FacingMode = 'user' | 'environment';
+
+// Bascule réellement d'une face à l'autre et renvoie la face obtenue. Le SDK
+// n'expose pas la face courante, c'est donc à l'appelant de la conserver.
+export async function switchCamera(
+  room: Room,
+  current: FacingMode,
+): Promise<FacingMode> {
+  const next: FacingMode = current === 'user' ? 'environment' : 'user';
+  const publication = room.localParticipant
+    .getTrackPublications()
+    .find((p) => p.kind === 'video');
   const track = publication?.track;
-  if (track === undefined || track === null) return;
-  await track.restartTrack({ facingMode: 'environment' });
+  if (track === undefined || track === null) return current;
+  await track.restartTrack({ facingMode: next });
+  return next;
 }
 ```
 
@@ -3745,7 +3755,12 @@ import { ActivityIndicator, IconButton } from 'react-native-paper';
 import { fetchRoomAccess } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
 import { createCallSession } from 'src/call/connection';
-import { setCameraEnabled, setMicrophoneEnabled, switchCamera } from 'src/call/media';
+import {
+  setCameraEnabled,
+  setMicrophoneEnabled,
+  switchCamera,
+  type FacingMode,
+} from 'src/call/media';
 import type { CallState } from 'src/call/types';
 import { tokens } from 'src/ui/tokens';
 
@@ -3775,6 +3790,7 @@ export default function CallScreen(): React.ReactElement {
   const [state, setState] = useState<CallState>({ status: 'idle' });
   const [micOn, setMicOn] = useState(mic !== '0');
   const [cameraOn, setCameraOn] = useState(camera !== '0');
+  const [facing, setFacing] = useState<FacingMode>('user');
   const started = useRef(false);
 
   useEffect(() => session.subscribe(setState), [session]);
@@ -3813,7 +3829,7 @@ export default function CallScreen(): React.ReactElement {
   };
 
   const handleSwitchCamera = async (): Promise<void> => {
-    await switchCamera(session.getRoom());
+    setFacing(await switchCamera(session.getRoom(), facing));
   };
 
   const handleLeave = async (): Promise<void> => {
