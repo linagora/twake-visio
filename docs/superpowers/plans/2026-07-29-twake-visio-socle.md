@@ -2494,6 +2494,11 @@ git commit -m "feat(auth): Orchestrate sign-in through the system browser"
 
 ### Task 13: Écrans de bienvenue et de serveur
 
+> **Attention à l'intégration.** La Task 20 a déjà ajouté un `useEffect` d'écoute
+> des liens profonds dans `app/_layout.tsx`. Le `_layout.tsx` ci-dessous doit
+> **fusionner** avec l'existant — conserver l'écoute des liens et y ajouter le
+> thème et l'i18n — et non l'écraser.
+
 **Files:**
 - Create: `app/_layout.tsx`, `app/index.tsx`, `app/welcome.tsx`, `app/server.tsx`
 - Test: `app/welcome.spec.tsx`
@@ -3988,6 +3993,30 @@ describe('parseMeetingLink', () => {
     expect(parseMeetingLink('https://meet.linagora.com/api/v1.0/config/')).toBe(null);
   });
 
+  it.each([
+    'feedback',
+    'mentions-legales',
+    'accessibilite',
+    'conditions-utilisation',
+  ])('ignore la page « %s » de l\'application web', (segment) => {
+    expect(parseMeetingLink(`https://meet.linagora.com/${segment}`)).toBe(null);
+  });
+
+  it.each(['favicon.ico', 'site.webmanifest', 'apple-touch-icon.png'])(
+    'ignore le fichier statique « %s » servi à la racine',
+    (file) => {
+      expect(parseMeetingLink(`https://meet.linagora.com/${file}`)).toBe(null);
+    },
+  );
+
+  it('reconnaît un identifiant de salon généré par meet', () => {
+    expect(parseMeetingLink('https://meet.linagora.com/abc-defg-hij')).toBe('abc-defg-hij');
+  });
+
+  it('reconnaît un identifiant généré sans tirets', () => {
+    expect(parseMeetingLink('https://meet.linagora.com/abcdefghij')).toBe('abcdefghij');
+  });
+
   it('ignore une URL malformée', () => {
     expect(parseMeetingLink('pas une url')).toBe(null);
   });
@@ -4006,8 +4035,33 @@ Expected: FAIL — module introuvable
 ```ts
 import { APP_SCHEME } from 'src/constants';
 
-// Chemins servis par l'application web qui ne désignent jamais un salon.
-const RESERVED_SEGMENTS = new Set(['api', 'admin', 'static', 'media', 'callback']);
+// Chemins à segment unique servis par l'application web de meet, qui ne
+// désignent jamais un salon. Relevés dans src/frontend/src/routes.ts en amont.
+const RESERVED_SEGMENTS = new Set([
+  'api',
+  'admin',
+  'static',
+  'media',
+  'callback',
+  'sdk',
+  'feedback',
+  'mentions-legales',
+  'accessibilite',
+  'conditions-utilisation',
+]);
+
+// Identifiant de salon généré par meet : trois groupes alphanumériques 3-4-3,
+// tirets optionnels. Reprend flexibleRoomIdPattern de l'amont.
+const GENERATED_ROOM_ID = /^[a-zA-Z0-9]{3}-?[a-zA-Z0-9]{4}-?[a-zA-Z0-9]{3}$/;
+
+// Reconnaissance positive d'abord : un identifiant généré est un salon sans
+// discussion possible. À défaut, un salon nommé porte un slug — mais un
+// fichier statique servi à la racine (favicon.ico, site.webmanifest) contient
+// un point et n'en est pas un.
+function isRoomSegment(segment: string): boolean {
+  if (GENERATED_ROOM_ID.test(segment)) return true;
+  return !RESERVED_SEGMENTS.has(segment) && !segment.includes('.');
+}
 
 export function parseMeetingLink(url: string): string | null {
   let parsed: URL;
@@ -4021,13 +4075,15 @@ export function parseMeetingLink(url: string): string | null {
 
   if (parsed.protocol === `${APP_SCHEME}:`) {
     // twakevisio://room/<slug> — l'hôte porte « room ».
-    const candidate = parsed.host === 'room' ? segments[0] : null;
-    return candidate ?? null;
+    if (parsed.host !== 'room') return null;
+    const candidate = segments[0];
+    if (candidate === undefined) return null;
+    return isRoomSegment(candidate) ? candidate : null;
   }
 
   const first = segments[0];
-  if (first === undefined || RESERVED_SEGMENTS.has(first)) return null;
-  return segments.length === 1 ? first : null;
+  if (first === undefined || segments.length !== 1) return null;
+  return isRoomSegment(first) ? first : null;
 }
 ```
 
