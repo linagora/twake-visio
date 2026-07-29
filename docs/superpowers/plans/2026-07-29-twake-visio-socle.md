@@ -753,6 +753,12 @@ const KNOWN_CLIENT_IDS: Readonly<Record<string, string>> = {
 export function findKnownClientId(host: string): string | null {
   return KNOWN_CLIENT_IDS[host.toLowerCase()] ?? null;
 }
+
+// Consommé par le filtre de liens profonds : un lien de réunion n'est accepté
+// que s'il porte sur une instance connue.
+export function listKnownHosts(): readonly string[] {
+  return Object.keys(KNOWN_CLIENT_IDS);
+}
 ```
 
 - [ ] **Step 5: Lancer les tests pour vérifier qu'ils passent**
@@ -4090,21 +4096,23 @@ git commit -m "feat(call): Add the in-call screen with active speaker and contro
 ```ts
 import { parseMeetingLink } from 'src/navigation/deepLinks';
 
+const HOSTS = ['meet.linagora.com', 'visio.twake.app'] as const;
+
 describe('parseMeetingLink', () => {
   it('extrait le slug d\'une URL https de meet', () => {
-    expect(parseMeetingLink('https://meet.linagora.com/point-hebdo')).toBe('point-hebdo');
+    expect(parseMeetingLink('https://meet.linagora.com/point-hebdo', HOSTS)).toBe('point-hebdo');
   });
 
   it('extrait le slug du schéma applicatif', () => {
-    expect(parseMeetingLink('twakevisio://room/point-hebdo')).toBe('point-hebdo');
+    expect(parseMeetingLink('twakevisio://room/point-hebdo', HOSTS)).toBe('point-hebdo');
   });
 
   it('ignore la racine du site', () => {
-    expect(parseMeetingLink('https://meet.linagora.com/')).toBe(null);
+    expect(parseMeetingLink('https://meet.linagora.com/', HOSTS)).toBe(null);
   });
 
   it('ignore les chemins réservés de l\'application web', () => {
-    expect(parseMeetingLink('https://meet.linagora.com/api/v1.0/config/')).toBe(null);
+    expect(parseMeetingLink('https://meet.linagora.com/api/v1.0/config/', HOSTS)).toBe(null);
   });
 
   it.each([
@@ -4113,26 +4121,51 @@ describe('parseMeetingLink', () => {
     'accessibilite',
     'conditions-utilisation',
   ])('ignore la page « %s » de l\'application web', (segment) => {
-    expect(parseMeetingLink(`https://meet.linagora.com/${segment}`)).toBe(null);
+    expect(parseMeetingLink(`https://meet.linagora.com/${segment}`, HOSTS)).toBe(null);
   });
 
   it.each(['favicon.ico', 'site.webmanifest', 'apple-touch-icon.png'])(
     'ignore le fichier statique « %s » servi à la racine',
     (file) => {
-      expect(parseMeetingLink(`https://meet.linagora.com/${file}`)).toBe(null);
+      expect(parseMeetingLink(`https://meet.linagora.com/${file}`, HOSTS)).toBe(null);
     },
   );
 
   it('reconnaît un identifiant de salon généré par meet', () => {
-    expect(parseMeetingLink('https://meet.linagora.com/abc-defg-hij')).toBe('abc-defg-hij');
+    expect(parseMeetingLink('https://meet.linagora.com/abc-defg-hij', HOSTS)).toBe('abc-defg-hij');
   });
 
   it('reconnaît un identifiant généré sans tirets', () => {
-    expect(parseMeetingLink('https://meet.linagora.com/abcdefghij')).toBe('abcdefghij');
+    expect(parseMeetingLink('https://meet.linagora.com/abcdefghij', HOSTS)).toBe('abcdefghij');
+  });
+
+  it('refuse un hôte étranger', () => {
+    expect(parseMeetingLink('https://evil.example/point-hebdo', HOSTS)).toBe(null);
+  });
+
+  it('accepte la seconde instance connue', () => {
+    expect(parseMeetingLink('https://visio.twake.app/point-hebdo', HOSTS)).toBe(
+      'point-hebdo',
+    );
+  });
+
+  it('refuse http en clair sur un hôte pourtant connu', () => {
+    expect(parseMeetingLink('http://meet.linagora.com/point-hebdo', HOSTS)).toBe(null);
+  });
+
+  it.each(['mailto:point-hebdo', 'javascript:point-hebdo', 'file:///point-hebdo'])(
+    'refuse le schéma « %s »',
+    (link) => {
+      expect(parseMeetingLink(link, HOSTS)).toBe(null);
+    },
+  );
+
+  it('refuse un point encodé en pourcentage', () => {
+    expect(parseMeetingLink('https://meet.linagora.com/favicon%2eico', HOSTS)).toBe(null);
   });
 
   it('ignore une URL malformée', () => {
-    expect(parseMeetingLink('pas une url')).toBe(null);
+    expect(parseMeetingLink('pas une url', HOSTS)).toBe(null);
   });
 });
 ```
@@ -4168,16 +4201,27 @@ const RESERVED_SEGMENTS = new Set([
 // tirets optionnels. Reprend flexibleRoomIdPattern de l'amont.
 const GENERATED_ROOM_ID = /^[a-zA-Z0-9]{3}-?[a-zA-Z0-9]{4}-?[a-zA-Z0-9]{3}$/;
 
-// Reconnaissance positive d'abord : un identifiant généré est un salon sans
-// discussion possible. À défaut, un salon nommé porte un slug — mais un
-// fichier statique servi à la racine (favicon.ico, site.webmanifest) contient
-// un point et n'en est pas un.
+// Un slug de salon vient de slugify() côté serveur, un identifiant généré du
+// motif 3-4-3 : les deux tiennent dans cet alphabet. Le vérifier d'abord tue
+// d'un coup les points (favicon.ico), le percent-encoding (favicon%2eico) et
+// tout ce à quoi on n'a pas pensé — là où une liste de cas interdits laisse
+// toujours passer celui qu'on n'a pas anticipé.
+const SLUG_CHARSET = /^[a-zA-Z0-9-]+$/;
+
 function isRoomSegment(segment: string): boolean {
+  if (!SLUG_CHARSET.test(segment)) return false;
   if (GENERATED_ROOM_ID.test(segment)) return true;
-  return !RESERVED_SEGMENTS.has(segment) && !segment.includes('.');
+  return !RESERVED_SEGMENTS.has(segment);
 }
 
-export function parseMeetingLink(url: string): string | null {
+// allowedHosts est obligatoire et sans valeur par défaut : un lien de réunion
+// n'a de sens que rapporté à une instance connue. Sans ce contrôle, n'importe
+// quel site — ou un mailto: — fait ouvrir un salon dans l'application, et
+// l'utilisateur ne peut rien y faire sans désinstaller.
+export function parseMeetingLink(
+  url: string,
+  allowedHosts: readonly string[],
+): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -4185,16 +4229,18 @@ export function parseMeetingLink(url: string): string | null {
     return null;
   }
 
-  const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
-
   if (parsed.protocol === `${APP_SCHEME}:`) {
     // twakevisio://room/<slug> — l'hôte porte « room ».
     if (parsed.host !== 'room') return null;
-    const candidate = segments[0];
+    const candidate = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
     if (candidate === undefined) return null;
     return isRoomSegment(candidate) ? candidate : null;
   }
 
+  if (parsed.protocol !== 'https:') return null;
+  if (!allowedHosts.includes(parsed.host.toLowerCase())) return null;
+
+  const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
   const first = segments[0];
   if (first === undefined || segments.length !== 1) return null;
   return isRoomSegment(first) ? first : null;
@@ -4209,6 +4255,7 @@ Modifier `app/_layout.tsx` — ajouter à l'intérieur de `RootLayout`, après l
 import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 
+import { listKnownHosts } from 'src/instance/knownInstances';
 import { parseMeetingLink } from 'src/navigation/deepLinks';
 ```
 
@@ -4216,8 +4263,12 @@ import { parseMeetingLink } from 'src/navigation/deepLinks';
   const router = useRouter();
 
   useEffect(() => {
+    // Les hôtes autorisés viennent de la table d'instances connues, augmentée
+    // de l'instance du compte actif pour le cas on-prem.
+    const allowedHosts = listKnownHosts();
+
     const openSlug = (url: string): void => {
-      const slug = parseMeetingLink(url);
+      const slug = parseMeetingLink(url, allowedHosts);
       if (slug !== null) router.push(`/room/${slug}/prejoin`);
     };
 
