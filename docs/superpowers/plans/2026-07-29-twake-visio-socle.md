@@ -19,6 +19,15 @@ pour s'aligner sur `twake-drive-mobile` ; le SDK courant a été retenu, projet 
 - `expo` ~57.0.8, `expo-dev-client`, `expo-router` ~57.0.8, `react-native` 0.86.0, `react` 19.2.3
 - `@livekit/react-native` 2.12.0, `@livekit/react-native-webrtc` 144.1.2, `livekit-client` 2.21.0, `@livekit/react-native-expo-plugin` 1.0.2
 
+**Aucun module natif Node importé dans `src/` ni `app/`.** Le test des mocks tire
+`node:crypto`, ce qui exige une référence aux types Node — et une référence de types
+est **globale au programme**, pas locale au fichier, quoi qu'en suggère sa position.
+Constaté : la seule présence de `__mocks__/expo-crypto.ts` fait typechecker
+`import fs from 'fs'` dans `src/`. TypeScript ne peut donc pas garder cet invariant, et
+c'est **eslint qui doit l'imposer** — `no-restricted-imports` bannissant les builtins
+Node dans `src/` et `app/`. Sans ce garde-fou, un `import fs` compile puis plante sur
+l'appareil.
+
 **`.npmrc` porte `legacy-peer-deps=true`** — motif borné : `@livekit/components-react`
 tire `react-dom`, paquet **web** jamais exécuté en natif, dont le pair réclame un patch
 de React plus récent que celui qu'Expo épingle. `overrides` et `resolutions` restent
@@ -1063,7 +1072,30 @@ git commit -m "feat(instance): Discover instance config with a redirect fallback
 `src/auth/pkce.spec.ts` :
 
 ```ts
-import { createPkcePair } from 'src/auth/pkce';
+import { computeChallenge, createPkcePair } from 'src/auth/pkce';
+
+// RFC 7636 annexe B. Le seul moyen de prouver que le challenge est le digest
+// du verifier, et non d'une constante ou d'une autre valeur.
+const RFC_VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+const RFC_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+
+describe('computeChallenge', () => {
+  it('reproduit le vecteur de test de la RFC 7636', async () => {
+    expect(await computeChallenge(RFC_VERIFIER)).toBe(RFC_CHALLENGE);
+  });
+
+  it('est déterministe pour un même verifier', async () => {
+    const [first, second] = await Promise.all([
+      computeChallenge(RFC_VERIFIER),
+      computeChallenge(RFC_VERIFIER),
+    ]);
+    expect(first).toBe(second);
+  });
+
+  it('produit un digest SHA-256 encodé en base64url, soit 43 caractères', async () => {
+    expect(await computeChallenge(RFC_VERIFIER)).toHaveLength(43);
+  });
+});
 
 describe('createPkcePair', () => {
   it('produit un verifier de longueur conforme à la RFC 7636', async () => {
@@ -1081,6 +1113,16 @@ describe('createPkcePair', () => {
   it('annonce la méthode S256', async () => {
     const pair = await createPkcePair();
     expect(pair.method).toBe('S256');
+  });
+
+  it('calcule le challenge sur son propre verifier', async () => {
+    const pair = await createPkcePair();
+    expect(pair.challenge).toBe(await computeChallenge(pair.verifier));
+  });
+
+  it('produit un challenge de 43 caractères', async () => {
+    const pair = await createPkcePair();
+    expect(pair.challenge).toHaveLength(43);
   });
 
   it('produit un verifier différent à chaque appel', async () => {
@@ -1128,12 +1170,19 @@ function toUnreservedString(bytes: Uint8Array): string {
   return out;
 }
 
-export async function createPkcePair(): Promise<PkcePair> {
-  const verifier = toUnreservedString(getRandomBytes(VERIFIER_BYTES));
+// Exporté séparément pour être testable contre le vecteur officiel de la
+// RFC 7636 annexe B. Sans un verifier imposé de l'extérieur, aucun test ne peut
+// distinguer un digest correct d'un digest calculé sur la mauvaise entrée.
+export async function computeChallenge(verifier: string): Promise<string> {
   const digest = await digestStringAsync(CryptoDigestAlgorithm.SHA256, verifier, {
     encoding: CryptoEncoding.BASE64,
   });
-  return { verifier, challenge: toBase64Url(digest), method: 'S256' };
+  return toBase64Url(digest);
+}
+
+export async function createPkcePair(): Promise<PkcePair> {
+  const verifier = toUnreservedString(getRandomBytes(VERIFIER_BYTES));
+  return { verifier, challenge: await computeChallenge(verifier), method: 'S256' };
 }
 ```
 
