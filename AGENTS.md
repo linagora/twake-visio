@@ -98,3 +98,11 @@ pattern throughout. The exemption is scoped to test files only and has been veri
 not to leak into application code; the `enum` and `export default` bans still apply
 inside test files. Anyone tempted to widen the exemption beyond spec files should
 instead type the mock properly.
+
+## The `export default` ban has one exception: route files under `app/`
+
+The project rule is named exports only, never `export default` — and
+`eslint.config.js` enforces it. The one exception is files under `app/`, where
+**expo-router requires a default export** to discover a route. The exception is
+enforced by a scoped eslint block matching `app/**/*.ts(x)` and extends to nothing in
+`src/`. A file that moves out of `app/` must lose its default export on the way.
