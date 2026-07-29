@@ -11,7 +11,7 @@ const CONFIG_WITH_OIDC = {
 const CONFIG_WITHOUT_OIDC = { ...CONFIG_WITH_OIDC, oidc: undefined };
 
 function mockFetch(handler: (url: string) => Response): void {
-  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+  globalThis.fetch = jest.fn(async (input: RequestInfo | URL) =>
     handler(String(input)),
   ) as unknown as typeof fetch;
 }
@@ -76,7 +76,7 @@ describe('fetchInstanceConfig', () => {
   });
 
   it('signale un serveur injoignable', async () => {
-    global.fetch = jest.fn(async () => {
+    globalThis.fetch = jest.fn(async () => {
       throw new TypeError('network');
     }) as unknown as typeof fetch;
 
