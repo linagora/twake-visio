@@ -337,19 +337,67 @@ git commit -m "chore: Scaffold the Expo application with tooling and CI"
 `src/ui/theme.spec.ts` :
 
 ```ts
-import { tokens } from 'src/ui/tokens';
 import { makeTheme } from 'src/ui/theme';
 
+// Luminance relative WCAG 2.1. Un test d'inégalité entre clair et sombre
+// passerait si l'on intervertissait les deux thèmes ; un test de contraste non.
+function computeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = channels.map((c) =>
+    c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+  ) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function computeContrast(a: string, b: string): number {
+  const [light, dark] = [computeLuminance(a), computeLuminance(b)].sort((x, y) => y - x) as [
+    number,
+    number,
+  ];
+  return (light + 0.05) / (dark + 0.05);
+}
+
+const AA_NORMAL_TEXT = 4.5;
+
 describe('makeTheme', () => {
-  it('dérive la couleur primaire du thème clair depuis les tokens', () => {
-    const theme = makeTheme('light');
-    expect(theme.colors.primary).toBe(tokens.color.primary);
+  it('donne au thème clair un fond plus lumineux qu\'au thème sombre', () => {
+    expect(computeLuminance(makeTheme('light').colors.background)).toBeGreaterThan(
+      computeLuminance(makeTheme('dark').colors.background),
+    );
   });
 
-  it('produit un thème sombre distinct du thème clair', () => {
-    expect(makeTheme('dark').colors.background).not.toBe(
-      makeTheme('light').colors.background,
-    );
+  it.each(['light', 'dark'] as const)(
+    'respecte le contraste AA du texte sur le fond en %s',
+    (scheme) => {
+      const { colors } = makeTheme(scheme);
+      expect(computeContrast(colors.onSurface, colors.background)).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT,
+      );
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'respecte le contraste AA de la couleur d\'erreur sur le fond en %s',
+    (scheme) => {
+      const { colors } = makeTheme(scheme);
+      expect(computeContrast(colors.error, colors.background)).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT,
+      );
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'respecte le contraste AA de onPrimary sur primary en %s',
+    (scheme) => {
+      const { colors } = makeTheme(scheme);
+      expect(computeContrast(colors.onPrimary, colors.primary)).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT,
+      );
+    },
+  );
+
+  it('applique le rayon des tokens au thème', () => {
+    expect(makeTheme('light').roundness).toBe(8);
   });
 });
 ```
@@ -366,18 +414,25 @@ Expected: FAIL — modules introuvables
 ```ts
 export type ColorScheme = 'light' | 'dark';
 
+// Toute couleur d'avant-plan porte une variante par schéma. Une valeur unique
+// partagée entre clair et sombre échoue au contraste sur l'un des deux fonds :
+// #C62828 sur #0B0B0C donne 3,4:1, sous le seuil WCAG AA de 4,5:1.
 export const tokens = {
   color: {
-    primary: '#0057B8',
-    onPrimary: '#FFFFFF',
+    primaryLight: '#0057B8',
+    primaryDark: '#4D9AFF',
+    onPrimaryLight: '#FFFFFF',
+    onPrimaryDark: '#0B1B2B',
     surfaceLight: '#FFFFFF',
     surfaceDark: '#121212',
     backgroundLight: '#F5F7FA',
     backgroundDark: '#0B0B0C',
     textLight: '#1A1A1A',
     textDark: '#ECECEC',
-    danger: '#C62828',
-    success: '#2E7D32',
+    dangerLight: '#C62828',
+    dangerDark: '#FF8A80',
+    successLight: '#2E7D32',
+    successDark: '#81C784',
     muted: '#6B7280',
   },
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
@@ -400,19 +455,19 @@ import { MD3DarkTheme, MD3LightTheme, type MD3Theme } from 'react-native-paper';
 import { tokens, type ColorScheme } from 'src/ui/tokens';
 
 export function makeTheme(scheme: ColorScheme): MD3Theme {
-  const base = scheme === 'dark' ? MD3DarkTheme : MD3LightTheme;
+  const isDark = scheme === 'dark';
+  const base = isDark ? MD3DarkTheme : MD3LightTheme;
   return {
     ...base,
     roundness: tokens.radius.md,
     colors: {
       ...base.colors,
-      primary: tokens.color.primary,
-      onPrimary: tokens.color.onPrimary,
-      background:
-        scheme === 'dark' ? tokens.color.backgroundDark : tokens.color.backgroundLight,
-      surface: scheme === 'dark' ? tokens.color.surfaceDark : tokens.color.surfaceLight,
-      onSurface: scheme === 'dark' ? tokens.color.textDark : tokens.color.textLight,
-      error: tokens.color.danger,
+      primary: isDark ? tokens.color.primaryDark : tokens.color.primaryLight,
+      onPrimary: isDark ? tokens.color.onPrimaryDark : tokens.color.onPrimaryLight,
+      background: isDark ? tokens.color.backgroundDark : tokens.color.backgroundLight,
+      surface: isDark ? tokens.color.surfaceDark : tokens.color.surfaceLight,
+      onSurface: isDark ? tokens.color.textDark : tokens.color.textLight,
+      error: isDark ? tokens.color.dangerDark : tokens.color.dangerLight,
     },
   };
 }
@@ -451,7 +506,9 @@ import en from 'src/i18n/locales/en.json';
 import de from 'src/i18n/locales/de.json';
 import es from 'src/i18n/locales/es.json';
 import fr from 'src/i18n/locales/fr.json';
-import it from 'src/i18n/locales/it.json';
+// Ne pas nommer cet import `it` : il masquerait le `it()` global de jest et
+// ferait planter la suite entiere avec « it is not a function ».
+import itLocale from 'src/i18n/locales/it.json';
 import ru from 'src/i18n/locales/ru.json';
 import vi from 'src/i18n/locales/vi.json';
 import { SUPPORTED_LOCALES } from 'src/i18n';
@@ -465,7 +522,7 @@ describe('locales', () => {
 
   it('ne laisse aucune clé manquante dans une locale', () => {
     const reference = Object.keys(en).sort();
-    for (const [name, bundle] of Object.entries({ fr, es, it, de, vi, ru })) {
+    for (const [name, bundle] of Object.entries({ fr, es, it: itLocale, de, vi, ru })) {
       expect({ [name]: Object.keys(bundle).sort() }).toEqual({ [name]: reference });
     }
   });
@@ -553,7 +610,7 @@ import de from 'src/i18n/locales/de.json';
 import en from 'src/i18n/locales/en.json';
 import es from 'src/i18n/locales/es.json';
 import fr from 'src/i18n/locales/fr.json';
-import it from 'src/i18n/locales/it.json';
+import itLocale from 'src/i18n/locales/it.json';
 import ru from 'src/i18n/locales/ru.json';
 import vi from 'src/i18n/locales/vi.json';
 
@@ -563,7 +620,7 @@ const resources = {
   en: { translation: en },
   fr: { translation: fr },
   es: { translation: es },
-  it: { translation: it },
+  it: { translation: itLocale },
   de: { translation: de },
   vi: { translation: vi },
   ru: { translation: ru },
