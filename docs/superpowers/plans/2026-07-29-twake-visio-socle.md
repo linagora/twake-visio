@@ -14,9 +14,15 @@
 
 Ces règles s'appliquent à **toutes** les tâches. Elles ne sont pas répétées ensuite.
 
-**Versions exactes :**
-- `expo` ~54, `expo-dev-client`, `expo-router` ~6, `react-native` 0.81.5, `react` 19.1.0
+**Versions exactes** (constatées après la Task 1 — le plan visait initialement le SDK 54
+pour s'aligner sur `twake-drive-mobile` ; le SDK courant a été retenu, projet neuf) :
+- `expo` ~57.0.8, `expo-dev-client`, `expo-router` ~57.0.8, `react-native` 0.86.0, `react` 19.2.3
 - `@livekit/react-native` 2.12.0, `@livekit/react-native-webrtc` 144.1.2, `livekit-client` 2.21.0, `@livekit/react-native-expo-plugin` 1.0.2
+
+**`.npmrc` porte `legacy-peer-deps=true`** — motif borné : `@livekit/components-react`
+tire `react-dom`, paquet **web** jamais exécuté en natif, dont le pair réclame un patch
+de React plus récent que celui qu'Expo épingle. `overrides` et `resolutions` restent
+interdits par `twake-package-manager-audit`. Ne pas élargir ce réglage à autre chose.
 
 **TypeScript :** `"strict": true`. Interdits : `any`, `enum` (utiliser des unions de chaînes), `@ts-ignore` (utiliser `@ts-expect-error` avec explication et ticket), `as unknown as T`, `"strict": false`. Type de retour explicite sur toute fonction non triviale. Tout symbole exporté est typé.
 
@@ -4092,6 +4098,27 @@ breaks this outright and `trusted` breaks it for external guests. The creation s
 always states the consequence in plain language, never just the raw level name.
 `perform_create` grants `owner` to the creator alone, so co-organizers must be added
 via `POST /resource-accesses/`.
+
+## Expo SDK: this app runs ahead of twake-drive-mobile, deliberately
+
+This app is on **Expo SDK 57 / RN 0.86**, `twake-drive-mobile` is on SDK 54 / RN 0.81.
+That is a chosen divergence, not drift: a greenfield app starting three majors behind
+would begin its life already needing an upgrade. Do not "align" the two by downgrading
+this repo.
+
+## `.npmrc` carries `legacy-peer-deps=true` for one bounded reason
+
+`@livekit/components-react` pulls `react-dom` — a **web** package never executed in a
+native build — whose peer wants a newer React patch than Expo pins. The alternative,
+`overrides` / `resolutions`, is explicitly forbidden by `twake-package-manager-audit`.
+**Do not widen this setting to paper over any other conflict**, and revisit it whenever
+LiveKit or Expo bumps React.
+
+## Commit subject case
+
+`@commitlint/config-conventional` forbids sentence-case subjects by default, which
+contradicts `twake-git-conventions` ("imperative mood with sentence-case"). The repo
+overrides `subject-case` to permit it. The guideline wins; the default is wrong for us.
 
 ## Native build
 
