@@ -20,6 +20,9 @@
   "lobby.noModerator": "В данный момент модератор отсутствует",
   "call.leave": "Покинуть",
   "call.muted": "Микрофон выключен",
+  "call.reconnecting": "Переподключение…",
+  "call.ended": "Встреча завершена",
+  "call.switchCamera": "Переключить камеру",
   "error.network": "Не удалось подключиться",
   "error.unauthorized": "Сессия истекла, войдите снова"
 }
