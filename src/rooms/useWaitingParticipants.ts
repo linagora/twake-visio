@@ -1,0 +1,59 @@
+import { useCallback, useEffect, useState } from 'react';
+
+import {
+  answerEntry,
+  listWaitingParticipants,
+  type WaitingParticipant,
+} from 'src/api/participants';
+import type { Account } from 'src/auth/accounts';
+import { mergeWaiting, withoutParticipant } from 'src/rooms/waitingQueue';
+
+// Cinq secondes. L'endpoint est limité à 150 requêtes par minute et par
+// utilisateur : douze laissent un ordre de grandeur de marge. Plus court
+// martèlerait le serveur pour un événement rare ; plus long laisse quelqu'un
+// devant une porte sans savoir si on l'a entendu.
+const WAITING_POLL_MS = 5000;
+
+export type WaitingParticipants = {
+  readonly waiting: readonly WaitingParticipant[];
+  readonly answer: (id: string, allow: boolean) => void;
+};
+
+export function useWaitingParticipants(
+  account: Account,
+  roomId: string,
+  enabled: boolean,
+): WaitingParticipants {
+  const [waiting, setWaiting] = useState<readonly WaitingParticipant[]>([]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let stopped = false;
+    const timer = setInterval(() => {
+      void listWaitingParticipants(account, roomId)
+        .then((result) => {
+          if (stopped || !result.ok) return;
+          setWaiting((current) => mergeWaiting(current, result.value));
+        })
+        .catch(() => undefined);
+    }, WAITING_POLL_MS);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [account, roomId, enabled]);
+
+  const answer = useCallback(
+    (id: string, allow: boolean): void => {
+      // Retiré tout de suite : la personne a répondu, et attendre le prochain
+      // tour laisserait le bandeau proposer une décision déjà prise.
+      setWaiting((current) => withoutParticipant(current, id));
+      void answerEntry(account, roomId, id, allow).catch(() => undefined);
+    },
+    [account, roomId],
+  );
+
+  return { waiting, answer };
+}
