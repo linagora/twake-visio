@@ -21,7 +21,7 @@ beforeEach(() => {
 
 describe('authedFetch', () => {
   it('joint le jeton porteur à la requête', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     // Les génériques explicites sont nécessaires : sans paramètres déclarés,
     // noUncheckedIndexedAccess rejette l'accès à calls[0][1] comme hors tuple.
     const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
@@ -37,8 +37,10 @@ describe('authedFetch', () => {
   });
 
   it('rafraîchit puis rejoue une seule fois sur 401', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    const refresh = jest.spyOn(session, 'forceRefresh').mockResolvedValue('fresh');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    const refresh = jest
+      .spyOn(session, 'forceRefresh')
+      .mockResolvedValue({ ok: true, token: 'fresh' });
     const spy = jest
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
@@ -58,8 +60,8 @@ describe('authedFetch', () => {
     // distingue « rejoue une fois » de « rejoue sans fin » : chacun résout au
     // second appel ou échoue au rafraîchissement du premier. C'est
     // toHaveBeenCalledTimes(2) qui borne, et rien d'autre.
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    jest.spyOn(session, 'forceRefresh').mockResolvedValue('fresh');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    jest.spyOn(session, 'forceRefresh').mockResolvedValue({ ok: true, token: 'fresh' });
     const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
       async () => new Response(null, { status: 401 }),
     );
@@ -72,8 +74,10 @@ describe('authedFetch', () => {
   });
 
   it('rend unauthorized quand le rafraîchissement échoue', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    jest.spyOn(session, 'forceRefresh').mockResolvedValue(null);
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    jest
+      .spyOn(session, 'forceRefresh')
+      .mockResolvedValue({ ok: false, reason: 'refused' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 401 }),
     ) as unknown as typeof fetch;
@@ -83,8 +87,27 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'unauthorized' } });
   });
 
+  it('dit « réseau » et non « session expirée » quand le SSO est indisponible', async () => {
+    // Même panne, deux messages possibles selon l'endroit où elle frappe. Si le
+    // rafraîchissement échoue parce que le SSO est tombé, envoyer l'utilisateur
+    // se reconnecter est inutile : le serveur ne peut pas l'authentifier.
+    jest
+      .spyOn(session, 'getAccessToken')
+      .mockResolvedValue({ ok: true, token: 'stale' });
+    jest
+      .spyOn(session, 'forceRefresh')
+      .mockResolvedValue({ ok: false, reason: 'unavailable' });
+    globalThis.fetch = jest.fn(
+      async () => new Response(null, { status: 401 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/users/me/');
+
+    expect(result).toEqual({ ok: false, error: { kind: 'network' } });
+  });
+
   it('mappe 403 sur forbidden', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 403 }),
     ) as unknown as typeof fetch;
@@ -95,7 +118,7 @@ describe('authedFetch', () => {
   });
 
   it('mappe une panne réseau sur network', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(async () => {
       throw new TypeError('offline');
     }) as unknown as typeof fetch;

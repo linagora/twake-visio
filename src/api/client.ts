@@ -1,7 +1,16 @@
-import type { ApiResult } from 'src/api/types';
+import type { ApiError, ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
-import { forceRefresh, getAccessToken } from 'src/auth/session';
+import { forceRefresh, getAccessToken, type RefreshOutcome } from 'src/auth/session';
 import { REQUEST_TIMEOUT_MS } from 'src/constants';
+
+type RefreshRefusal = Extract<RefreshOutcome, { ok: false }>['reason'];
+
+// Une indisponibilité du SSO doit se lire comme une panne, pas comme une
+// session expirée : sinon l'utilisateur va se reconnecter contre un serveur
+// incapable de l'authentifier, et recommence en boucle.
+function mapRefusal(reason: RefreshRefusal): ApiError {
+  return reason === 'unavailable' ? { kind: 'network' } : { kind: 'unauthorized' };
+}
 
 // Un 5xx ou tout autre statut non mappé reste distinct de `unauthorized` /
 // `forbidden` : contrairement à src/auth/oidc.ts, qui réduit tout non-2xx à
@@ -30,8 +39,9 @@ export async function authedFetch<T>(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-  let token = await getAccessToken(account.id, account.instance);
-  if (token === null) return { ok: false, error: { kind: 'unauthorized' } };
+  const initial = await getAccessToken(account.id, account.instance);
+  if (!initial.ok) return { ok: false, error: mapRefusal(initial.reason) };
+  let token = initial.token;
 
   let response: Response;
   try {
@@ -41,8 +51,8 @@ export async function authedFetch<T>(
     // Reboucler ne ferait que marteler le SSO sans jamais réussir.
     if (response.status === 401) {
       const refreshed = await forceRefresh(account.id, account.instance);
-      if (refreshed === null) return { ok: false, error: { kind: 'unauthorized' } };
-      token = refreshed;
+      if (!refreshed.ok) return { ok: false, error: mapRefusal(refreshed.reason) };
+      token = refreshed.token;
       response = await send(token);
       if (response.status === 401) {
         return { ok: false, error: { kind: 'unauthorized' } };
