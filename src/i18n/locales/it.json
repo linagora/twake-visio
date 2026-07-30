@@ -18,6 +18,8 @@
   "room.accessRestricted": "Solo le persone esplicitamente invitate possono entrare",
   "room.coOwners": "Co-organizzatori",
   "room.coOwnerSearch": "Cerca per email",
+  "room.createFailed": "Non è stato possibile creare la riunione",
+  "room.nameRequired": "Dai un nome alla riunione",
   "prejoin.join": "Partecipa",
   "prejoin.cameraOff": "Videocamera disattivata",
   "lobby.waiting": "In attesa di approvazione",

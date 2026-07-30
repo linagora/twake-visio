@@ -5,6 +5,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Button, HelperText, RadioButton, Text, TextInput } from 'react-native-paper';
 
 import { createRoom, grantRoomAccess } from 'src/api/rooms';
+import type { ApiError } from 'src/api/types';
 import { searchUsers, type Me } from 'src/api/users';
 import { getActiveAccount } from 'src/auth/accounts';
 import type { AccessLevel } from 'src/call/types';
@@ -25,6 +26,16 @@ const ACCESS_COPY: Readonly<Record<AccessLevel, string>> = {
   restricted: 'room.accessRestricted',
 };
 
+type FailureKey = 'error.network' | 'error.unauthorized' | 'room.createFailed';
+
+// Un refus d'autorisation demande une action de la personne, les autres non :
+// les confondre lui dirait de se reconnecter alors que le serveur a répondu 500.
+function toFailure(error: ApiError): FailureKey {
+  if (error.kind === 'unauthorized') return 'error.unauthorized';
+  if (error.kind === 'network') return 'error.network';
+  return 'room.createFailed';
+}
+
 function isAccessLevel(value: string): value is AccessLevel {
   return ACCESS_LEVELS.some((level) => level === value);
 }
@@ -37,6 +48,8 @@ export function CreateRoomScreen(): React.ReactElement {
   const [coOwnerQuery, setCoOwnerQuery] = useState('');
   const [candidates, setCandidates] = useState<readonly Me[]>([]);
   const [coOwners, setCoOwners] = useState<readonly Me[]>([]);
+  const [failure, setFailure] = useState<FailureKey | 'room.nameRequired' | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const handleAccessLevelChange = (value: string): void => {
     if (isAccessLevel(value)) setAccessLevel(value);
@@ -59,10 +72,38 @@ export function CreateRoomScreen(): React.ReactElement {
 
   const handleSubmit = async (): Promise<void> => {
     const account = getActiveAccount();
-    if (account === null || name.trim().length === 0) return;
+    if (account === null) {
+      setFailure('error.unauthorized');
+      return;
+    }
+    if (name.trim().length === 0) {
+      setFailure('room.nameRequired');
+      return;
+    }
 
-    const result = await createRoom(account, { name: name.trim(), accessLevel });
-    if (!result.ok) return;
+    setFailure(null);
+    setBusy(true);
+    let result;
+    try {
+      result = await createRoom(account, { name: name.trim(), accessLevel });
+    } catch (err: unknown) {
+      // Le rejet d'un fetch n'était pas rattrapé : l'appui restait sans effet
+      // visible, ce qui se lit comme un bouton mort.
+      console.error('[create] createRoom a rejeté', err);
+      setFailure('error.network');
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+
+    if (!result.ok) {
+      // Signalé en clair : sans cette trace, la seule information disponible
+      // était « rien ne se passe », qui ne dit pas laquelle des six erreurs
+      // possibles s'est produite.
+      console.error('[create] createRoom a échoué', result.error);
+      setFailure(toFailure(result.error));
+      return;
+    }
 
     // perform_create n'attribue owner qu'au créateur. Sans ces appels, la
     // personne pour qui la réunion est organisée n'a aucun droit de modération.
@@ -131,7 +172,17 @@ export function CreateRoomScreen(): React.ReactElement {
         </Text>
       ))}
 
-      <Button mode="contained" testID="submit-btn" onPress={handleSubmit}>
+      <HelperText type="error" visible={failure !== null} testID="create-error">
+        {failure === null ? '' : t(failure)}
+      </HelperText>
+
+      <Button
+        mode="contained"
+        testID="submit-btn"
+        onPress={handleSubmit}
+        loading={busy}
+        disabled={busy}
+      >
         {t('home.create')}
       </Button>
     </ScrollView>

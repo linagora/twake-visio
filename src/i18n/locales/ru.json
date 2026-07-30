@@ -18,6 +18,8 @@
   "room.accessRestricted": "Войти могут только явно приглашённые пользователи",
   "room.coOwners": "Соорганизаторы",
   "room.coOwnerSearch": "Поиск по email",
+  "room.createFailed": "Не удалось создать встречу",
+  "room.nameRequired": "Укажите название встречи",
   "prejoin.join": "Присоединиться",
   "prejoin.cameraOff": "Камера выключена",
   "lobby.waiting": "Ожидание подтверждения",

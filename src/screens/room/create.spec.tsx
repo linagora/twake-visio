@@ -98,3 +98,63 @@ describe('CreateRoomScreen', () => {
     });
   });
 });
+
+describe('CreateRoomScreen, échecs visibles', () => {
+  it('dit pourquoi la création a échoué plutôt que de ne rien faire', async () => {
+    // Un bouton dont l'appui ne produit rien se lit comme un bouton mort, et
+    // l'utilisateur réessaie sans savoir quoi changer. Constaté sur appareil :
+    // « rien ne se passe quand je clique ».
+    jest
+      .spyOn(rooms, 'createRoom')
+      .mockResolvedValue({ ok: false, error: { kind: 'server', status: 500 } });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Revue');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('room.createFailed')).toBeTruthy();
+    });
+  });
+
+  it('invite à se reconnecter quand la session a expiré', async () => {
+    jest
+      .spyOn(rooms, 'createRoom')
+      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Revue');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    // Ne pas confondre les deux : dire « reconnectez-vous » sur un 500 envoie la
+    // personne refaire une authentification qui n'y changera rien.
+    await waitFor(() => {
+      expect(screen.getByText('error.unauthorized')).toBeTruthy();
+    });
+    expect(screen.queryByText('room.createFailed')).toBe(null);
+  });
+
+  it('ne reste pas muet quand le fetch rejette', async () => {
+    jest.spyOn(rooms, 'createRoom').mockRejectedValue(new Error('boom'));
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Revue');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('error.network')).toBeTruthy();
+    });
+  });
+
+  it('réclame un nom au lieu de ne rien faire sur un champ vide', async () => {
+    const create = jest.spyOn(rooms, 'createRoom');
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('room.nameRequired')).toBeTruthy();
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+});

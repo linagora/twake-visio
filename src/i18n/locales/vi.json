@@ -18,6 +18,8 @@
   "room.accessRestricted": "Chỉ những người được mời rõ ràng mới có thể vào",
   "room.coOwners": "Đồng tổ chức",
   "room.coOwnerSearch": "Tìm kiếm theo email",
+  "room.createFailed": "Không thể tạo cuộc họp",
+  "room.nameRequired": "Hãy đặt tên cho cuộc họp",
   "prejoin.join": "Tham gia",
   "prejoin.cameraOff": "Đã tắt camera",
   "lobby.waiting": "Đang chờ phê duyệt",
