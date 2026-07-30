@@ -1,7 +1,7 @@
 {
   "welcome.signIn": "Войти",
   "welcome.signUp": "Зарегистрироваться",
-  "welcome.orgServer": "Войти через сервер организации",
+  "welcome.orgServer": "Войти через мою организацию",
   "server.prompt": "Адрес вашего сервера",
   "server.emailPrompt": "Ваш адрес электронной почты",
   "server.emailInvalid": "Введите действительный адрес электронной почты",

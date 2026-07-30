@@ -1,7 +1,7 @@
 {
   "welcome.signIn": "Accedi",
   "welcome.signUp": "Registrati",
-  "welcome.orgServer": "Accedi con il server della tua organizzazione",
+  "welcome.orgServer": "Accedi con la mia organizzazione",
   "server.prompt": "Indirizzo del tuo server",
   "server.emailPrompt": "Il tuo indirizzo email",
   "server.emailInvalid": "Inserisci un indirizzo email valido",

@@ -1,7 +1,7 @@
 {
   "welcome.signIn": "Anmelden",
   "welcome.signUp": "Registrieren",
-  "welcome.orgServer": "Mit dem Server Ihrer Organisation anmelden",
+  "welcome.orgServer": "Mit meiner Organisation anmelden",
   "server.prompt": "Adresse Ihres Servers",
   "server.emailPrompt": "Ihre E-Mail-Adresse",
   "server.emailInvalid": "Geben Sie eine gültige E-Mail-Adresse ein",

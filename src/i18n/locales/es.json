@@ -1,7 +1,7 @@
 {
   "welcome.signIn": "Iniciar sesión",
   "welcome.signUp": "Registrarse",
-  "welcome.orgServer": "Iniciar sesión con el servidor de su organización",
+  "welcome.orgServer": "Iniciar sesión con mi organización",
   "server.prompt": "Dirección de su servidor",
   "server.emailPrompt": "Su dirección de correo electrónico",
   "server.emailInvalid": "Introduzca una dirección de correo electrónico válida",
