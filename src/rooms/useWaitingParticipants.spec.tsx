@@ -263,4 +263,25 @@ describe('useWaitingParticipants, answer', () => {
 
     expect(answerEntrySpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'p-1', false);
   });
+
+  // I1 : `answer` avalait l'échec (`.catch(() => undefined)`), invisible
+  // puisque `ApiResult` rend un échec ordinaire comme une valeur résolue,
+  // jamais un rejet. Sans ce test, un `answer` qui reviendrait à cette forme
+  // — ou qui rendrait `undefined` au lieu du résultat — laisserait les deux
+  // tests ci-dessus verts tout en redevenant muet sur l'échec.
+  it("rend le résultat d'answerEntry à l'appelant, sans l'avaler", async () => {
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({ ok: true, value: [] });
+    jest
+      .spyOn(participants, 'answerEntry')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    const { result } = await renderHook(() => useWaitingParticipants(ACCOUNT, 'r-1', true));
+
+    let outcome: ApiResult<void> | undefined;
+    await act(async () => {
+      outcome = await result.current.answer('p-1', true);
+    });
+
+    expect(outcome).toEqual({ ok: false, error: { kind: 'forbidden' } });
+  });
 });

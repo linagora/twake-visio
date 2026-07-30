@@ -317,10 +317,25 @@ export function CallScreen(): React.ReactElement {
     setParticipantsOpen((open) => !open);
   };
 
+  // `answer` a déjà retiré la personne de la file de façon optimiste (voir
+  // `useWaitingParticipants`) ; elle ne fait que rendre le résultat du
+  // réseau. Même lecture que les trois actions ci-dessous : `result.ok`
+  // d'abord, un `.catch()` séparé pour l'exception inattendue. Sans elle, un
+  // 403 sur `enter` — un autre modérateur a répondu entre-temps, ou le droit
+  // d'administrer a été retiré — n'avait aucun retour visible, et la
+  // personne réapparaissait en fin de file cinq secondes plus tard sans un
+  // mot : le modérateur croyait avoir ouvert la porte, la personne dehors
+  // n'entrait jamais.
+  const handleAnswerEntry = (id: string, allow: boolean): void => {
+    answer(id, allow)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
+  };
+
   // Les trois actions de modération portent l'identité LiveKit que
   // `ParticipantsPanel` leur passe (`ParticipantView.identity`, reçue ici comme
   // `identity`) — jamais l'UUID de lobby que porte `WaitingParticipant.id` et
-  // qu'utilise `answer` ci-dessus. Les deux ne s'échangent pas, et le panneau
+  // qu'utilise `handleAnswerEntry` ci-dessus. Les deux ne s'échangent pas, et le panneau
   // ne connaît de toute façon que la première. Ces rappels ne sont atteignables
   // que depuis une ligne du panneau, lequel ne montre ses actions que lorsque
   // `canModerate` vaut vrai — donc lorsque `access` est déjà rempli ; le repli
@@ -385,7 +400,7 @@ export function CallScreen(): React.ReactElement {
       <WaitingBanner
         participant={firstWaiting(waiting)}
         remaining={Math.max(waiting.length - 1, 0)}
-        onAnswer={answer}
+        onAnswer={handleAnswerEntry}
       />
 
       {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les

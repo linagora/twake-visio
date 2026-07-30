@@ -571,6 +571,32 @@ describe('CallScreen, salle d’attente', () => {
 
     expect(answerEntrySpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'lobby-1', false);
   });
+
+  // I1 : `answer` avalait l'échec d'`answerEntry` (`.catch(() => undefined)`),
+  // qui ne voit jamais passer l'échec ordinaire d'un `ApiResult` — une valeur
+  // résolue, pas un rejet. Le modérateur croyait avoir répondu ; la personne
+  // dehors n'entrait jamais, sans un mot pour le dire.
+  it("affiche un message visible quand admettre échoue, sans l'avaler", async () => {
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({
+      ok: true,
+      value: [{ id: 'lobby-1', username: 'Ada' }],
+    });
+    jest
+      .spyOn(participants, 'answerEntry')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+    await waitFor(() => expect(screen.getByTestId('waiting-admit')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('waiting-admit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+  });
 });
 
 describe('CallScreen, panneau des participants', () => {

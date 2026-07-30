@@ -5,6 +5,7 @@ import {
   listWaitingParticipants,
   type WaitingParticipant,
 } from 'src/api/participants';
+import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
 import { mergeWaiting, withoutParticipant } from 'src/rooms/waitingQueue';
 
@@ -16,7 +17,13 @@ const WAITING_POLL_MS = 5000;
 
 export type WaitingParticipants = {
   readonly waiting: readonly WaitingParticipant[];
-  readonly answer: (id: string, allow: boolean) => void;
+  // Rend le résultat du réseau plutôt que de l'avaler : `ApiResult<void>`
+  // rend son échec ordinaire comme une valeur (`{ ok: false }`), jamais
+  // comme un rejet, et le hook n'a pas d'écran à lui pour l'afficher. C'est
+  // à l'appelant (`call.tsx`) de lire `result.ok` et de brancher l'échec sur
+  // le mécanisme d'affichage qu'il a déjà pour ses propres actions de
+  // modération.
+  readonly answer: (id: string, allow: boolean) => Promise<ApiResult<void>>;
 };
 
 export function useWaitingParticipants(
@@ -55,11 +62,14 @@ export function useWaitingParticipants(
   }, [account, roomId, enabled]);
 
   const answer = useCallback(
-    (id: string, allow: boolean): void => {
+    (id: string, allow: boolean): Promise<ApiResult<void>> => {
       // Retiré tout de suite : la personne a répondu, et attendre le prochain
-      // tour laisserait le bandeau proposer une décision déjà prise.
+      // tour laisserait le bandeau proposer une décision déjà prise. Le
+      // résultat du réseau est rendu tel quel, pas avalé par un `.catch` qui
+      // ne verrait de toute façon jamais passer l'échec ordinaire
+      // d'`answerEntry` — voir `WaitingParticipants.answer` ci-dessus.
       setWaiting((current) => withoutParticipant(current, id));
-      void answerEntry(account, roomId, id, allow).catch(() => undefined);
+      return answerEntry(account, roomId, id, allow);
     },
     [account, roomId],
   );
