@@ -45,10 +45,55 @@ export async function fetchRoomAccess(
   };
 }
 
+// Borne de sécurité : l'instance de production renvoie des dizaines de salons et
+// rien ne garantit qu'un compte n'en ait pas des milliers. Sans plafond, l'écran
+// d'accueil pourrait enchaîner les requêtes indéfiniment au montage.
+const MAX_ROOM_PAGES = 20;
+
+// `next` est une URL absolue. On ne la suit que si elle porte sur la même
+// origine que l'instance : la requête part avec le jeton porteur, et suivre une
+// origine étrangère l'enverrait à un tiers.
+function toSamePath(next: unknown, serverUrl: string): string | null {
+  if (typeof next !== 'string' || next.length === 0) return null;
+  try {
+    const url = new URL(next);
+    if (url.origin !== new URL(serverUrl).origin) return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+// L'API pagine, et la version précédente ne lisait que `results` de la première
+// page. Les salons étant rendus par ordre alphabétique de slug, l'accueil
+// n'affichait que le début de l'alphabet : un salon nommé « Test mobile »
+// n'apparaissait jamais, et le filtre répondait à juste titre qu'aucune réunion
+// ne correspondait.
 export async function fetchMyRooms(account: Account): Promise<ApiResult<readonly Room[]>> {
-  const result = await authedFetch<{ results: RawRoom[] }>(account, '/api/v1.0/rooms/');
-  if (!result.ok) return result;
-  return { ok: true, value: result.value.results.map(toRoom) };
+  const rooms: Room[] = [];
+  let path: string | null = '/api/v1.0/rooms/';
+  let pages = 0;
+
+  while (path !== null && pages < MAX_ROOM_PAGES) {
+    const result = await authedFetch<{ results: RawRoom[]; next?: unknown }>(account, path);
+    if (!result.ok) {
+      // Un échec sur la première page n'a rien à rendre. Sur une page suivante,
+      // rendre ce qui est déjà là vaut mieux qu'une liste vide — mais jamais en
+      // silence : une liste tronquée qui se présente comme complète est pire
+      // qu'une liste courte annoncée.
+      if (pages === 0) return result;
+      console.error('[rooms] liste tronquée, page', pages + 1, 'en échec', result.error);
+      break;
+    }
+    rooms.push(...result.value.results.map(toRoom));
+    path = toSamePath(result.value.next, account.instance.serverUrl);
+    pages += 1;
+  }
+
+  if (path !== null) {
+    console.error('[rooms] liste tronquée au plafond de', MAX_ROOM_PAGES, 'pages');
+  }
+  return { ok: true, value: rooms };
 }
 
 export async function createRoom(

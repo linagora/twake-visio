@@ -1,4 +1,4 @@
-import { createRoom, fetchRoomAccess } from 'src/api/rooms';
+import { createRoom, fetchMyRooms, fetchRoomAccess } from 'src/api/rooms';
 import * as client from 'src/api/client';
 import type { Account } from 'src/auth/accounts';
 
@@ -69,5 +69,88 @@ describe('createRoom', () => {
       name: 'Point hebdo',
       access_level: 'public',
     });
+  });
+});
+
+describe('fetchMyRooms, pagination', () => {
+  const page = (slugs: readonly string[], next: string | null): unknown => ({
+    results: slugs.map((slug) => ({ id: 'r-' + slug, slug, access_level: 'public' })),
+    next,
+  });
+
+  it('suit les pages suivantes au lieu de ne lire que la première', async () => {
+    // Le défaut constaté sur appareil : l'API rend les salons par ordre
+    // alphabétique de slug, donc s'arrêter à la première page ne montrait que le
+    // début de l'alphabet. Un salon « test-mobile » n'apparaissait jamais.
+    const fetchSpy = jest
+      .spyOn(client, 'authedFetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        value: page(['aet-jgqg-fpa'], 'https://meet.linagora.com/api/v1.0/rooms/?page=2'),
+      })
+      .mockResolvedValueOnce({ ok: true, value: page(['test-mobile'], null) });
+
+    const result = await fetchMyRooms(ACCOUNT);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((r) => r.slug)).toEqual(['aet-jgqg-fpa', 'test-mobile']);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[1]?.[1]).toBe('/api/v1.0/rooms/?page=2');
+  });
+
+  it('ne suit pas un next qui pointe sur une autre origine', async () => {
+    // La requête part avec le jeton porteur : suivre une origine étrangère
+    // l'enverrait à un tiers.
+    const fetchSpy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: page(['a'], 'https://ailleurs.example/api/v1.0/rooms/'),
+    });
+
+    const result = await fetchMyRooms(ACCOUNT);
+
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("remonte l'erreur quand la première page échoue", async () => {
+    jest
+      .spyOn(client, 'authedFetch')
+      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+
+    const result = await fetchMyRooms(ACCOUNT);
+
+    expect(result).toEqual({ ok: false, error: { kind: 'unauthorized' } });
+  });
+
+  it('rend les pages déjà lues quand une page suivante échoue', async () => {
+    jest
+      .spyOn(client, 'authedFetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        value: page(['a'], 'https://meet.linagora.com/api/v1.0/rooms/?page=2'),
+      })
+      .mockResolvedValueOnce({ ok: false, error: { kind: 'network' } });
+
+    const result = await fetchMyRooms(ACCOUNT);
+
+    // Une liste courte vaut mieux qu'une liste vide, à condition de ne pas se
+    // présenter comme complète : la troncature part dans les traces.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((r) => r.slug)).toEqual(['a']);
+  });
+
+  it('borne le nombre de pages suivies', async () => {
+    // Sans plafond, un compte aux milliers de salons ferait enchaîner les
+    // requêtes indéfiniment au montage de l'accueil.
+    const fetchSpy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: page(['x'], 'https://meet.linagora.com/api/v1.0/rooms/?page=99'),
+    });
+
+    await fetchMyRooms(ACCOUNT);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(20);
   });
 });
