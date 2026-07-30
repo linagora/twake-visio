@@ -1,0 +1,100 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import React from 'react';
+
+import * as rooms from 'src/api/rooms';
+import * as users from 'src/api/users';
+import * as accounts from 'src/auth/accounts';
+import type { Account } from 'src/auth/accounts';
+import { CreateRoomScreen } from './create';
+
+const mockReplace = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace }) }));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+const ACCOUNT: Account = {
+  id: 'https://sso.linagora.com|u-1',
+  instance: {
+    serverUrl: 'https://meet.linagora.com',
+    issuer: 'https://sso.linagora.com',
+    clientId: 'twake-visio',
+    livekitUrl: 'https://livekit.linagora.com',
+    features: { recording: true, subtitle: true, telephony: false },
+  },
+  email: 'ada@linagora.com',
+  displayName: 'Ada',
+};
+
+beforeEach(() => {
+  jest.restoreAllMocks();
+  jest.clearAllMocks();
+  jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT);
+});
+
+describe('CreateRoomScreen', () => {
+  it('propose public par défaut, pour que la réunion démarre sans le créateur', async () => {
+    await render(<CreateRoomScreen />);
+
+    expect(screen.getByTestId('access-public')).toBeTruthy();
+    expect(screen.getByText('room.accessPublic')).toBeTruthy();
+    expect(screen.getByTestId('access-public')).toBeChecked();
+    expect(screen.getByTestId('access-restricted')).not.toBeChecked();
+    expect(screen.queryByTestId('moderator-warning')).toBe(null);
+  });
+
+  it('avertit que restricted exige un modérateur présent', async () => {
+    await render(<CreateRoomScreen />);
+    await fireEvent.press(screen.getByTestId('access-restricted'));
+
+    expect(screen.getByTestId('moderator-warning')).toBeTruthy();
+  });
+
+  it("crée le salon avec le niveau d'accès sélectionné", async () => {
+    const create = jest.spyOn(rooms, 'createRoom').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-9', slug: 'revue', name: 'Revue', accessLevel: 'public' },
+    });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Revue');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    expect(create).toHaveBeenCalledWith(expect.anything(), {
+      name: 'Revue',
+      accessLevel: 'public',
+    });
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/room/revue/prejoin');
+    });
+  });
+
+  it('accorde le rôle owner aux co-organisateurs sélectionnés', async () => {
+    jest.spyOn(users, 'searchUsers').mockResolvedValue({
+      ok: true,
+      value: [{ id: 'u-2', email: 'boss@linagora.com', displayName: 'Boss' }],
+    });
+    jest.spyOn(rooms, 'createRoom').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-9', slug: 'revue', name: 'Revue', accessLevel: 'public' },
+    });
+    const grant = jest
+      .spyOn(rooms, 'grantRoomAccess')
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Revue');
+    await fireEvent.changeText(screen.getByTestId('co-owner-input'), 'boss@linagora.com');
+    await fireEvent(screen.getByTestId('co-owner-input'), 'submitEditing');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('co-owner-candidate')).toBeTruthy();
+    });
+    await fireEvent.press(screen.getByTestId('co-owner-candidate'));
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(grant).toHaveBeenCalledWith(expect.anything(), 'r-9', 'u-2', 'owner');
+    });
+  });
+});

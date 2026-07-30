@@ -1,0 +1,139 @@
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Button, HelperText, RadioButton, Text, TextInput } from 'react-native-paper';
+
+import { createRoom, grantRoomAccess } from 'src/api/rooms';
+import { searchUsers, type Me } from 'src/api/users';
+import { getActiveAccount } from 'src/auth/accounts';
+import type { AccessLevel } from 'src/call/types';
+import { tokens } from 'src/ui/tokens';
+
+const styles = StyleSheet.create({
+  root: { padding: tokens.spacing.md, gap: tokens.spacing.md },
+  option: { gap: tokens.spacing.xs },
+});
+
+const ACCESS_LEVELS = ['public', 'trusted', 'restricted'] as const;
+
+// Chaque niveau est énoncé par sa conséquence, jamais par son seul nom : « trusted »
+// ne dit pas à l'organisateur que ses invités externes resteront à la porte.
+const ACCESS_COPY: Readonly<Record<AccessLevel, string>> = {
+  public: 'room.accessPublic',
+  trusted: 'room.accessTrusted',
+  restricted: 'room.accessRestricted',
+};
+
+function isAccessLevel(value: string): value is AccessLevel {
+  return ACCESS_LEVELS.some((level) => level === value);
+}
+
+export function CreateRoomScreen(): React.ReactElement {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [accessLevel, setAccessLevel] = useState<AccessLevel>('public');
+  const [coOwnerQuery, setCoOwnerQuery] = useState('');
+  const [candidates, setCandidates] = useState<readonly Me[]>([]);
+  const [coOwners, setCoOwners] = useState<readonly Me[]>([]);
+
+  const handleAccessLevelChange = (value: string): void => {
+    if (isAccessLevel(value)) setAccessLevel(value);
+  };
+
+  const handleSearch = async (): Promise<void> => {
+    const account = getActiveAccount();
+    if (account === null || coOwnerQuery.trim().length === 0) return;
+    const result = await searchUsers(account, coOwnerQuery.trim());
+    setCandidates(result.ok ? result.value : []);
+  };
+
+  const handleAddCoOwner = (user: Me): void => {
+    setCoOwners((current) =>
+      current.some((selected) => selected.id === user.id) ? current : [...current, user],
+    );
+    setCandidates([]);
+    setCoOwnerQuery('');
+  };
+
+  const handleSubmit = async (): Promise<void> => {
+    const account = getActiveAccount();
+    if (account === null || name.trim().length === 0) return;
+
+    const result = await createRoom(account, { name: name.trim(), accessLevel });
+    if (!result.ok) return;
+
+    // perform_create n'attribue owner qu'au créateur. Sans ces appels, la
+    // personne pour qui la réunion est organisée n'a aucun droit de modération.
+    const roomId = result.value.id;
+    if (roomId !== null) {
+      for (const owner of coOwners) {
+        await grantRoomAccess(account, roomId, owner.id, 'owner');
+      }
+    }
+
+    router.replace(`/room/${result.value.slug}/prejoin`);
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.root}>
+      <TextInput
+        testID="room-name-input"
+        label={t('room.name')}
+        value={name}
+        onChangeText={setName}
+      />
+
+      <RadioButton.Group value={accessLevel} onValueChange={handleAccessLevelChange}>
+        {ACCESS_LEVELS.map((level) => (
+          <View key={level} style={styles.option}>
+            <RadioButton.Item
+              testID={`access-${level}`}
+              label={t(ACCESS_COPY[level])}
+              value={level}
+            />
+          </View>
+        ))}
+      </RadioButton.Group>
+
+      {accessLevel !== 'public' ? (
+        <HelperText type="info" testID="moderator-warning" visible>
+          {t('lobby.noModerator')}
+        </HelperText>
+      ) : null}
+
+      <Text variant="labelLarge">{t('room.coOwners')}</Text>
+      <TextInput
+        testID="co-owner-input"
+        label={t('room.coOwnerSearch')}
+        value={coOwnerQuery}
+        onChangeText={setCoOwnerQuery}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        onSubmitEditing={handleSearch}
+      />
+
+      {candidates.map((user) => (
+        <Button
+          key={user.id}
+          testID="co-owner-candidate"
+          mode="text"
+          onPress={() => handleAddCoOwner(user)}
+        >
+          {user.email}
+        </Button>
+      ))}
+
+      {coOwners.map((user) => (
+        <Text key={user.id} testID="co-owner-selected">
+          {user.email}
+        </Text>
+      ))}
+
+      <Button mode="contained" testID="submit-btn" onPress={handleSubmit}>
+        {t('home.create')}
+      </Button>
+    </ScrollView>
+  );
+}
