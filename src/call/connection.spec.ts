@@ -456,6 +456,19 @@ describe('createCallSession — événements périmés', () => {
     expect(session.getState()).toEqual({ status: 'connected' });
   });
 
+  it('ignore un Reconnected reçu après un raccrochage', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    await session.disconnect();
+    expect(session.getState()).toEqual({ status: 'idle' });
+
+    emit('reconnected');
+
+    // Un `Reconnected` tardif ne doit pas remettre en séance une session que
+    // l'utilisateur a raccrochée : l'écran quitté rebasculerait en appel.
+    expect(session.getState()).toEqual({ status: 'idle' });
+  });
+
   it('ignore un Reconnecting reçu après la fin de la séance', async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
