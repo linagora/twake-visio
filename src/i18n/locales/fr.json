@@ -20,6 +20,9 @@
   "lobby.noModerator": "Aucun modérateur n'est actuellement présent",
   "call.leave": "Quitter",
   "call.muted": "Micro coupé",
+  "call.reconnecting": "Reconnexion…",
+  "call.ended": "La réunion est terminée",
+  "call.switchCamera": "Changer de caméra",
   "error.network": "Connexion impossible",
   "error.unauthorized": "Session expirée, reconnectez-vous"
 }

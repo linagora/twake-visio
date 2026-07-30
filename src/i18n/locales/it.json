@@ -20,6 +20,9 @@
   "lobby.noModerator": "Nessun moderatore è attualmente presente",
   "call.leave": "Abbandona",
   "call.muted": "Microfono disattivato",
+  "call.reconnecting": "Riconnessione…",
+  "call.ended": "La riunione è terminata",
+  "call.switchCamera": "Cambia fotocamera",
   "error.network": "Impossibile connettersi",
   "error.unauthorized": "Sessione scaduta, accedi di nuovo"
 }
