@@ -15,5 +15,4 @@ export type InstanceConfig = {
 export type InstanceError = 'unreachable' | 'not-a-meet-instance' | 'oidc-undiscoverable';
 
 export type InstanceResult =
-  | { ok: true; value: InstanceConfig }
-  | { ok: false; error: InstanceError };
+  { ok: true; value: InstanceConfig } | { ok: false; error: InstanceError };

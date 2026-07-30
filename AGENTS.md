@@ -119,7 +119,7 @@ enforced by a scoped eslint block matching `app/**/*.ts(x)` and extends to nothi
 
 expo-router's `require.context` pulls **every** `.tsx` under `app/` into the bundle and
 excludes only `+api`, `+html` and `+middleware` — there is no test-file convention it
-honours. A spec colocated under `app/` therefore becomes a route *and* drags
+honours. A spec colocated under `app/` therefore becomes a route _and_ drags
 `@testing-library/react-native` into the production graph, where Metro dies on its
 `require("console")`. This is a build failure, not a warning.
 

@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 describe('fetchRoomAccess', () => {
-  it('extrait l\'URL et le jeton LiveKit', async () => {
+  it("extrait l'URL et le jeton LiveKit", async () => {
     jest.spyOn(client, 'authedFetch').mockResolvedValue({
       ok: true,
       value: {
@@ -40,7 +40,7 @@ describe('fetchRoomAccess', () => {
     expect(result.value.room.slug).toBe('reunion');
   });
 
-  it('signale la salle d\'attente quand le bloc livekit est absent', async () => {
+  it("signale la salle d'attente quand le bloc livekit est absent", async () => {
     jest.spyOn(client, 'authedFetch').mockResolvedValue({
       ok: true,
       value: { id: 'r-1', slug: 'reunion', access_level: 'restricted' },
@@ -53,7 +53,7 @@ describe('fetchRoomAccess', () => {
 });
 
 describe('createRoom', () => {
-  it('transmet le nom et le niveau d\'accès choisis', async () => {
+  it("transmet le nom et le niveau d'accès choisis", async () => {
     // spyOn conserve la signature d'authedFetch, donc calls[0][2] est typé
     // sans générique supplémentaire, contrairement à un jest.fn() nu.
     const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({

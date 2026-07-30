@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 describe('getAccessToken', () => {
-  it('renvoie le jeton stocké tant qu\'il n\'est pas expiré', async () => {
+  it("renvoie le jeton stocké tant qu'il n'est pas expiré", async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue({
       accessToken: 'valid',
       refreshToken: 'rt',
@@ -53,7 +53,7 @@ describe('getAccessToken', () => {
     expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
   });
 
-  it('renvoie null quand aucun jeton n\'est stocké', async () => {
+  it("renvoie null quand aucun jeton n'est stocké", async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue(null);
     expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({
       ok: false,
@@ -63,7 +63,7 @@ describe('getAccessToken', () => {
 });
 
 describe('forceRefresh — rafraîchissement en vol unique', () => {
-  it('ne déclenche qu\'un seul appel réseau pour trois demandes concurrentes', async () => {
+  it("ne déclenche qu'un seul appel réseau pour trois demandes concurrentes", async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue({
       accessToken: 'old',
       refreshToken: 'rt',
@@ -129,7 +129,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     );
   });
 
-  it('ne lance qu\'un rafraîchissement même si la lecture du stockage est lente', async () => {
+  it("ne lance qu'un rafraîchissement même si la lecture du stockage est lente", async () => {
     // Le test précédent ne suffit pas : avec un loadTokens résolu
     // immédiatement, les trois appelants sont traités en FIFO dans le même lot
     // de microtâches, et le premier a fini sa séquence synchrone avant que le
@@ -171,7 +171,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('libère le verrou après un rejet, pour qu\'une reconnexion reste possible', async () => {
+  it("libère le verrou après un rejet, pour qu'une reconnexion reste possible", async () => {
     // Le test suivant couvre un refus typé du SSO, qui est une résolution.
     // Celui-ci couvre un vrai rejet — saveTokens n'entoure pas setItemAsync
     // d'un try/catch, donc une écriture Keychain refusée en est un. Un nettoyage
@@ -238,9 +238,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
       idToken: null,
       expiresAt: Date.now() - 1_000,
     });
-    jest
-      .spyOn(oidc, 'refreshTokens')
-      .mockResolvedValue({ ok: false, error: 'invalid_grant' });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'invalid_grant' });
 
     expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
     expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);

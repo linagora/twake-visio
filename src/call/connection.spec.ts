@@ -133,7 +133,7 @@ describe('runtime WebRTC', () => {
 });
 
 describe('createCallSession — état initial', () => {
-  it('démarre à l\'état idle', () => {
+  it("démarre à l'état idle", () => {
     expect(createCallSession().getState()).toEqual({ status: 'idle' });
   });
 
@@ -179,7 +179,7 @@ describe('createCallSession — établissement', () => {
     expect(seen).toEqual(['connecting', 'disconnected']);
   });
 
-  it('rapporte un motif lisible quand le SDK rejette autre chose qu\'une Error', async () => {
+  it("rapporte un motif lisible quand le SDK rejette autre chose qu'une Error", async () => {
     mockConnect.mockRejectedValue('jeton expiré');
     const session = createCallSession();
 
@@ -203,7 +203,7 @@ describe('createCallSession — établissement', () => {
 });
 
 describe('createCallSession — verrou de concurrence', () => {
-  it('n\'ouvre qu\'un transport pour deux demandes simultanées', async () => {
+  it("n'ouvre qu'un transport pour deux demandes simultanées", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const seen = record(session);
@@ -220,7 +220,7 @@ describe('createCallSession — verrou de concurrence', () => {
     expect(seen).toEqual(['connecting', 'connected']);
   });
 
-  it('fait attendre la demande concurrente jusqu\'au dénouement de la première', async () => {
+  it("fait attendre la demande concurrente jusqu'au dénouement de la première", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const settled: string[] = [];
@@ -276,7 +276,7 @@ describe('createCallSession — mécanismes du verrou', () => {
     expect(session.getState()).toEqual({ status: 'connected' });
   });
 
-  it('ne laisse pas une tentative abandonnée relâcher le verrou d\'une autre', async () => {
+  it("ne laisse pas une tentative abandonnée relâcher le verrou d'une autre", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const abandoned = session.connect(ACCESS);
@@ -314,7 +314,7 @@ describe('createCallSession — mécanismes du verrou', () => {
     expect(seen).toEqual([]);
   });
 
-  it('permet de rejoindre après l\'annulation d\'une connexion en vol', async () => {
+  it("permet de rejoindre après l'annulation d'une connexion en vol", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const abandoned = session.connect(ACCESS);
@@ -335,7 +335,7 @@ describe('createCallSession — mécanismes du verrou', () => {
     expect(session.getState()).toEqual({ status: 'connected' });
   });
 
-  it('fige la liste des abonnés le temps d\'une notification', async () => {
+  it("fige la liste des abonnés le temps d'une notification", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const late: string[] = [];
@@ -486,7 +486,7 @@ describe('createCallSession — événements périmés', () => {
 });
 
 describe('createCallSession — coupure volontaire', () => {
-  it('publie idle sans faire clignoter d\'erreur, alors que le SDK émet Disconnected', async () => {
+  it("publie idle sans faire clignoter d'erreur, alors que le SDK émet Disconnected", async () => {
     // `Room.disconnect()` émet `RoomEvent.Disconnected`. Rejouer cet événement
     // est le seul moyen de prouver qu'un raccrochage volontaire ne passe pas
     // par un état d'erreur que l'UI afficherait.
@@ -503,7 +503,7 @@ describe('createCallSession — coupure volontaire', () => {
     expect(session.getState()).toEqual({ status: 'idle' });
   });
 
-  it('n\'est pas ressuscitée par la tentative de connexion qu\'elle a abandonnée', async () => {
+  it("n'est pas ressuscitée par la tentative de connexion qu'elle a abandonnée", async () => {
     const transport = pauseTransport();
     const session = createCallSession();
     const joining = session.connect(ACCESS);
@@ -638,7 +638,7 @@ describe('createCallSession — démontage', () => {
 });
 
 describe('createCallSession — un abonné qui lève', () => {
-  it('n\'empêche pas le transport de s\'ouvrir', async () => {
+  it("n'empêche pas le transport de s'ouvrir", async () => {
     const reported = silenceSubscriberErrors();
     const session = createCallSession();
     session.subscribe(() => {
@@ -657,7 +657,7 @@ describe('createCallSession — un abonné qui lève', () => {
     expect(reported).toHaveBeenCalled();
   });
 
-  it('ne fait pas rejeter connect(), contrat sur lequel les écrans s\'appuient', async () => {
+  it("ne fait pas rejeter connect(), contrat sur lequel les écrans s'appuient", async () => {
     silenceSubscriberErrors();
     const session = createCallSession();
     session.subscribe(() => {

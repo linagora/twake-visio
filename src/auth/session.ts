@@ -7,8 +7,7 @@ import type { InstanceConfig } from 'src/instance/types';
 // « le service est indisponible ». Un `string | null` les confondait, et un
 // SSO en panne se lisait « session expirée ».
 export type RefreshOutcome =
-  | { ok: true; token: string }
-  | { ok: false; reason: 'no-session' | 'refused' | 'unavailable' };
+  { ok: true; token: string } | { ok: false; reason: 'no-session' | 'refused' | 'unavailable' };
 
 // Marge avant expiration en deçà de laquelle on rafraîchit préventivement,
 // pour qu'une requête ne parte pas avec un jeton qui expire en vol.

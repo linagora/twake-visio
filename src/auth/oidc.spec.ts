@@ -31,7 +31,7 @@ describe('buildAuthorizeUrl', () => {
 });
 
 describe('exchangeCode', () => {
-  it('n\'envoie aucun client_secret', async () => {
+  it("n'envoie aucun client_secret", async () => {
     const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
       async () =>
         new Response(
@@ -66,7 +66,7 @@ describe('exchangeCode', () => {
 });
 
 describe('refreshTokens', () => {
-  it('conserve l\'ancien refresh_token quand le serveur n\'en renvoie pas', async () => {
+  it("conserve l'ancien refresh_token quand le serveur n'en renvoie pas", async () => {
     globalThis.fetch = jest.fn(
       async () =>
         new Response(JSON.stringify({ access_token: 'at2', expires_in: 3600 }), {

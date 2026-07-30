@@ -28,12 +28,10 @@ describe('signIn', () => {
     // le refléter tel quel dans l'URL de retour, exactement comme le ferait le
     // serveur d'autorisation, plutôt que de figer une valeur qui ne
     // correspondrait jamais à celle réellement envoyée.
-    const open = jest
-      .spyOn(webBrowser, 'openAuthSessionAsync')
-      .mockImplementation(async (url) => {
-        const state = new URL(url).searchParams.get('state');
-        return { type: 'success', url: `twakevisio://callback?code=abc&state=${state}` } as never;
-      });
+    const open = jest.spyOn(webBrowser, 'openAuthSessionAsync').mockImplementation(async (url) => {
+      const state = new URL(url).searchParams.get('state');
+      return { type: 'success', url: `twakevisio://callback?code=abc&state=${state}` } as never;
+    });
     jest.spyOn(oidc, 'exchangeCode').mockResolvedValue({
       ok: true,
       value: { accessToken: 'at', refreshToken: 'rt', idToken: null, expiresAt: Date.now() + 1000 },
@@ -62,10 +60,8 @@ describe('signIn', () => {
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it('remonte l\'annulation utilisateur sans erreur bruyante', async () => {
-    jest
-      .spyOn(webBrowser, 'openAuthSessionAsync')
-      .mockResolvedValue({ type: 'cancel' } as never);
+  it("remonte l'annulation utilisateur sans erreur bruyante", async () => {
+    jest.spyOn(webBrowser, 'openAuthSessionAsync').mockResolvedValue({ type: 'cancel' } as never);
 
     const result = await signIn('https://meet.linagora.com');
 

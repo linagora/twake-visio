@@ -54,7 +54,7 @@ describe('authedFetch', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('ne rejoue qu\'une seule fois, même si le 401 persiste', async () => {
+  it("ne rejoue qu'une seule fois, même si le 401 persiste", async () => {
     // Sans borne, un 401 persistant accompagné d'un rafraîchissement qui
     // réussit boucle indéfiniment et martèle le SSO. Aucun autre test ne
     // distingue « rejoue une fois » de « rejoue sans fin » : chacun résout au
@@ -75,9 +75,7 @@ describe('authedFetch', () => {
 
   it('rend unauthorized quand le rafraîchissement échoue', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
-    jest
-      .spyOn(session, 'forceRefresh')
-      .mockResolvedValue({ ok: false, reason: 'refused' });
+    jest.spyOn(session, 'forceRefresh').mockResolvedValue({ ok: false, reason: 'refused' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 401 }),
     ) as unknown as typeof fetch;
@@ -91,12 +89,8 @@ describe('authedFetch', () => {
     // Même panne, deux messages possibles selon l'endroit où elle frappe. Si le
     // rafraîchissement échoue parce que le SSO est tombé, envoyer l'utilisateur
     // se reconnecter est inutile : le serveur ne peut pas l'authentifier.
-    jest
-      .spyOn(session, 'getAccessToken')
-      .mockResolvedValue({ ok: true, token: 'stale' });
-    jest
-      .spyOn(session, 'forceRefresh')
-      .mockResolvedValue({ ok: false, reason: 'unavailable' });
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    jest.spyOn(session, 'forceRefresh').mockResolvedValue({ ok: false, reason: 'unavailable' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 401 }),
     ) as unknown as typeof fetch;

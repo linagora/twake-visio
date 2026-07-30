@@ -33,14 +33,14 @@ beforeEach(() => {
 });
 
 describe('setMicrophoneEnabled', () => {
-  it('transmet l\'activation au participant local', async () => {
+  it("transmet l'activation au participant local", async () => {
     await setMicrophoneEnabled(roomWithCamera(), false);
     expect(mockSetMicrophoneEnabled).toHaveBeenCalledWith(false);
   });
 });
 
 describe('setCameraEnabled', () => {
-  it('transmet l\'activation au participant local', async () => {
+  it("transmet l'activation au participant local", async () => {
     await setCameraEnabled(roomWithCamera(), true);
     expect(mockSetCameraEnabled).toHaveBeenCalledWith(true);
   });
@@ -61,7 +61,7 @@ describe('switchCamera', () => {
     expect(facing).toBe('user');
   });
 
-  it('ignore le partage d\'écran plutôt que de le redémarrer en caméra', async () => {
+  it("ignore le partage d'écran plutôt que de le redémarrer en caméra", async () => {
     // Un filtre sur `kind === 'video'` attraperait la piste de partage
     // d'écran, et lui appliquer une contrainte de face remplacerait l'écran
     // partagé par le visage de la personne devant tout le monde.
@@ -73,14 +73,14 @@ describe('switchCamera', () => {
     expect(facing).toBe('user');
   });
 
-  it('conserve la face courante quand aucune caméra n\'est publiée', async () => {
+  it("conserve la face courante quand aucune caméra n'est publiée", async () => {
     const facing = await switchCamera(fakeRoom({}), 'user');
 
     expect(mockRestartTrack).not.toHaveBeenCalled();
     expect(facing).toBe('user');
   });
 
-  it('conserve la face courante quand la publication n\'a pas encore de piste', async () => {
+  it("conserve la face courante quand la publication n'a pas encore de piste", async () => {
     const facing = await switchCamera(fakeRoom({ camera: {} }), 'user');
 
     expect(mockRestartTrack).not.toHaveBeenCalled();

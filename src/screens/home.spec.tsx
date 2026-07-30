@@ -45,9 +45,7 @@ describe('HomeScreen', () => {
 
   it("n'affiche aucune liste quand l'API échoue", async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
-    jest
-      .spyOn(rooms, 'fetchMyRooms')
-      .mockResolvedValue({ ok: false, error: { kind: 'network' } });
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
     await render(<HomeScreen />);
 
@@ -61,7 +59,7 @@ describe('HomeScreen', () => {
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
     await render(<HomeScreen />);
-    await fireEvent.changeText(screen.getByTestId('join-code-input'),'  point-hebdo  ');
+    await fireEvent.changeText(screen.getByTestId('join-code-input'), '  point-hebdo  ');
     await fireEvent.press(screen.getByTestId('join-btn'));
 
     expect(mockPush).toHaveBeenCalledWith('/room/point-hebdo/prejoin');
@@ -72,7 +70,7 @@ describe('HomeScreen', () => {
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
     await render(<HomeScreen />);
-    await fireEvent.changeText(screen.getByTestId('join-code-input'),'   ');
+    await fireEvent.changeText(screen.getByTestId('join-code-input'), '   ');
     await fireEvent.press(screen.getByTestId('join-btn'));
 
     expect(mockPush).not.toHaveBeenCalled();

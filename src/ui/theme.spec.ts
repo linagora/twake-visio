@@ -21,7 +21,7 @@ function computeContrast(a: string, b: string): number {
 const AA_NORMAL_TEXT = 4.5;
 
 describe('makeTheme', () => {
-  it('donne au thème clair un fond plus lumineux qu\'au thème sombre', () => {
+  it("donne au thème clair un fond plus lumineux qu'au thème sombre", () => {
     expect(computeLuminance(makeTheme('light').colors.background)).toBeGreaterThan(
       computeLuminance(makeTheme('dark').colors.background),
     );
@@ -38,7 +38,7 @@ describe('makeTheme', () => {
   );
 
   it.each(['light', 'dark'] as const)(
-    'respecte le contraste AA de la couleur d\'erreur sur le fond en %s',
+    "respecte le contraste AA de la couleur d'erreur sur le fond en %s",
     (scheme) => {
       const { colors } = makeTheme(scheme);
       expect(computeContrast(colors.error, colors.background)).toBeGreaterThanOrEqual(

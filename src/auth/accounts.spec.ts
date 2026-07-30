@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 describe('makeAccountId', () => {
-  it('compose l\'identité depuis l\'issuer et le sujet', () => {
+  it("compose l'identité depuis l'issuer et le sujet", () => {
     expect(makeAccountId('https://sso.linagora.com', 'u-1')).toBe(
       'https%3A%2F%2Fsso.linagora.com|u-1',
     );
@@ -115,7 +115,7 @@ describe('registre de comptes', () => {
     expect(getActiveAccount()?.id).toBe(first.id);
   });
 
-  it('promeut un autre compte quand l\'actif est retiré', () => {
+  it("promeut un autre compte quand l'actif est retiré", () => {
     const first = addAccount({
       id: makeAccountId(CONFIG.issuer, 'u-1'),
       instance: CONFIG,

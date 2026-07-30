@@ -70,12 +70,12 @@ describe('saveTokens', () => {
 });
 
 describe('loadTokens', () => {
-  it('restitue à l\'identique ce que saveTokens a écrit', async () => {
+  it("restitue à l'identique ce que saveTokens a écrit", async () => {
     jest.mocked(getItemAsync).mockResolvedValueOnce(JSON.stringify(TOKENS));
     expect(await loadTokens(ACCOUNT)).toEqual(TOKENS);
   });
 
-  it('rend null quand rien n\'est stocké', async () => {
+  it("rend null quand rien n'est stocké", async () => {
     jest.mocked(getItemAsync).mockResolvedValueOnce(null);
     expect(await loadTokens(ACCOUNT)).toBe(null);
   });

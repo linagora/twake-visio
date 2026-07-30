@@ -74,7 +74,7 @@ describe('LobbyScreen', () => {
     expect(screen.queryByTestId('lobby-loading')).toBe(null);
   });
 
-  it("ne présente pas une panne réseau comme une absence de modérateur", async () => {
+  it('ne présente pas une panne réseau comme une absence de modérateur', async () => {
     jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
     await render(<LobbyScreen />);
@@ -86,7 +86,7 @@ describe('LobbyScreen', () => {
     expect(screen.queryByTestId('lobby-loading')).toBe(null);
   });
 
-  it("ne présente pas un rejet du serveur comme une absence de modérateur", async () => {
+  it('ne présente pas un rejet du serveur comme une absence de modérateur', async () => {
     jest
       .spyOn(rooms, 'requestEntry')
       .mockResolvedValue({ ok: false, error: { kind: 'server', status: 502 } });

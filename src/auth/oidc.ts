@@ -15,9 +15,7 @@ export type TokenSet = {
 // l'authentifier.
 export type TokenError = 'invalid_grant' | 'server' | 'network' | 'malformed_response';
 
-export type TokenResult =
-  | { ok: true; value: TokenSet }
-  | { ok: false; error: TokenError };
+export type TokenResult = { ok: true; value: TokenSet } | { ok: false; error: TokenError };
 
 type RawTokenResponse = {
   access_token?: string;

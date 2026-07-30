@@ -2,12 +2,7 @@ import { getRandomBytes } from 'expo-crypto';
 import { openAuthSessionAsync } from 'expo-web-browser';
 
 import { fetchMe } from 'src/api/users';
-import {
-  addAccount,
-  makeAccountId,
-  setActiveAccount,
-  type Account,
-} from 'src/auth/accounts';
+import { addAccount, makeAccountId, setActiveAccount, type Account } from 'src/auth/accounts';
 import { buildAuthorizeUrl, exchangeCode } from 'src/auth/oidc';
 import { createPkcePair } from 'src/auth/pkce';
 import { saveTokens } from 'src/auth/storage';
@@ -31,10 +26,7 @@ function makeState(): string {
     .join('');
 }
 
-export async function signIn(
-  serverUrl: string,
-  loginHint?: string,
-): Promise<LoginResult> {
+export async function signIn(serverUrl: string, loginHint?: string): Promise<LoginResult> {
   const instance = await fetchInstanceConfig(serverUrl);
   if (!instance.ok) return { ok: false, error: instance.error };
 

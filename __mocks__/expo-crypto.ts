@@ -69,7 +69,7 @@ export function getRandomBytes(byteCount: number): Uint8Array {
 export async function digestStringAsync(
   algorithm: DigestAlgorithm,
   data: string,
-  options: CryptoDigestOptions = { encoding: CryptoEncoding.HEX }
+  options: CryptoDigestOptions = { encoding: CryptoEncoding.HEX },
 ): Promise<string> {
   const nodeAlgorithm = NODE_ALGORITHM_BY_DIGEST_ALGORITHM[algorithm];
   return createHash(nodeAlgorithm).update(data, 'utf8').digest(options.encoding);

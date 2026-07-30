@@ -30,7 +30,7 @@ function findCall(fragment: string): FetchCall | undefined {
 }
 
 describe('fetchInstanceConfig', () => {
-  it('chemin A — lit l\'issuer depuis /config/', async () => {
+  it("chemin A — lit l'issuer depuis /config/", async () => {
     mockFetch(() => new Response(JSON.stringify(CONFIG_WITH_OIDC), { status: 200 }));
 
     const result = await fetchInstanceConfig('https://meet.linagora.com');
@@ -42,7 +42,7 @@ describe('fetchInstanceConfig', () => {
     expect(result.value.livekitUrl).toBe('https://livekit.linagora.com');
   });
 
-  it('chemin B — déduit l\'issuer de la redirection quand oidc manque', async () => {
+  it("chemin B — déduit l'issuer de la redirection quand oidc manque", async () => {
     mockFetch((url) => {
       if (url.includes('/config/')) {
         return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
@@ -80,7 +80,7 @@ describe('fetchInstanceConfig', () => {
     expect(result).toEqual({ ok: false, error: 'oidc-undiscoverable' });
   });
 
-  it('signale une instance qui n\'est pas un serveur meet', async () => {
+  it("signale une instance qui n'est pas un serveur meet", async () => {
     mockFetch(() => new Response('<html></html>', { status: 200 }));
 
     const result = await fetchInstanceConfig('https://example.org');
@@ -98,7 +98,7 @@ describe('fetchInstanceConfig', () => {
     expect(result).toEqual({ ok: false, error: 'unreachable' });
   });
 
-  it('signale unreachable quand c\'est le repli lui-même qui échoue', async () => {
+  it("signale unreachable quand c'est le repli lui-même qui échoue", async () => {
     // Distinct du test précédent : /config/ répond, donc le chemin A aboutit
     // et c'est bien /authenticate/ qui jette. Sans ce cas, la panne du repli
     // pourrait être repliée sur oidc-undiscoverable sans qu'aucun test ne bronche.
