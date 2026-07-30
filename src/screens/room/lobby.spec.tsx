@@ -39,9 +39,10 @@ beforeEach(() => {
 
 describe('LobbyScreen', () => {
   it("annonce l'attente après une demande acceptée par le serveur", async () => {
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
 
     await render(<LobbyScreen />);
 
@@ -130,9 +131,10 @@ describe('LobbyScreen', () => {
 
   it("n'interroge pas le serveur sans compte actif et le dit", async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
 
     await render(<LobbyScreen />);
 
@@ -168,9 +170,10 @@ describe("LobbyScreen, chemin d'admission", () => {
   }
 
   it('entre en séance dès que le salon délivre un jeton', async () => {
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
     const access = jest
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
@@ -209,9 +212,10 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   it("ne sort pas de la file d'attente sur une coupure passagère", async () => {
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
     const access = jest
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'network' } });
@@ -232,9 +236,10 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   it("invite à se reconnecter si la session expire pendant l'attente", async () => {
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
     jest
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
@@ -249,9 +254,10 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   it("arrête de scruter une fois l'écran démonté", async () => {
-    jest
-      .spyOn(rooms, 'requestEntry')
-      .mockResolvedValue({ ok: true, value: { participantId: 'p-1' } });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
     const access = jest
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });

@@ -7,6 +7,7 @@ const ACCESS: RoomAccess = {
   room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
   livekitUrl: 'wss://livekit.linagora.com',
   token: 'lk-token',
+  isAdministrable: false,
 };
 
 // Les noms doivent commencer par `mock` : babel-plugin-jest-hoist remonte

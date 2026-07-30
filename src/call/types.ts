@@ -11,6 +11,12 @@ export type RoomAccess = {
   readonly room: Room;
   readonly livekitUrl: string;
   readonly token: string;
+  // Exposé par le sérialiseur de détail seulement, jamais par celui de liste :
+  // il ne peut donc pas vivre sur `Room`, où `fetchMyRooms` le rendrait
+  // toujours faux. Vaut exactement `is_administrator_or_owner` côté serveur,
+  // la même règle que la permission `HasPrivilegesOnRoom` qu'exigent les
+  // endpoints de modération.
+  readonly isAdministrable: boolean;
 };
 
 export type CallState =
