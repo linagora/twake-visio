@@ -1,3 +1,5 @@
+import { registerGlobals } from '@livekit/react-native';
+
 import { createCallSession, type CallSession } from 'src/call/connection';
 import type { RoomAccess } from 'src/call/types';
 
@@ -114,6 +116,20 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+describe('runtime WebRTC', () => {
+  it('installe les globales WebRTC au chargement du module, avant toute Room', () => {
+    // `livekit-client` s'appuie sur RTCPeerConnection et navigator.mediaDevices,
+    // que React Native ne fournit pas. Sans cet appel, `room.connect()` casse à
+    // l'exécution — et rien dans le dépôt ne le réclamait.
+    //
+    // L'assertion porte sur le chargement du module, pas sur `createCallSession`:
+    // les écrans construisent la session dans un `useMemo`, c'est-à-dire pendant
+    // le premier rendu, avant tout `useEffect`. Un appel placé dans le bootstrap
+    // applicatif arriverait donc après la première `new Room()`.
+    expect(registerGlobals).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('createCallSession — état initial', () => {

@@ -1,6 +1,22 @@
+import { registerGlobals } from '@livekit/react-native';
 import { Room, RoomEvent } from 'livekit-client';
 
 import type { CallState, RoomAccess } from 'src/call/types';
+
+// `livekit-client` s'appuie sur les objets WebRTC globaux — RTCPeerConnection,
+// navigator.mediaDevices — que React Native ne fournit pas. `registerGlobals()`
+// les installe, et doit avoir tourné avant qu'une `Room` ne serve.
+//
+// L'appel est ici, au chargement du module, plutôt qu'au démarrage de
+// l'application. `createCallSession()` construit une `Room` immédiatement et
+// les écrans créent la session dans un `useMemo` — donc pendant le premier
+// rendu, avant tout `useEffect`. Un appel placé dans le bootstrap serait
+// correct mais fragile : il resterait à la merci d'un ordre d'initialisation,
+// et rien ne le rattacherait à la seule ligne qui en dépend. Ici, la dépendance
+// est structurelle — on ne peut pas obtenir de session sans que les globales
+// soient en place — et `app/_layout.tsx`, fichier partagé déjà fusionné dans
+// `feat/socle`, n'a pas à être touché.
+registerGlobals();
 
 export type CallListener = (state: CallState) => void;
 
