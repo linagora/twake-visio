@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import type { ParticipantView } from 'src/call/layout';
+import { tokens } from 'src/ui/tokens';
 import { ParticipantsPanel } from './participantsPanel';
 
 jest.mock('react-i18next', () => ({
@@ -186,5 +187,64 @@ describe('ParticipantsPanel', () => {
     );
 
     expect(screen.getByText('Ada').props.numberOfLines).toBe(2);
+  });
+
+  // C1 : le panneau remplace la scène dans la même `View` sombre que
+  // `call.tsx` pose (`backgroundDark`, dans les deux schémas), mais ni le
+  // titre ni le nom de chaque ligne ne posaient de couleur de texte avant ce
+  // correctif — ils retombaient sur `theme.colors.onSurface`, qui suit le
+  // schéma système. En clair, #1A1A1A sur #0B0B0C : 1,13:1, largement sous
+  // les 4,5:1 exigés par WCAG AA. RNTL ne rend pas les couleurs ; ces tests
+  // ne peuvent garder que le style est bien posé, pas qu'il rend lisible.
+  it('pose la couleur claire du titre du panneau', async () => {
+    await render(
+      <ParticipantsPanel
+        participants={[]}
+        canModerate={false}
+        onMute={jest.fn()}
+        onRemove={jest.fn()}
+        onRole={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('participants.title')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+
+  it('pose la couleur claire du nom de chaque ligne', async () => {
+    await render(
+      <ParticipantsPanel
+        participants={[view('PA_1', 'Ada')]}
+        canModerate={false}
+        onMute={jest.fn()}
+        onRemove={jest.fn()}
+        onRole={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Ada')).toHaveStyle({ color: tokens.color.textDark });
+  });
+
+  it('pose la couleur claire du texte des trois boutons de modération', async () => {
+    await render(
+      <ParticipantsPanel
+        participants={[view('PA_1', 'Ada')]}
+        canModerate
+        onMute={jest.fn()}
+        onRemove={jest.fn()}
+        onRole={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('participant-mute-text')).toHaveStyle({
+      color: tokens.color.primaryDark,
+    });
+    expect(screen.getByTestId('participant-remove-text')).toHaveStyle({
+      color: tokens.color.primaryDark,
+    });
+    expect(screen.getByTestId('participant-promote-text')).toHaveStyle({
+      color: tokens.color.primaryDark,
+    });
   });
 });

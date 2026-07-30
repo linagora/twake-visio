@@ -13,6 +13,11 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.surfaceDark,
   },
   actions: { flexDirection: 'row', gap: tokens.spacing.sm },
+  // `surfaceDark` est un littéral, jamais choisi par `makeTheme` : le bandeau
+  // est sombre dans les deux schémas. Sans cette couleur explicite, le texte
+  // retombe sur `theme.colors.onSurface`, qui suit le schéma système — noir
+  // sur noir dès qu'un appareil est en clair.
+  text: { color: tokens.color.textDark },
 });
 
 export type WaitingBannerProps = {
@@ -36,9 +41,13 @@ export function WaitingBanner({
 
   return (
     <View testID="waiting-banner" style={styles.root}>
-      <Text variant="titleMedium">{t('waiting.knocking', { name: participant.username })}</Text>
+      <Text variant="titleMedium" style={styles.text}>
+        {t('waiting.knocking', { name: participant.username })}
+      </Text>
       {remaining > 0 ? (
-        <Text testID="waiting-others">{t('waiting.others', { count: remaining })}</Text>
+        <Text testID="waiting-others" style={styles.text}>
+          {t('waiting.others', { count: remaining })}
+        </Text>
       ) : null}
       <View style={styles.actions}>
         <Button
@@ -51,6 +60,15 @@ export function WaitingBanner({
         <Button
           mode="outlined"
           testID="waiting-refuse"
+          // `mode="outlined"`, contrairement à `mode="contained"` ci-dessus,
+          // n'a pas de fond propre : son texte retombe par défaut sur
+          // `theme.colors.primary`, qui suit le schéma système comme le reste
+          // — #0057B8 sur `surfaceDark` tombe à 2,7:1, sous le seuil AA, dans
+          // la même famille de bogue que C1. Non listé dans la table de
+          // contrastes mesurés, mais vérifié dans la source de `Button`
+          // (`getButtonTextColor`) : « outlined » et « text » partagent le
+          // même repli.
+          textColor={tokens.color.primaryDark}
           onPress={() => onAnswer(participant.id, false)}
         >
           {t('waiting.refuse')}

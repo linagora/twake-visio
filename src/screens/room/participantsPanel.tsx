@@ -10,6 +10,12 @@ import { tokens } from 'src/ui/tokens';
 const styles = StyleSheet.create({
   root: { flex: 1, padding: tokens.spacing.md, gap: tokens.spacing.sm },
   actions: { flexDirection: 'row', gap: tokens.spacing.xs },
+  // Le panneau remplace la scène dans la même `View` sombre que `call.tsx`
+  // pose (`backgroundDark`, dans les deux schémas) : sans cette couleur
+  // explicite, le titre et le nom de chaque ligne retombent sur
+  // `theme.colors.onSurface`, qui suit le schéma système — noir sur noir dès
+  // qu'un appareil est en clair.
+  text: { color: tokens.color.textDark },
 });
 
 type RowProps = {
@@ -39,6 +45,7 @@ function ParticipantRow({
     <List.Item
       testID="participant-row"
       title={label}
+      titleStyle={styles.text}
       titleNumberOfLines={2}
       right={() =>
         // Sans droit de modérer, le serveur refuserait de toute façon :
@@ -50,6 +57,11 @@ function ParticipantRow({
             <Button
               testID="participant-mute"
               mode="text"
+              // `mode="text"` n'a pas de fond propre : son texte retombe par
+              // défaut sur `theme.colors.primary`, qui suit le schéma
+              // système — #0057B8 sur `backgroundDark` tombe à 2,86:1, sous
+              // le seuil AA. `primaryDark` (#4D9AFF) le fait passer.
+              textColor={tokens.color.primaryDark}
               onPress={() => onMute(participant.identity)}
             >
               {t('participants.mute')}
@@ -57,6 +69,7 @@ function ParticipantRow({
             <Button
               testID="participant-remove"
               mode="text"
+              textColor={tokens.color.primaryDark}
               onPress={() => onRemove(participant.identity)}
             >
               {t('participants.remove')}
@@ -64,6 +77,7 @@ function ParticipantRow({
             <Button
               testID="participant-promote"
               mode="text"
+              textColor={tokens.color.primaryDark}
               onPress={() => onRole(participant.identity, 'administrator')}
             >
               {t('participants.promote')}
@@ -99,7 +113,9 @@ export function ParticipantsPanel({
 
   return (
     <View style={styles.root}>
-      <Text variant="titleMedium">{t('participants.title')}</Text>
+      <Text variant="titleMedium" style={styles.text}>
+        {t('participants.title')}
+      </Text>
       <FlatList
         data={[...participants]}
         keyExtractor={(participant) => participant.identity}
