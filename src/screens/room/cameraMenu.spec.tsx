@@ -7,8 +7,18 @@ import type { CameraChoice } from 'src/call/devices';
 import { tokens } from 'src/ui/tokens';
 import { CameraMenu } from './cameraMenu';
 
+// I2 : `t: (key) => key` ignore son second argument. Il ne peut donc pas
+// distinguer `t('call.cameraNumbered', { name: t(camera.nameKey), index })`
+// de la même clé appelée avec `name: camera.deviceId` — l'utilisateur lirait
+// alors un identifiant Camera2 brut à la place du nom de sa caméra, sans
+// qu'aucun test ne rougisse. `mockT` interpole réellement, comme
+// `waitingBanner.spec.tsx` pour cette même raison.
+const mockT = jest.fn((key: string, options?: { name?: string; index?: number }) =>
+  options !== undefined ? `${key}:${options.name}:${options.index}` : key,
+);
+
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: mockT }),
 }));
 
 // `Menu` monte son contenu dans un `Portal`, qui jette sans `PaperProvider`
@@ -230,9 +240,12 @@ describe('CameraMenu', () => {
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     await waitFor(() => expect(screen.getByTestId('camera-option-cam-back-2')).toBeTruthy());
-    // Le `t` bouchonné rend la clé : la composition passe par
-    // `call.cameraNumbered`, pas par une concaténation en JavaScript.
-    expect(screen.getAllByText('call.cameraNumbered')).toHaveLength(2);
+    // `mockT` interpole réellement : la composition passe par
+    // `call.cameraNumbered`, jamais par une concaténation en JavaScript, et
+    // le nom vient de `nameKey` (résolu par `t`), l'index de `ordinal` — pas
+    // l'inverse, et pas du `deviceId` brut.
+    expect(screen.getByText('call.cameraNumbered:call.cameraBack:1')).toBeTruthy();
+    expect(screen.getByText('call.cameraNumbered:call.cameraBack:2')).toBeTruthy();
   });
 
   it("affiche le nom nu quand la face n'a qu'une caméra", async () => {
