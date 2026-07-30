@@ -86,7 +86,14 @@ describe('registre de comptes', () => {
     addAccount({ ...first, displayName: 'Ada Lovelace' });
 
     expect(getActiveAccount()?.id).toBe(second.id);
-    expect(listAccounts()).toHaveLength(2);
+
+    // La mise à jour se fait sur place : position conservée et enregistrement
+    // remplacé. Un filter+append passerait les deux assertions précédentes.
+    const listed = listAccounts();
+    expect(listed).toHaveLength(2);
+    expect(listed[0]?.id).toBe(first.id);
+    expect(listed[0]?.displayName).toBe('Ada Lovelace');
+    expect(listed[1]?.id).toBe(second.id);
   });
 
   it('bascule le compte actif', () => {

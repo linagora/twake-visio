@@ -34,6 +34,18 @@ describe('dérivation de clé', () => {
     expect(firstKey).not.toBe(secondKey);
   });
 
+  it('reste injective sur un point de code hors du plan de base', async () => {
+    // padStart impose un plancher : avec quatre chiffres, U+10000 et
+    // U+1000 suivi de « 0 » produisaient la même clé.
+    await saveTokens('a\u{10000}b', TOKENS);
+    await saveTokens('aက' + '0b', TOKENS);
+
+    const mock = jest.mocked(setItemAsync);
+    const [firstKey] = mock.mock.calls[0] ?? [];
+    const [secondKey] = mock.mock.calls[1] ?? [];
+    expect(firstKey).not.toBe(secondKey);
+  });
+
   it('emploie une seule et même clé pour écrire, lire et purger', async () => {
     await saveTokens(ACCOUNT, TOKENS);
     await loadTokens(ACCOUNT);
