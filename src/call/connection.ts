@@ -100,6 +100,20 @@ export function createCallSession(): CallSession {
   // Une session démontée est terminale : plus aucune commande n'a d'effet.
   let disposed = false;
 
+  // Ouvre une nouvelle ère et rend son numéro. **Seul endroit qui écrit
+  // `generation`** : c'est ce qui rend l'invariant indéformable plutôt que
+  // conventionnel. Périmer une ère sans relâcher le verrou laisserait la
+  // session définitivement non reconnectable, parce que le dénouement d'une
+  // tentative ne relâche que le verrou de sa propre ère — il ne rattraperait
+  // donc jamais celui-là. C'est arrivé : `onDisconnected` incrémentait
+  // `generation` seul, et une coupure serveur tombant entre la publication de
+  // `connected` et le relâchement du verrou bloquait la session pour de bon.
+  function openEra(): number {
+    generation += 1;
+    pending = null;
+    return generation;
+  }
+
   function setState(next: CallState): void {
     state = next;
     // Copie de la liste : un abonné qui se désabonne — ou en abonne un autre —
@@ -148,7 +162,7 @@ export function createCallSession(): CallSession {
     // La séance est finie : refermer l'ère. Sans cela un `Reconnecting` tardif
     // ferait repartir la machine de `disconnected` vers `reconnecting`, état
     // depuis lequel `connect()` est refusé — la session serait figée.
-    generation += 1;
+    openEra();
     setState({ status: 'disconnected', reason: 'closed' });
   }
 
@@ -189,8 +203,7 @@ export function createCallSession(): CallSession {
       return Promise.resolve();
     }
 
-    generation += 1;
-    const era = generation;
+    const era = openEra();
 
     // Le verrou est posé sur la promesse d'`attempt`, puis levé par un
     // `finally` attaché après coup. Un nettoyage écrit à l'intérieur d'`attempt`
@@ -213,8 +226,7 @@ export function createCallSession(): CallSession {
     // Ouvrir une dernière ère : ce qui est en vol ne publiera plus rien, et
     // les gestionnaires détachés ci-dessous ne pourraient de toute façon plus
     // être appelés.
-    generation += 1;
-    pending = null;
+    openEra();
 
     room.off(RoomEvent.Reconnecting, onReconnecting);
     room.off(RoomEvent.Reconnected, onReconnected);
@@ -236,9 +248,7 @@ export function createCallSession(): CallSession {
     // Périmer la tentative en vol et relâcher le verrou avant d'appeler le SDK :
     // `Room.disconnect()` interrompt lui-même la connexion en cours via son
     // AbortController, il n'y a donc pas de transport orphelin à attendre.
-    generation += 1;
-    const era = generation;
-    pending = null;
+    const era = openEra();
     try {
       // `Room.disconnect()` émet lui-même `RoomEvent.Disconnected`. La
       // nouvelle ère ouverte juste au-dessus l'orpheline, donc un raccrochage

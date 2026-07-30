@@ -430,6 +430,32 @@ describe('createCallSession — événements périmés', () => {
     expect(session.getState()).toEqual({ status: 'connected' });
   });
 
+  it('reste reconnectable quand le serveur coupe pendant la publication de connected', async () => {
+    const session = createCallSession();
+    let cut = false;
+    session.subscribe((state) => {
+      if (state.status !== 'connected' || cut) return;
+      cut = true;
+      // Le serveur coupe dans la fenêtre — deux sauts de microtâche — entre la
+      // publication de `connected` et le relâchement du verrou. `onDisconnected`
+      // ouvre alors une nouvelle ère, et le dénouement de la tentative ne
+      // relâche que le verrou de la sienne. Si l'ouverture d'ère ne relâchait
+      // pas aussi le verrou, il ne le serait jamais.
+      emit('disconnected');
+    });
+
+    await session.connect(ACCESS);
+    expect(session.getState()).toEqual({ status: 'disconnected', reason: 'closed' });
+
+    await session.connect(ACCESS);
+
+    // Sans le correctif : la promesse périmée est rendue telle quelle, plus
+    // aucun `room.connect` ne part, et la session n'est plus jamais
+    // reconnectable — le symptôme même que la garde de C2 devait supprimer.
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
   it('ignore un Reconnecting reçu après la fin de la séance', async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
