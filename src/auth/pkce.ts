@@ -26,10 +26,17 @@ function toUnreservedString(bytes: Uint8Array): string {
   return out;
 }
 
-export async function createPkcePair(): Promise<PkcePair> {
-  const verifier = toUnreservedString(getRandomBytes(VERIFIER_BYTES));
+// Exporté séparément pour être testable contre le vecteur officiel de la
+// RFC 7636 annexe B. Sans un verifier imposé de l'extérieur, aucun test ne peut
+// distinguer un digest correct d'un digest calculé sur la mauvaise entrée.
+export async function computeChallenge(verifier: string): Promise<string> {
   const digest = await digestStringAsync(CryptoDigestAlgorithm.SHA256, verifier, {
     encoding: CryptoEncoding.BASE64,
   });
-  return { verifier, challenge: toBase64Url(digest), method: 'S256' };
+  return toBase64Url(digest);
+}
+
+export async function createPkcePair(): Promise<PkcePair> {
+  const verifier = toUnreservedString(getRandomBytes(VERIFIER_BYTES));
+  return { verifier, challenge: await computeChallenge(verifier), method: 'S256' };
 }
