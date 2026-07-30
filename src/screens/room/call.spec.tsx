@@ -3,11 +3,51 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 import { Share } from 'react-native';
 
+import * as participants from 'src/api/participants';
 import * as rooms from 'src/api/rooms';
+import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
 import * as media from 'src/call/media';
-import type { CallState } from 'src/call/types';
+import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
 import { CallScreen } from './call';
+
+// `getAllByTestId` rend un tableau ; `noUncheckedIndexedAccess` refuse d'y
+// indexer sans preuve que l'élément existe. Même garde que dans
+// `participantsPanel.spec.tsx`.
+function nth<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`expected an item at index ${index}`);
+  return item;
+}
+
+// Un accès accordé, avec le niveau et le droit de modérer que le test choisit.
+// `r-1` est l'identifiant de salon repris par toutes les assertions portant
+// sur `roomId`, jamais confondu avec une identité LiveKit ou une UUID de
+// lobby : les trois valent des chaînes visiblement différentes dans ce fichier.
+function grantedAccess(accessLevel: AccessLevel, isAdministrable: boolean): ApiResult<RoomAccess> {
+  return {
+    ok: true,
+    value: {
+      room: { id: 'r-1', slug: 'reunion', name: 'r', accessLevel },
+      livekitUrl: 'wss://lk',
+      token: 'lk',
+      isAdministrable,
+    },
+  };
+}
+
+// Un participant distant minimal, du même contrat que `readParticipant` dans
+// `src/call/participants` attend d'un `Participant` LiveKit — même convention
+// que le `person()` de `useCallLayout.spec.ts`.
+function remoteParticipant(identity: string, name: string): unknown {
+  return {
+    identity,
+    name,
+    isLocal: false,
+    isSpeaking: false,
+    getTrackPublication: () => undefined,
+  };
+}
 
 // babel-plugin-jest-hoist lève l'appel jest.mock au-dessus des const du module :
 // seul un nom préfixé par `mock` peut être référencé depuis la factory. Et il ne
@@ -122,6 +162,9 @@ beforeEach(() => {
   mockListeners.clear();
   mockCallState = { status: 'connected' };
   mockCameraPublication = undefined;
+  // Un test de modération peut peupler la Room de participants distants ;
+  // sans ce nettoyage, ils survivraient au test suivant.
+  mockRoom.remoteParticipants.clear();
   jest.mocked(VideoTrack).mockClear();
 
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
@@ -363,5 +406,236 @@ describe('CallScreen, partage du lien', () => {
     // Un partage annulé est un geste ordinaire, pas une panne : la séance
     // continue.
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+  });
+});
+
+describe('CallScreen, salle d’attente', () => {
+  // La scrutation part d'un `setInterval` de cinq secondes : sans avancer le
+  // temps, `listWaitingParticipants` ne serait jamais appelé, garde ouverte ou
+  // pas, et ces tests ne distingueraient rien du tout. Portée à ce describe
+  // seul pour ne pas changer le comportement des horloges des autres tests.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function tick(): Promise<void> {
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+  }
+
+  it("n'interroge pas la file sur un salon public", async () => {
+    // Le serveur rend `[]` sur un salon public et 404 sur `enter` : interroger
+    // serait du bruit garanti, et l'écran de création propose `public` par
+    // défaut.
+    const list = jest.spyOn(participants, 'listWaitingParticipants');
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('public', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("n'interroge pas la file sans droit de modérer", async () => {
+    const list = jest.spyOn(participants, 'listWaitingParticipants');
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('interroge la file dès que les deux conditions sont réunies', async () => {
+    // La garde n'est pas testée que par ses refus : un `&&` mal câblé (par
+    // exemple un `||`, ou une des deux moitiés oubliée) peut aussi bloquer un
+    // cas qui devrait passer. Sans ce test, une garde figée à `false` rendrait
+    // les deux tests précédents vrais pour la mauvaise raison.
+    const list = jest
+      .spyOn(participants, 'listWaitingParticipants')
+      .mockResolvedValue({ ok: true, value: [] });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    expect(list).toHaveBeenCalledWith(ACCOUNT, 'r-1');
+  });
+
+  it('affiche la première personne en attente et annonce celles qui restent', async () => {
+    // Deux personnes, jamais une seule : avec une seule, `firstWaiting` et un
+    // repli codé en dur qui rendrait toujours la même personne seraient
+    // indiscernables.
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({
+      ok: true,
+      value: [
+        { id: 'lobby-1', username: 'Ada' },
+        { id: 'lobby-2', username: 'Bob' },
+      ],
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+    // Une deuxième personne en file : `remaining` doit le dire.
+    expect(screen.getByTestId('waiting-others')).toBeTruthy();
+  });
+
+  it("n'annonce personne d'autre pour une seule personne en attente", async () => {
+    // L'autre borne de `Math.max(waiting.length - 1, 0)` : sans elle, une
+    // formule qui ne soustrairait pas (par exemple `waiting.length` seul)
+    // passerait le test précédent tout en annonçant, à tort, une personne
+    // supplémentaire ici.
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({
+      ok: true,
+      value: [{ id: 'lobby-1', username: 'Ada' }],
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+    expect(screen.queryByTestId('waiting-others')).toBeNull();
+  });
+
+  it('admet la première personne en attente avec son UUID de lobby, jamais une autre valeur', async () => {
+    // `lobby-1`/`lobby-2` ne ressemblent ni à `r-1` (l'identifiant de salon)
+    // ni à `me` (l'identité LiveKit du participant local) : si l'écran envoyait
+    // l'un de ceux-là par erreur, l'assertion le distinguerait.
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({
+      ok: true,
+      value: [
+        { id: 'lobby-1', username: 'Ada' },
+        { id: 'lobby-2', username: 'Bob' },
+      ],
+    });
+    const answerEntrySpy = jest
+      .spyOn(participants, 'answerEntry')
+      .mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+    await waitFor(() => expect(screen.getByTestId('waiting-admit')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('waiting-admit'));
+
+    expect(answerEntrySpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'lobby-1', true);
+  });
+
+  it('refuse par le même mécanisme, sans inverser le sens du booléen', async () => {
+    // Admettre et refuser partent vers le même endpoint : inverser le booléen
+    // laisserait entrer qui on voulait écarter.
+    jest.spyOn(participants, 'listWaitingParticipants').mockResolvedValue({
+      ok: true,
+      value: [
+        { id: 'lobby-1', username: 'Ada' },
+        { id: 'lobby-2', username: 'Bob' },
+      ],
+    });
+    const answerEntrySpy = jest
+      .spyOn(participants, 'answerEntry')
+      .mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+    await waitFor(() => expect(screen.getByTestId('waiting-refuse')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('waiting-refuse'));
+
+    expect(answerEntrySpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'lobby-1', false);
+  });
+});
+
+describe('CallScreen, panneau des participants', () => {
+  it('ouvre et referme le panneau des participants depuis la barre de contrôle', async () => {
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+
+    await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
+    // Le panneau remplace la scène plutôt que de se poser par-dessus.
+    expect(screen.queryByTestId('active-speaker')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    expect(screen.queryByText('participants.title')).toBeNull();
+  });
+
+  it("mute par l'identité LiveKit de la ligne pressée, jamais par l'UUID de lobby", async () => {
+    // Deux personnes distantes, jamais une seule : avec une seule, on ne
+    // distinguerait pas « transmet l'identité reçue » de « ignore l'argument et
+    // agit toujours sur la même ». `bob-identity` ne ressemble ni à `r-1`
+    // (l'identifiant de salon) ni à une UUID de lobby.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    mockRoom.remoteParticipants.set('bob-identity', remoteParticipant('bob-identity', 'Bob'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    const muteSpy = jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getAllByTestId('participant-mute')).toHaveLength(2));
+
+    await fireEvent.press(nth(screen.getAllByTestId('participant-mute'), 1));
+
+    expect(muteSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
+  });
+
+  it('expulse et promeut par la même identité LiveKit', async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    const removeSpy = jest
+      .spyOn(participants, 'removeParticipant')
+      .mockResolvedValue({ ok: true, value: undefined });
+    const roleSpy = jest
+      .spyOn(participants, 'updateParticipantRole')
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-remove')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-remove'));
+    await fireEvent.press(screen.getByTestId('participant-promote'));
+
+    expect(removeSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'alice-identity');
+    expect(roleSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'alice-identity', 'administrator');
+  });
+
+  it("ne montre aucune action de modération sans droit d'administrer", async () => {
+    // Le `GRANTED` par défaut du `beforeEach` global porte déjà
+    // `isAdministrable: false` : rien à surcharger ici.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+
+    await waitFor(() => expect(screen.getAllByTestId('participant-row')).toHaveLength(2));
+    expect(screen.queryByTestId('participant-mute')).toBeNull();
+    expect(screen.queryByTestId('participant-remove')).toBeNull();
+    expect(screen.queryByTestId('participant-promote')).toBeNull();
   });
 });

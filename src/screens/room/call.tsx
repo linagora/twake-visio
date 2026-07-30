@@ -1,23 +1,35 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Text } from 'react-native-paper';
 
+import {
+  muteParticipant,
+  removeParticipant,
+  updateParticipantRole,
+  type ParticipantRole,
+} from 'src/api/participants';
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
-import { getActiveAccount } from 'src/auth/accounts';
+import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { createCallSession } from 'src/call/connection';
+import type { ParticipantView } from 'src/call/layout';
 import {
   setCameraEnabled,
   setMicrophoneEnabled,
   switchCamera,
   type FacingMode,
 } from 'src/call/media';
+import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
-import type { CallState } from 'src/call/types';
+import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
+import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
+import { firstWaiting } from 'src/rooms/waitingQueue';
+import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { CallStage } from 'src/screens/room/stage';
+import { WaitingBanner } from 'src/screens/room/waitingBanner';
 import { tokens } from 'src/ui/tokens';
 
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
@@ -46,6 +58,25 @@ function toAccessMessage(error: ApiError): MessageKey {
 function toDisconnectMessage(reason: string): MessageKey {
   return reason === 'closed' ? 'call.ended' : 'error.network';
 }
+
+// `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
+// chaque rendu, y compris quand personne n'est connecté. `access` — qui
+// gouverne la garde juste en dessous — ne se remplit que depuis l'effet de
+// connexion, lui-même arrêté dès qu'il constate l'absence de compte : ce
+// repli ne sert donc jamais de véritable requête, il ne fait que satisfaire le
+// typage d'un appel de Hook qui ne peut pas être conditionnel.
+const NO_ACCOUNT: Account = {
+  id: '',
+  instance: {
+    serverUrl: '',
+    issuer: '',
+    clientId: '',
+    livekitUrl: '',
+    features: { recording: false, subtitle: false, telephony: false },
+  },
+  email: '',
+  displayName: '',
+};
 
 const styles = StyleSheet.create({
   // La scène reste sombre dans les deux schémas : c'est la convention de toute
@@ -115,6 +146,43 @@ export function CallScreen(): React.ReactElement {
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
   const layout = useCallLayout(session.getRoom(), facing);
 
+  // Un compte frais à chaque rendu, comme au premier rendu de `failure`
+  // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
+  // un état — c'est le même accesseur que l'effet de connexion et que
+  // `handleShare` lisent déjà chacun de leur côté.
+  const account = getActiveAccount();
+
+  // L'accès complet, pas seulement ses morceaux : la salle d'attente et le
+  // panneau de modération ont chacun besoin d'une facette différente de
+  // `RoomAccess`, et dupliquer l'effet de connexion pour chacune n'aurait
+  // aucune raison d'être.
+  const [access, setAccess] = useState<RoomAccess | null>(null);
+  const [participantsOpen, setParticipantsOpen] = useState(false);
+
+  // Une deuxième lecture de la Room, indépendante de `useCallLayout` :
+  // celle-ci choisit qui a la scène et réordonne la bande sous le doigt à
+  // chaque changement de locuteur (voir `src/call/layout`) — un panneau de
+  // modération qui suivrait cet ordre ferait glisser une ligne sous le pouce
+  // qui s'apprête à appuyer. Le panneau a besoin de l'ordre stable de la Room
+  // elle-même, jamais de celui, mouvant, choisi pour la scène.
+  const roomViewStore = useMemo(() => createRoomViewStore(session.getRoom()), [session]);
+  const roomView = useSyncExternalStore(roomViewStore.subscribe, roomViewStore.getSnapshot);
+  const participants = useMemo<readonly ParticipantView[]>(
+    () => [roomView.local, ...roomView.remotes],
+    [roomView],
+  );
+
+  // Les deux gardes réunies : un salon public n'a pas de salle d'attente, et
+  // sans privilège le serveur refuserait la requête.
+  const canModerate = access !== null && access.isAdministrable;
+  const hasLobby = access !== null && access.room.accessLevel !== 'public';
+
+  const { waiting, answer } = useWaitingParticipants(
+    account ?? NO_ACCOUNT,
+    access?.room.id ?? '',
+    canModerate && hasLobby,
+  );
+
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
   // libération de la session.
@@ -132,18 +200,27 @@ export function CallScreen(): React.ReactElement {
   // chacune de ses relances, et un effet de connexion qui dépendrait de `micOn`
   // couperait la séance à chaque appui sur le micro.
   useEffect(() => {
-    const account = getActiveAccount();
-    if (account === null) return;
+    // Nom distinct du `account` de plus haut : celui-ci vit dans la fermeture
+    // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
+    // est relu à chaque rendu — les confondre masquerait laquelle des deux
+    // valeurs alimente vraiment `fetchRoomAccess`.
+    const activeAccount = getActiveAccount();
+    if (activeAccount === null) return;
 
     let cancelled = false;
 
-    fetchRoomAccess(account, slug)
+    fetchRoomAccess(activeAccount, slug)
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {
           setFailure(toAccessMessage(result.error));
           return;
         }
+
+        // Connu dès que le serveur confirme l'accès, indépendamment de la
+        // suite : la salle d'attente et le panneau de modération ne dépendent
+        // pas de la négociation média ni de la connexion LiveKit ci-dessous.
+        setAccess(result.value);
 
         // Le manifeste déclare caméra et micro, mais Android exige de les
         // demander à l'exécution. Sans cette demande ils restent refusés, rien
@@ -204,9 +281,12 @@ export function CallScreen(): React.ReactElement {
   // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
   // mène pas à sa réunion.
   const handleShare = async (): Promise<void> => {
-    const account = getActiveAccount();
-    if (account === null) return;
-    const url = `${account.instance.serverUrl}/${slug}`;
+    // Nom distinct du `account` de plus haut pour la même raison que dans
+    // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
+    // à chaque rendu.
+    const activeAccount = getActiveAccount();
+    if (activeAccount === null) return;
+    const url = `${activeAccount.instance.serverUrl}/${slug}`;
     try {
       await Share.share({ message: url, url });
     } catch {
@@ -222,6 +302,36 @@ export function CallScreen(): React.ReactElement {
       .disconnect()
       .catch(() => undefined)
       .finally(() => router.replace('/home'));
+  };
+
+  const handleToggleParticipants = (): void => {
+    setParticipantsOpen((open) => !open);
+  };
+
+  // Les trois actions de modération portent l'identité LiveKit que
+  // `ParticipantsPanel` leur passe (`ParticipantView.identity`, reçue ici comme
+  // `identity`) — jamais l'UUID de lobby que porte `WaitingParticipant.id` et
+  // qu'utilise `answer` ci-dessus. Les deux ne s'échangent pas, et le panneau
+  // ne connaît de toute façon que la première. Ces rappels ne sont atteignables
+  // que depuis une ligne du panneau, lequel ne montre ses actions que lorsque
+  // `canModerate` vaut vrai — donc lorsque `access` est déjà rempli ; le repli
+  // `?? ''` / `?? NO_ACCOUNT` n'existe que pour le typage.
+  const handleMuteParticipant = (identity: string): void => {
+    void muteParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity).catch(
+      () => undefined,
+    );
+  };
+
+  const handleRemoveParticipant = (identity: string): void => {
+    void removeParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity).catch(
+      () => undefined,
+    );
+  };
+
+  const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
+    void updateParticipantRole(account ?? NO_ACCOUNT, access?.room.id ?? '', identity, role).catch(
+      () => undefined,
+    );
   };
 
   const message: MessageKey | null =
@@ -252,9 +362,31 @@ export function CallScreen(): React.ReactElement {
 
   return (
     <View style={styles.root}>
-      {/* Parti pris mobile : locuteur actif en grand, vignettes en bande. La
-          grille du web rend chaque visage illisible sur un écran de téléphone. */}
-      <CallStage layout={layout} />
+      {/* Au-dessus de la scène : ne rend rien tant que personne n'attend, donc
+          toujours monté, jamais enveloppé d'une condition. */}
+      <WaitingBanner
+        participant={firstWaiting(waiting)}
+        remaining={Math.max(waiting.length - 1, 0)}
+        onAnswer={answer}
+      />
+
+      {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
+          deux se disputeraient la même vidéo, qui est la raison d'être de cet
+          écran. La barre de contrôle, elle, reste en place dans les deux cas —
+          le même bouton referme le panneau, et quitter reste toujours possible. */}
+      {participantsOpen ? (
+        <ParticipantsPanel
+          participants={participants}
+          canModerate={canModerate}
+          onMute={handleMuteParticipant}
+          onRemove={handleRemoveParticipant}
+          onRole={handleChangeParticipantRole}
+        />
+      ) : (
+        // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
+        // grille du web rend chaque visage illisible sur un écran de téléphone.
+        <CallStage layout={layout} />
+      )}
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
           en croyant que c'est cassé, et raccroche alors que ça se rétablit. */}
@@ -294,6 +426,13 @@ export function CallScreen(): React.ReactElement {
           iconColor={tokens.color.textDark}
           onPress={handleShare}
           accessibilityLabel={t('call.share')}
+        />
+        <IconButton
+          testID="participants-toggle"
+          icon="account-multiple"
+          iconColor={tokens.color.textDark}
+          onPress={handleToggleParticipants}
+          accessibilityLabel={t('participants.title')}
         />
         <IconButton
           testID="leave-btn"
