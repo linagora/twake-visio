@@ -1345,7 +1345,11 @@ export type TokenSet = {
   readonly expiresAt: number;
 };
 
-export type TokenError = 'invalid_grant' | 'network' | 'malformed_response';
+// `server` existe pour ne pas confondre une panne du SSO avec un refus
+// d'autorisation. Sans cette distinction, une indisponibilité de LemonLDAP
+// envoie l'utilisateur se reconnecter contre un serveur qui ne peut pas
+// l'authentifier.
+export type TokenError = 'invalid_grant' | 'server' | 'network' | 'malformed_response';
 
 export type TokenResult =
   | { ok: true; value: TokenSet }
@@ -1395,7 +1399,12 @@ async function postToken(
     return { ok: false, error: 'network' };
   }
 
-  if (!response.ok) return { ok: false, error: 'invalid_grant' };
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: response.status >= 500 ? 'server' : 'invalid_grant',
+    };
+  }
 
   let raw: RawTokenResponse;
   try {
@@ -1914,7 +1923,7 @@ describe('getAccessToken', () => {
     });
     const refresh = jest.spyOn(oidc, 'refreshTokens');
 
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe('valid');
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'valid' });
     expect(refresh).not.toHaveBeenCalled();
   });
 
@@ -1935,12 +1944,15 @@ describe('getAccessToken', () => {
       },
     });
 
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe('fresh');
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
   });
 
   it('renvoie null quand aucun jeton n\'est stocké', async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue(null);
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe(null);
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({
+      ok: false,
+      reason: 'no-session',
+    });
   });
 });
 
@@ -1978,7 +1990,11 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     ]);
 
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(results).toEqual(['fresh', 'fresh', 'fresh']);
+    expect(results).toEqual([
+      { ok: true, token: 'fresh' },
+      { ok: true, token: 'fresh' },
+      { ok: true, token: 'fresh' },
+    ]);
   });
 
   it('persiste le nouveau refresh_token en cas de rotation', async () => {
@@ -2075,8 +2091,8 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
         },
       });
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
 
     // C'est cette assertion qui prouve la libération du verrou, et elle tient
     // que l'échec soit un rejet ou une résolution : si la carte n'était pas
@@ -2106,7 +2122,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     });
     jest.spyOn(storage, 'saveTokens').mockRejectedValue(new Error('keychain refusé'));
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
   });
 
   it('renvoie null et libère le verrou quand le rafraîchissement échoue', async () => {
@@ -2120,8 +2136,8 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
       .spyOn(oidc, 'refreshTokens')
       .mockResolvedValue({ ok: false, error: 'invalid_grant' });
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
   });
 });
 ```
@@ -2140,6 +2156,14 @@ import { refreshTokens } from 'src/auth/oidc';
 import { loadTokens, saveTokens } from 'src/auth/storage';
 import type { InstanceConfig } from 'src/instance/types';
 
+// Trois issues, parce que l'appelant doit pouvoir dire trois choses
+// différentes à l'utilisateur : « connectez-vous », « votre session a expiré »,
+// « le service est indisponible ». Un `string | null` les confondait, et un
+// SSO en panne se lisait « session expirée ».
+export type RefreshOutcome =
+  | { ok: true; token: string }
+  | { ok: false; reason: 'no-session' | 'refused' | 'unavailable' };
+
 // Marge avant expiration en deçà de laquelle on rafraîchit préventivement,
 // pour qu'une requête ne parte pas avec un jeton qui expire en vol.
 const REFRESH_GUARD_MS = 30_000;
@@ -2149,11 +2173,13 @@ const inFlight = new Map<string, Promise<string | null>>();
 export async function getAccessToken(
   accountId: string,
   config: InstanceConfig,
-): Promise<string | null> {
+): Promise<RefreshOutcome> {
   const tokens = await loadTokens(accountId);
-  if (tokens === null) return null;
+  if (tokens === null) return { ok: false, reason: 'no-session' };
 
-  if (tokens.expiresAt - Date.now() > REFRESH_GUARD_MS) return tokens.accessToken;
+  if (tokens.expiresAt - Date.now() > REFRESH_GUARD_MS) {
+    return { ok: true, token: tokens.accessToken };
+  }
 
   return forceRefresh(accountId, config);
 }
@@ -2161,17 +2187,24 @@ export async function getAccessToken(
 export async function forceRefresh(
   accountId: string,
   config: InstanceConfig,
-): Promise<string | null> {
+): Promise<RefreshOutcome> {
   const pending = inFlight.get(accountId);
   if (pending !== undefined) return pending;
 
-  const attempt = (async (): Promise<string | null> => {
+  const attempt = (async (): Promise<RefreshOutcome> => {
     try {
       const tokens = await loadTokens(accountId);
-      if (tokens === null || tokens.refreshToken === null) return null;
+      if (tokens === null || tokens.refreshToken === null) {
+        return { ok: false, reason: 'no-session' };
+      }
 
       const result = await refreshTokens(config, tokens.refreshToken);
-      if (!result.ok) return null;
+      if (!result.ok) {
+        // Une panne du SSO ou du réseau n'est pas un refus : la session est
+        // peut-être parfaitement valide, seul le service manque.
+        const transient = result.error === 'server' || result.error === 'network';
+        return { ok: false, reason: transient ? 'unavailable' : 'refused' };
+      }
 
       // Une écriture refusée ne doit pas faire jeter un jeton déjà obtenu : la
       // session est valide, seule sa persistance a manqué. L'écarter renverrait
@@ -2182,14 +2215,15 @@ export async function forceRefresh(
         // Jeton utilisable pour cette session, simplement non persisté.
       }
 
-      return result.value.accessToken;
+      return { ok: true, token: result.value.accessToken };
     } catch {
-      // Tout autre rejet vaut « pas de jeton » pour l'appelant. Le laisser
+      // Tout autre rejet est traité comme une indisponibilité, non comme un
+      // refus : rien ne prouve que la session soit morte. Le laisser
       // remonter le ferait étiqueter « network » par le client API, et
       // l'utilisateur lirait « connexion impossible » au lieu de « session à
       // renouveler ». `attempt` ne rejette donc jamais, ce qui donne le même
       // contrat aux appelants concurrents qui attendent cette même promesse.
-      return null;
+      return { ok: false, reason: 'unavailable' };
     }
   })();
 
@@ -2258,7 +2292,7 @@ beforeEach(() => {
 
 describe('authedFetch', () => {
   it('joint le jeton porteur à la requête', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     // Les génériques explicites sont nécessaires : sans paramètres déclarés,
     // noUncheckedIndexedAccess rejette l'accès à calls[0][1] comme hors tuple.
     const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
@@ -2274,8 +2308,8 @@ describe('authedFetch', () => {
   });
 
   it('rafraîchit puis rejoue une seule fois sur 401', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    const refresh = jest.spyOn(session, 'forceRefresh').mockResolvedValue('fresh');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    const refresh = jest.spyOn(session, 'forceRefresh').mockResolvedValue({ ok: true, token: 'fresh' });
     const spy = jest
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
@@ -2295,8 +2329,8 @@ describe('authedFetch', () => {
     // distingue « rejoue une fois » de « rejoue sans fin » : chacun résout au
     // second appel ou échoue au rafraîchissement du premier. C'est
     // toHaveBeenCalledTimes(2) qui borne, et rien d'autre.
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    jest.spyOn(session, 'forceRefresh').mockResolvedValue('fresh');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    jest.spyOn(session, 'forceRefresh').mockResolvedValue({ ok: true, token: 'fresh' });
     const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
       async () => new Response(null, { status: 401 }),
     );
@@ -2309,8 +2343,10 @@ describe('authedFetch', () => {
   });
 
   it('rend unauthorized quand le rafraîchissement échoue', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
-    jest.spyOn(session, 'forceRefresh').mockResolvedValue(null);
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'stale' });
+    jest
+      .spyOn(session, 'forceRefresh')
+      .mockResolvedValue({ ok: false, reason: 'refused' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 401 }),
     ) as unknown as typeof fetch;
@@ -2320,8 +2356,27 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'unauthorized' } });
   });
 
+  it('dit « réseau » et non « session expirée » quand le SSO est indisponible', async () => {
+    // Même panne, deux messages possibles selon l'endroit où elle frappe. Si le
+    // rafraîchissement échoue parce que le SSO est tombé, envoyer l'utilisateur
+    // se reconnecter est inutile : le serveur ne peut pas l'authentifier.
+    jest
+      .spyOn(session, 'getAccessToken')
+      .mockResolvedValue({ ok: true, token: 'stale' });
+    jest
+      .spyOn(session, 'forceRefresh')
+      .mockResolvedValue({ ok: false, reason: 'unavailable' });
+    globalThis.fetch = jest.fn(
+      async () => new Response(null, { status: 401 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/users/me/');
+
+    expect(result).toEqual({ ok: false, error: { kind: 'network' } });
+  });
+
   it('mappe 403 sur forbidden', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(
       async () => new Response(null, { status: 403 }),
     ) as unknown as typeof fetch;
@@ -2332,7 +2387,7 @@ describe('authedFetch', () => {
   });
 
   it('mappe une panne réseau sur network', async () => {
-    jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(async () => {
       throw new TypeError('offline');
     }) as unknown as typeof fetch;
@@ -2373,10 +2428,19 @@ export type ApiResult<T> = { ok: true; value: T } | { ok: false; error: ApiError
 `src/api/client.ts` :
 
 ```ts
-import type { ApiResult } from 'src/api/types';
+import type { ApiError, ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
-import { forceRefresh, getAccessToken } from 'src/auth/session';
+import { forceRefresh, getAccessToken, type RefreshOutcome } from 'src/auth/session';
 import { REQUEST_TIMEOUT_MS } from 'src/constants';
+
+type RefreshRefusal = Extract<RefreshOutcome, { ok: false }>['reason'];
+
+// Une indisponibilité du SSO doit se lire comme une panne, pas comme une
+// session expirée : sinon l'utilisateur va se reconnecter contre un serveur
+// incapable de l'authentifier, et recommence en boucle.
+function mapRefusal(reason: RefreshRefusal): ApiError {
+  return reason === 'unavailable' ? { kind: 'network' } : { kind: 'unauthorized' };
+}
 
 function mapStatus(status: number): ApiResult<never> {
   if (status === 403) return { ok: false, error: { kind: 'forbidden' } };
@@ -2402,8 +2466,9 @@ export async function authedFetch<T>(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-  let token = await getAccessToken(account.id, account.instance);
-  if (token === null) return { ok: false, error: { kind: 'unauthorized' } };
+  const initial = await getAccessToken(account.id, account.instance);
+  if (!initial.ok) return { ok: false, error: mapRefusal(initial.reason) };
+  let token = initial.token;
 
   let response: Response;
   try {
@@ -2412,8 +2477,8 @@ export async function authedFetch<T>(
     // Un seul rejeu : au-delà, le refus est structurel et non transitoire.
     if (response.status === 401) {
       const refreshed = await forceRefresh(account.id, account.instance);
-      if (refreshed === null) return { ok: false, error: { kind: 'unauthorized' } };
-      token = refreshed;
+      if (!refreshed.ok) return { ok: false, error: mapRefusal(refreshed.reason) };
+      token = refreshed.token;
       response = await send(token);
       if (response.status === 401) {
         return { ok: false, error: { kind: 'unauthorized' } };
