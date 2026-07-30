@@ -22,6 +22,7 @@
   "room.coOwners": "Đồng tổ chức",
   "room.coOwnerSearch": "Tìm kiếm theo email",
   "room.createFailed": "Không thể tạo cuộc họp",
+  "room.nameTaken": "Đã có cuộc họp dùng tên này, hãy chọn tên khác",
   "room.nameRequired": "Hãy đặt tên cho cuộc họp",
   "prejoin.join": "Tham gia",
   "prejoin.cameraOff": "Đã tắt camera",

@@ -122,3 +122,69 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'network' } });
   });
 });
+
+describe('authedFetch, erreurs de champ', () => {
+  function respond(body: string, status: number): void {
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () => new Response(body, { status }),
+    ) as unknown as typeof fetch;
+  }
+
+  it("rend les champs refusés d'un 400 plutôt qu'un statut nu", async () => {
+    // Cas réel, relevé sur meet.linagora.com : l'API dérive le slug du nom et
+    // refuse les doublons. Sans les champs, l'écran ne peut que proposer de
+    // réessayer à l'identique, ce qui échouera toujours.
+    respond(JSON.stringify({ slug: ['Room with this Slug already exists.'] }), 400);
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'validation', fields: { slug: ['Room with this Slug already exists.'] } },
+    });
+  });
+
+  it('retombe sur server quand le 400 ne suit pas la convention', async () => {
+    // Une page HTML de proxy, par exemple : l'annoncer comme une erreur de champ
+    // ferait inventer à l'écran un diagnostic que personne n'a donné.
+    respond('<html>Bad Request</html>', 400);
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'server', status: 400 } });
+  });
+
+  it('retombe sur server quand le 400 est du JSON sans champ exploitable', async () => {
+    // Corps JSON valide, donc le parsing réussit : c'est la garde sur les champs
+    // vides qui doit trancher, pas celle sur le parsing. Sans elle, l'écran
+    // recevrait une erreur de champ vide et dirait « corrigez votre saisie »
+    // sans pouvoir dire laquelle.
+    respond(JSON.stringify({ detail: 'Malformed request' }), 400);
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'server', status: 400 } });
+  });
+
+  it('ignore les entrées qui ne sont pas des listes de chaînes', async () => {
+    respond(JSON.stringify({ detail: 'nope', slug: ['pris'] }), 400);
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'validation', fields: { slug: ['pris'] } },
+    });
+  });
+
+  it('laisse les autres statuts intacts', async () => {
+    respond(JSON.stringify({ slug: ['pris'] }), 500);
+
+    // La lecture des champs est réservée au 400 : un 500 qui porterait par
+    // hasard cette forme resterait une panne serveur, pas une saisie à corriger.
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'server', status: 500 } });
+  });
+});

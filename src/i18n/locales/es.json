@@ -22,6 +22,7 @@
   "room.coOwners": "Coorganizadores",
   "room.coOwnerSearch": "Buscar por email",
   "room.createFailed": "No se pudo crear la reunión",
+  "room.nameTaken": "Ya hay una reunión con ese nombre, elija otro",
   "room.nameRequired": "Dé un nombre a la reunión",
   "prejoin.join": "Unirse",
   "prejoin.cameraOff": "Cámara desactivada",

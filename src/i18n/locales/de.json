@@ -22,6 +22,7 @@
   "room.coOwners": "Mitorganisatoren",
   "room.coOwnerSearch": "Nach E-Mail suchen",
   "room.createFailed": "Die Besprechung konnte nicht erstellt werden",
+  "room.nameTaken": "Eine Besprechung trägt diesen Namen bereits, wählen Sie einen anderen",
   "room.nameRequired": "Geben Sie der Besprechung einen Namen",
   "prejoin.join": "Beitreten",
   "prejoin.cameraOff": "Kamera deaktiviert",

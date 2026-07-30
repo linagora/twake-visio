@@ -117,6 +117,40 @@ describe('CreateRoomScreen, échecs visibles', () => {
     });
   });
 
+  it("dit que le nom est déjà pris, au lieu d'un échec à réessayer", async () => {
+    // L'API dérive le slug du nom et refuse les doublons. C'est la seule erreur
+    // de création que la personne peut lever elle-même : la présenter comme un
+    // échec générique l'invite à réessayer le même nom.
+    jest.spyOn(rooms, 'createRoom').mockResolvedValue({
+      ok: false,
+      error: { kind: 'validation', fields: { slug: ['Room with this Slug already exists.'] } },
+    });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'test');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('room.nameTaken')).toBeTruthy();
+    });
+    expect(screen.queryByText('room.createFailed')).toBe(null);
+  });
+
+  it("garde l'échec générique pour un refus qui ne porte pas sur le nom", async () => {
+    jest.spyOn(rooms, 'createRoom').mockResolvedValue({
+      ok: false,
+      error: { kind: 'validation', fields: { name: ['trop long'] } },
+    });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'test');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('room.createFailed')).toBeTruthy();
+    });
+  });
+
   it('invite à se reconnecter quand la session a expiré', async () => {
     jest
       .spyOn(rooms, 'createRoom')

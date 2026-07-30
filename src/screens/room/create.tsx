@@ -26,13 +26,20 @@ const ACCESS_COPY: Readonly<Record<AccessLevel, string>> = {
   restricted: 'room.accessRestricted',
 };
 
-type FailureKey = 'error.network' | 'error.unauthorized' | 'room.createFailed';
+type FailureKey = 'error.network' | 'error.unauthorized' | 'room.nameTaken' | 'room.createFailed';
 
 // Un refus d'autorisation demande une action de la personne, les autres non :
 // les confondre lui dirait de se reconnecter alors que le serveur a répondu 500.
+//
+// Le cas qui compte ici est le nom déjà pris. L'API dérive le slug du nom et
+// refuse les doublons — « Room with this Slug already exists » sur un 400 — et
+// c'est la seule erreur de création que l'utilisateur peut lever lui-même. La
+// lui présenter comme un échec générique l'invite à réessayer à l'identique,
+// ce qui échouera toujours.
 function toFailure(error: ApiError): FailureKey {
   if (error.kind === 'unauthorized') return 'error.unauthorized';
   if (error.kind === 'network') return 'error.network';
+  if (error.kind === 'validation' && error.fields.slug !== undefined) return 'room.nameTaken';
   return 'room.createFailed';
 }
 

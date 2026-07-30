@@ -15,6 +15,40 @@ function mapRefusal(reason: RefreshRefusal): ApiError {
 // Un 5xx ou tout autre statut non mappé reste distinct de `unauthorized` /
 // `forbidden` : contrairement à src/auth/oidc.ts, qui réduit tout non-2xx à
 // `invalid_grant`, ici une panne serveur ne doit jamais se lire comme un refus.
+// Un 400 de Django REST Framework porte un objet dont chaque clé est un champ
+// refusé et chaque valeur la liste des raisons. Le corps est lu ici parce que
+// c'est la seule information exploitable de cette réponse : le statut seul dit
+// « requête invalide » sans dire en quoi, et l'écran ne peut alors que proposer
+// de réessayer à l'identique.
+//
+// La forme est vérifiée avant d'être annoncée : un 400 qui ne suit pas cette
+// convention — une page HTML d'un proxy, par exemple — retombe sur `server`
+// plutôt que de se faire passer pour une erreur de champ.
+async function readValidation(response: Response): Promise<ApiResult<never>> {
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch {
+    return { ok: false, error: { kind: 'server', status: 400 } };
+  }
+
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: { kind: 'server', status: 400 } };
+  }
+
+  const fields: Record<string, readonly string[]> = {};
+  for (const [field, reasons] of Object.entries(raw)) {
+    if (Array.isArray(reasons) && reasons.every((reason) => typeof reason === 'string')) {
+      fields[field] = reasons;
+    }
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return { ok: false, error: { kind: 'server', status: 400 } };
+  }
+  return { ok: false, error: { kind: 'validation', fields } };
+}
+
 function mapStatus(status: number): ApiResult<never> {
   if (status === 403) return { ok: false, error: { kind: 'forbidden' } };
   if (status === 404) return { ok: false, error: { kind: 'not-found' } };
@@ -64,6 +98,7 @@ export async function authedFetch<T>(
     return { ok: false, error: { kind: 'network' } };
   }
 
+  if (response.status === 400) return await readValidation(response);
   if (!response.ok) return mapStatus(response.status);
 
   try {
