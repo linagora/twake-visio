@@ -3204,14 +3204,19 @@ git commit -m "feat(auth): Add the welcome and organization server screens"
 `app/home.spec.tsx` :
 
 ```tsx
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
 import HomeScreen from './home';
 
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+const pushMock = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: pushMock }) }));
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -3255,6 +3260,28 @@ describe('HomeScreen', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('room-item')).toBe(null);
     });
+  });
+
+  it('rejoint le code saisi, espaces retirés', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+    render(<HomeScreen />);
+    fireEvent.changeText(screen.getByTestId('join-code-input'), '  point-hebdo  ');
+    fireEvent.press(screen.getByTestId('join-btn'));
+
+    expect(pushMock).toHaveBeenCalledWith('/room/point-hebdo/prejoin');
+  });
+
+  it('ne navigue pas sur un code vide ou blanc', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+    render(<HomeScreen />);
+    fireEvent.changeText(screen.getByTestId('join-code-input'), '   ');
+    fireEvent.press(screen.getByTestId('join-btn'));
+
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });
 ```
@@ -4081,6 +4108,23 @@ describe('LobbyScreen', () => {
       expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy();
     });
   });
+
+  it('cesse d\'afficher un indicateur de chargement une fois l\'état connu', async () => {
+    // C'est l'exigence produit : quelqu'un qui frappe à la porte d'un salon que
+    // personne ne peut ouvrir doit le lire, pas regarder tourner un indicateur
+    // indéfiniment. Le test précédent vérifie que le message apparaît ; celui-ci
+    // vérifie que l'indicateur disparaît, ce qui n'est pas la même chose.
+    jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    render(<LobbyScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('lobby-loading')).toBe(null);
+  });
 });
 ```
 
@@ -4184,15 +4228,19 @@ Parti pris mobile : vue locuteur actif avec bande de vignettes, plutôt que la g
 `app/room/[slug]/call.spec.tsx` :
 
 ```tsx
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
+import * as media from 'src/call/media';
 import CallScreen from './call';
 
+const replaceMock = jest.fn();
+const disconnectMock = jest.fn().mockResolvedValue(undefined);
+
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: jest.fn() }),
+  useRouter: () => ({ replace: replaceMock }),
   useLocalSearchParams: () => ({ slug: 'reunion', camera: '1', mic: '1' }),
 }));
 jest.mock('react-i18next', () => ({
@@ -4205,7 +4253,7 @@ jest.mock('@livekit/react-native', () => ({
 jest.mock('src/call/connection', () => ({
   createCallSession: () => ({
     connect: jest.fn().mockResolvedValue(undefined),
-    disconnect: jest.fn().mockResolvedValue(undefined),
+    disconnect: disconnectMock,
     subscribe: (listener: (s: { status: string }) => void) => {
       listener({ status: 'connected' });
       return () => undefined;
@@ -4251,6 +4299,38 @@ describe('CallScreen', () => {
       expect(screen.getByTestId('switch-camera')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
+  });
+
+  it('coupe réellement le micro, et ne fait pas que changer l\'icône', async () => {
+    // Un bouton qui bascule son apparence sans agir sur la session est le pire
+    // défaut possible ici : l'utilisateur se croit coupé et ne l'est pas.
+    const setMic = jest.spyOn(media, 'setMicrophoneEnabled').mockResolvedValue();
+
+    render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
+    setMic.mockClear();
+    fireEvent.press(screen.getByTestId('mic-toggle'));
+
+    await waitFor(() => {
+      expect(setMic).toHaveBeenCalledWith(expect.anything(), false);
+    });
+  });
+
+  it('quitte en fermant la session avant de naviguer', async () => {
+    // L'ordre compte : naviguer d'abord démonte le composant et le nettoyage
+    // peut ne jamais atteindre le serveur, laissant un participant fantôme
+    // dans la réunion pour les autres.
+    render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('leave-btn'));
+
+    await waitFor(() => {
+      expect(disconnectMock).toHaveBeenCalled();
+      expect(replaceMock).toHaveBeenCalledWith('/home');
+    });
+    expect(disconnectMock.mock.invocationCallOrder[0]).toBeLessThan(
+      replaceMock.mock.invocationCallOrder[0] ?? Infinity,
+    );
   });
 });
 ```
