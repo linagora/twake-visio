@@ -34,6 +34,32 @@ tokens.
 No inline styles: never a `style={{…}}` literal, always `StyleSheet.create` fed by the
 tokens.
 
+### Le fond de la séance est sombre dans les deux schémas. Paper ne le sait pas.
+
+`call.tsx` force `backgroundDark` quel que soit le schéma système — c'est la convention de
+toute la visioconférence, et c'est délibéré. Mais `react-native-paper` fait retomber la
+couleur de son texte sur `theme.colors.onSurface`, que `src/ui/theme.ts` fixe à
+`textLight` (`#1A1A1A`) en schéma **clair**, lequel est le défaut de la plupart des
+appareils.
+
+**Tout composant posé sur cet écran doit donc poser une couleur explicite issue de
+`src/ui/tokens`.** Le périmètre B a livré deux composants sans le faire : **1,08:1** de
+contraste, du noir sur du noir, un bandeau d'admission dont on ne pouvait pas lire le nom
+de la personne qui frappait. Le précédent correct est `stage.tsx:45`.
+
+Cela vaut pour `Text`, pour le `titleStyle` d'un `List.Item` — sa prop `style` ne colore
+pas le titre —, pour le `textColor` d'un `Button` en mode `text` ou `outlined`, et pour
+l'`iconColor` d'un `IconButton`.
+
+**Et jamais de bouton `disabled` sur cet écran.** `IconButton/utils.ts:88-93` teste
+`disabled` **avant** `customIconColor` et rend `theme.colors.onSurfaceDisabled`, un
+quasi-noir en thème clair : aucune couleur explicite ne peut le rattraper. Masquer une
+commande indisponible, ne pas la griser — le précédent est `participantsPanel.tsx`, qui ne
+rend pas les actions de modération plutôt que de les désactiver.
+
+Aucun test ne peut attraper cette classe de bogue : RNTL ne rend pas les couleurs. Elle ne
+se voit qu'en lisant le thème, le fond et le composant ensemble.
+
 ## Instance discovery has a deliberate fallback
 
 `/api/v1.0/config/` is the contract. `resolveOidcFromRedirect()` is a non-contractual
