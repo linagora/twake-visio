@@ -29,7 +29,7 @@ describe('getAccessToken', () => {
     });
     const refresh = jest.spyOn(oidc, 'refreshTokens');
 
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe('valid');
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'valid' });
     expect(refresh).not.toHaveBeenCalled();
   });
 
@@ -50,12 +50,15 @@ describe('getAccessToken', () => {
       },
     });
 
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe('fresh');
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
   });
 
   it('renvoie null quand aucun jeton n\'est stocké', async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue(null);
-    expect(await getAccessToken(ACCOUNT, CONFIG)).toBe(null);
+    expect(await getAccessToken(ACCOUNT, CONFIG)).toEqual({
+      ok: false,
+      reason: 'no-session',
+    });
   });
 });
 
@@ -93,7 +96,11 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     ]);
 
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(results).toEqual(['fresh', 'fresh', 'fresh']);
+    expect(results).toEqual([
+      { ok: true, token: 'fresh' },
+      { ok: true, token: 'fresh' },
+      { ok: true, token: 'fresh' },
+    ]);
   });
 
   it('persiste le nouveau refresh_token en cas de rotation', async () => {
@@ -190,8 +197,8 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
         },
       });
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
 
     // C'est cette assertion qui prouve la libération du verrou, et elle tient
     // que l'échec soit un rejet ou une résolution : si la carte n'était pas
@@ -221,7 +228,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     });
     jest.spyOn(storage, 'saveTokens').mockRejectedValue(new Error('keychain refusé'));
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: true, token: 'fresh' });
   });
 
   it('renvoie null et libère le verrou quand le rafraîchissement échoue', async () => {
@@ -235,7 +242,7 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
       .spyOn(oidc, 'refreshTokens')
       .mockResolvedValue({ ok: false, error: 'invalid_grant' });
 
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
-    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
+    expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
   });
 });
