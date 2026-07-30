@@ -24,7 +24,15 @@ beforeEach(() => {
 describe('makeAccountId', () => {
   it('compose l\'identité depuis l\'issuer et le sujet', () => {
     expect(makeAccountId('https://sso.linagora.com', 'u-1')).toBe(
-      'https://sso.linagora.com|u-1',
+      'https%3A%2F%2Fsso.linagora.com|u-1',
+    );
+  });
+
+  it('ne confond pas deux comptes dont le découpage naïf serait ambigu', () => {
+    // Un sub de la forme `google-oauth2|109` est réellement émis par certains
+    // fournisseurs. Sans encodage, ces deux appels donnent la même chaîne.
+    expect(makeAccountId('https://sso.linagora.com', 'google-oauth2|109')).not.toBe(
+      makeAccountId('https://sso.linagora.com|google-oauth2', '109'),
     );
   });
 });
@@ -56,6 +64,28 @@ describe('registre de comptes', () => {
       displayName: 'Bob',
     });
 
+    expect(listAccounts()).toHaveLength(2);
+  });
+
+  it('ne vole pas le compte actif en ré-ajoutant un compte non actif', () => {
+    const first = addAccount({
+      id: makeAccountId(CONFIG.issuer, 'u-1'),
+      instance: CONFIG,
+      email: 'ada@linagora.com',
+      displayName: 'Ada',
+    });
+    const second = addAccount({
+      id: makeAccountId(CONFIG.issuer, 'u-2'),
+      instance: CONFIG,
+      email: 'bob@linagora.com',
+      displayName: 'Bob',
+    });
+    setActiveAccount(second.id);
+
+    // Un rafraîchissement de session en arrière-plan repasse par addAccount.
+    addAccount({ ...first, displayName: 'Ada Lovelace' });
+
+    expect(getActiveAccount()?.id).toBe(second.id);
     expect(listAccounts()).toHaveLength(2);
   });
 

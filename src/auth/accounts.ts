@@ -10,13 +10,24 @@ export type Account = {
 let accounts: Account[] = [];
 let activeId: string | null = null;
 
+// Les deux parties sont encodées avant d'être jointes. Sans cela, un `sub` de la
+// forme `google-oauth2|109` — que certains fournisseurs OIDC émettent réellement —
+// rendrait deux comptes distincts strictement identiques : `iss|google-oauth2|109`
+// se lit aussi bien comme (`iss`, `google-oauth2|109`) que comme
+// (`iss|google-oauth2`, `109`). Ils se confondraient dans le registre.
 export function makeAccountId(issuer: string, sub: string): string {
-  return `${issuer}|${sub}`;
+  return `${encodeURIComponent(issuer)}|${encodeURIComponent(sub)}`;
 }
 
+// N'active le compte que s'il n'y en a pas déjà un, ou s'il s'agit de lui-même.
+// Un rafraîchissement de session en arrière-plan repasse par ici, et volerait
+// sinon le compte actif à celui que l'utilisateur regarde.
 export function addAccount(account: Account): Account {
-  accounts = [...accounts.filter((a) => a.id !== account.id), account];
-  activeId = account.id;
+  const known = accounts.some((a) => a.id === account.id);
+  accounts = known
+    ? accounts.map((a) => (a.id === account.id ? account : a))
+    : [...accounts, account];
+  if (activeId === null) activeId = account.id;
   return account;
 }
 
