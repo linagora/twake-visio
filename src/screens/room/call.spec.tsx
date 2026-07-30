@@ -602,8 +602,15 @@ describe('CallScreen, panneau des participants', () => {
     expect(muteSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
   });
 
-  it('expulse et promeut par la même identité LiveKit', async () => {
+  it('expulse et promeut par la même identité LiveKit, pas par la première', async () => {
+    // Deux personnes distantes, jamais une seule : avec une seule, un
+    // `handleRemoveParticipant`/`handleChangeParticipantRole` qui ignorerait
+    // son paramètre et enverrait `'alice-identity'` en dur serait
+    // indiscernable d'un câblage correct — exactement le trou déjà payé par
+    // la tâche 7, et relevé par la revue de cette tâche-ci pour ces deux
+    // actions précises.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    mockRoom.remoteParticipants.set('bob-identity', remoteParticipant('bob-identity', 'Bob'));
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     const removeSpy = jest
       .spyOn(participants, 'removeParticipant')
@@ -615,13 +622,13 @@ describe('CallScreen, panneau des participants', () => {
     await render(<CallScreen />);
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-remove')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByTestId('participant-remove')).toHaveLength(2));
 
-    await fireEvent.press(screen.getByTestId('participant-remove'));
-    await fireEvent.press(screen.getByTestId('participant-promote'));
+    await fireEvent.press(nth(screen.getAllByTestId('participant-remove'), 1));
+    await fireEvent.press(nth(screen.getAllByTestId('participant-promote'), 1));
 
-    expect(removeSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'alice-identity');
-    expect(roleSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'alice-identity', 'administrator');
+    expect(removeSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
+    expect(roleSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity', 'administrator');
   });
 
   it("ne montre aucune action de modération sans droit d'administrer", async () => {
