@@ -98,6 +98,16 @@ jest.mock('expo-router', () => ({
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+// `Snackbar` de `react-native-paper` lit `useSafeAreaInsets()`, qui lève sans
+// `<SafeAreaProvider>` ancestor — présent en production (`app/_layout.tsx`),
+// absent ici puisque `CallScreen` est rendu seul. Double officiel de la
+// librairie (son propre dossier `jest/`), pas un bouchon maison : il retombe
+// sur des marges à zéro en l'absence de Provider, exactement ce dont un test
+// a besoin.
+jest.mock(
+  'react-native-safe-area-context',
+  () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
+);
 jest.mock('src/call/connection', () => ({
   createCallSession: () => ({
     connect: mockConnect,
@@ -644,5 +654,140 @@ describe('CallScreen, panneau des participants', () => {
     expect(screen.queryByTestId('participant-mute')).toBeNull();
     expect(screen.queryByTestId('participant-remove')).toBeNull();
     expect(screen.queryByTestId('participant-promote')).toBeNull();
+  });
+});
+
+describe('CallScreen, échec de modération', () => {
+  // `ApiResult<void>` rend son échec ordinaire comme une valeur (`{ ok: false
+  // }`), jamais comme un rejet : un `.catch()` seul ne le verrait jamais
+  // passer, et couper le micro, expulser ou promouvoir resteraient sans
+  // aucun retour visible en cas de 403 — un cas réel, pas hypothétique, pour
+  // `mute_participant` côté serveur.
+  it("affiche un message visible quand couper le micro échoue, sans l'avaler", async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+  });
+
+  it("distingue un refus d'autorisation d'une panne réseau", async () => {
+    // Même mécanisme que `toAccessMessage`/`toApiErrorMessage` pour l'accès
+    // initial : seul `unauthorized` a sa propre clé, le reste retombe sur
+    // `error.network`. Ce test vérifie que la branche `unauthorized` est bien
+    // atteignable depuis ce nouvel appelant, pas seulement depuis l'ancien.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.unauthorized');
+    });
+  });
+
+  it("affiche aussi l'échec d'une expulsion", async () => {
+    // Les trois actions partagent le même défaut avant correctif : ne pas les
+    // couvrir toutes les trois reproduirait exactement le trou de l'Important 1.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'removeParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-remove')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-remove'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+  });
+
+  it("affiche aussi l'échec d'un changement de rôle", async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'updateParticipantRole')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-promote')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-promote'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+  });
+
+  it('rejette une exception inattendue comme une panne réseau', async () => {
+    // Chemin distinct du précédent : ici la promesse rejette vraiment (au
+    // lieu de résoudre `{ ok: false }`), et c'est le `.catch()` qui doit agir.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest.spyOn(participants, 'muteParticipant').mockRejectedValue(new Error('boom'));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+  });
+
+  it('ne montre rien quand la modération réussit', async () => {
+    // Résolution différée et contrôlée : sans elle, rien ne garantit qu'on
+    // observe l'état d'après-résolution plutôt qu'un instant où la promesse
+    // n'a simplement pas encore eu la chance de répondre.
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    let resolveMute: (result: ApiResult<void>) => void = () => undefined;
+    jest.spyOn(participants, 'muteParticipant').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMute = resolve;
+        }),
+    );
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+    await act(async () => {
+      resolveMute({ ok: true, value: undefined });
+    });
+
+    expect(screen.queryByTestId('moderation-error')).toBeNull();
   });
 });

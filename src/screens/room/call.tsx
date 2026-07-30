@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Button, IconButton, Text } from 'react-native-paper';
+import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
 
 import {
   muteParticipant,
@@ -37,12 +37,14 @@ import { tokens } from 'src/ui/tokens';
 // s'affiche tel quel.
 type MessageKey = 'error.network' | 'error.unauthorized' | 'call.ended' | 'call.permissionsDenied';
 
-// L'API répond avant toute connexion LiveKit : c'est là — et là seulement —
-// qu'un jeton refusé se distingue d'une panne. `lobby` voudrait dire que
-// l'accès a été retiré entre le pré-écran et ici ; le plan ne décrit aucun
-// retour vers la salle d'attente depuis la séance, ce cas est donc traité
-// comme les autres refus plutôt qu'inventé.
-function toAccessMessage(error: ApiError): MessageKey {
+// La même distinction grossière sert deux appelants : l'accès initial au
+// salon (où c'est là, et là seulement, qu'un jeton refusé se distingue d'une
+// panne — `lobby` voudrait dire que l'accès a été retiré entre le pré-écran
+// et ici, et le plan ne décrit aucun retour vers la salle d'attente depuis la
+// séance, ce cas est donc traité comme les autres refus plutôt qu'inventé) et
+// les trois actions de modération plus bas, dont l'échec ordinaire arrive de
+// la même façon : une valeur `ApiResult`, jamais une exception.
+function toApiErrorMessage(error: ApiError): MessageKey {
   return error.kind === 'unauthorized' ? 'error.unauthorized' : 'error.network';
 }
 
@@ -159,6 +161,13 @@ export function CallScreen(): React.ReactElement {
   const [access, setAccess] = useState<RoomAccess | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
 
+  // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
+  // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
+  // comme un rejet : un simple `.catch()` sur ces trois actions ne le
+  // verrait donc jamais passer. Une seule case suffit : les trois actions ne
+  // se déclenchent qu'un geste à la fois.
+  const [moderationError, setModerationError] = useState<MessageKey | null>(null);
+
   // Une deuxième lecture de la Room, indépendante de `useCallLayout` :
   // celle-ci choisit qui a la scène et réordonne la bande sous le doigt à
   // chaque changement de locuteur (voir `src/call/layout`) — un panneau de
@@ -213,7 +222,7 @@ export function CallScreen(): React.ReactElement {
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {
-          setFailure(toAccessMessage(result.error));
+          setFailure(toApiErrorMessage(result.error));
           return;
         }
 
@@ -316,22 +325,31 @@ export function CallScreen(): React.ReactElement {
   // que depuis une ligne du panneau, lequel ne montre ses actions que lorsque
   // `canModerate` vaut vrai — donc lorsque `access` est déjà rempli ; le repli
   // `?? ''` / `?? NO_ACCOUNT` n'existe que pour le typage.
+  //
+  // Chacune lit `result.ok` : un `.catch()` seul ne couvrirait qu'une
+  // exception inattendue d'`authedFetch`, jamais le chemin d'échec ordinaire
+  // de ces trois fonctions, qui est une valeur (`{ ok: false }`) résolue, pas
+  // rejetée. Sans cette lecture, couper le micro ou promouvoir n'ont aucun
+  // retour visible, et expulser ne fait disparaître la ligne que si le
+  // serveur a réellement expulsé — un 403 devient indiscernable d'un appui
+  // non enregistré. Un succès efface une éventuelle erreur affichée par un
+  // essai précédent.
   const handleMuteParticipant = (identity: string): void => {
-    void muteParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity).catch(
-      () => undefined,
-    );
+    muteParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
   };
 
   const handleRemoveParticipant = (identity: string): void => {
-    void removeParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity).catch(
-      () => undefined,
-    );
+    removeParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
   };
 
   const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
-    void updateParticipantRole(account ?? NO_ACCOUNT, access?.room.id ?? '', identity, role).catch(
-      () => undefined,
-    );
+    updateParticipantRole(account ?? NO_ACCOUNT, access?.room.id ?? '', identity, role)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
   };
 
   const message: MessageKey | null =
@@ -444,6 +462,18 @@ export function CallScreen(): React.ReactElement {
           accessibilityLabel={t('call.leave')}
         />
       </View>
+
+      {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
+          seul `visible` bascule, `Snackbar` gère elle-même son animation et
+          son délai de disparition. Le seul retour visible d'un micro coupé,
+          d'une expulsion ou d'un changement de rôle qui échoue. */}
+      <Snackbar
+        testID="moderation-error"
+        visible={moderationError !== null}
+        onDismiss={() => setModerationError(null)}
+      >
+        {moderationError !== null ? t(moderationError) : ''}
+      </Snackbar>
     </View>
   );
 }
