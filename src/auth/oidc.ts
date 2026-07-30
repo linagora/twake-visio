@@ -9,9 +9,15 @@ export type TokenSet = {
   readonly expiresAt: number;
 };
 
-export type TokenError = 'invalid_grant' | 'network' | 'malformed_response';
+// `server` existe pour ne pas confondre une panne du SSO avec un refus
+// d'autorisation. Sans cette distinction, une indisponibilité de LemonLDAP
+// envoie l'utilisateur se reconnecter contre un serveur qui ne peut pas
+// l'authentifier.
+export type TokenError = 'invalid_grant' | 'server' | 'network' | 'malformed_response';
 
-export type TokenResult = { ok: true; value: TokenSet } | { ok: false; error: TokenError };
+export type TokenResult =
+  | { ok: true; value: TokenSet }
+  | { ok: false; error: TokenError };
 
 type RawTokenResponse = {
   access_token?: string;
@@ -57,7 +63,12 @@ async function postToken(
     return { ok: false, error: 'network' };
   }
 
-  if (!response.ok) return { ok: false, error: 'invalid_grant' };
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: response.status >= 500 ? 'server' : 'invalid_grant',
+    };
+  }
 
   let raw: RawTokenResponse;
   try {
