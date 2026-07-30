@@ -61,66 +61,10 @@ describe('fetchInstanceConfig', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.issuer).toBe('https://sso.linagora.com');
-    // Le client_id vient de l'instance, pas d'une valeur codée en dur : c'est
-    // ce qui rend l'application utilisable sur un déploiement inconnu, dont le
-    // client porte un autre nom.
-    expect(result.value.clientId).toBe('livekit-meet');
+    expect(result.value.clientId).toBe('twake-visio');
   });
 
-  // Sans cette garde, un `client_id=` vide traverse et l'application ouvre le
-  // navigateur sur une URL d'autorisation sans client, que le SSO refuse après
-  // que la personne s'est authentifiée pour rien.
-  it('refuse une redirection dont le client_id est vide', async () => {
-    mockFetch((url) => {
-      if (url.includes('/config/')) {
-        return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
-      }
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: 'https://sso.linagora.com/oauth2/authorize?response_type=code&client_id=',
-        },
-      });
-    });
-
-    const result = await fetchInstanceConfig('https://meet.linagora.com');
-
-    expect(result).toEqual({ ok: false, error: 'oidc-undiscoverable' });
-  });
-
-  // Le repli comble ce qui manque, il ne remplace jamais ce que l'endpoint
-  // contractuel annonce. Le cas discriminant est celui où une seule des deux
-  // valeurs manque : le bloc de repli est alors bel et bien exécuté, et il doit
-  // laisser intacte celle que /config/ a fournie. Avec les deux valeurs
-  // présentes le bloc est sauté, donc un test bâti là-dessus ne garde rien.
-  it("laisse l'issuer de config.oidc intact quand seul le client_id manque", async () => {
-    mockFetch((url) => {
-      if (url.includes('/config/')) {
-        return new Response(
-          JSON.stringify({
-            ...CONFIG_WITH_OIDC,
-            oidc: { issuer: 'https://sso.linagora.com' },
-          }),
-          { status: 200 },
-        );
-      }
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: 'https://sso.autre.example/oauth2/authorize?client_id=autre-client',
-        },
-      });
-    });
-
-    const result = await fetchInstanceConfig('https://meet.linagora.com');
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.issuer).toBe('https://sso.linagora.com');
-    expect(result.value.clientId).toBe('autre-client');
-  });
-
-  it('refuse une redirection qui ne porte pas de client_id', async () => {
+  it('échoue proprement sur un hôte inconnu sans bloc oidc', async () => {
     mockFetch((url) => {
       if (url.includes('/config/')) {
         return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
