@@ -147,3 +147,111 @@ describe('fetchInstanceConfig', () => {
     expect(calls.every((call) => call.init?.signal !== undefined)).toBe(true);
   });
 });
+
+describe('fetchInstanceConfig, origine du client_id', () => {
+  const configWithMobileClient = {
+    ...CONFIG_WITHOUT_OIDC,
+    oidc: { issuer: 'https://sso.linagora.com', mobile_client_id: 'client-dedie' },
+  };
+
+  function redirectingTo(clientId: string): (url: string) => Response {
+    return (url) => {
+      if (url.includes('/config/')) {
+        return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `https://auth.example/oauth2/authorize?response_type=code&client_id=${clientId}`,
+        },
+      });
+    };
+  }
+
+  it('préfère le client dédié que déclare config.oidc', async () => {
+    mockFetch(() => new Response(JSON.stringify(configWithMobileClient), { status: 200 }));
+
+    const result = await fetchInstanceConfig('https://meet.linagora.com');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.clientId).toBe('client-dedie');
+  });
+
+  it("garde le client enregistré d'une instance connue plutôt que celui qu'elle annonce", async () => {
+    // Mesuré : meet.linagora.com annonce `livekit-meet`, un client web dont
+    // `twakevisio://callback` n'est pas une redirection déclarée. L'emprunter
+    // ferait échouer la connexion sur « URL non autorisée » après
+    // authentification. `twake-visio` y est enregistré pour le mobile.
+    mockFetch(redirectingTo('livekit-meet'));
+
+    const result = await fetchInstanceConfig('https://meet.linagora.com');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.clientId).toBe('twake-visio');
+  });
+
+  it("emprunte le client qu'annonce une instance inconnue", async () => {
+    // Mesuré sur meet.twake-dev.maudet.cloud. C'est ce qui rend l'application
+    // utilisable sur un déploiement que ce dépôt ne connaît pas.
+    mockFetch(redirectingTo('livekit-meet'));
+
+    const result = await fetchInstanceConfig('https://meet.twake-dev.maudet.cloud');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.clientId).toBe('livekit-meet');
+  });
+
+  it('emprunte un client au nom différent sur une autre instance inconnue', async () => {
+    // Mesuré sur meet.maudet.cloud, qui annonce `meet`. Deux instances du même
+    // produit, deux clients différents : une valeur codée en dur serait fausse
+    // quelque part.
+    mockFetch(redirectingTo('meet'));
+
+    const result = await fetchInstanceConfig('https://meet.maudet.cloud');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.clientId).toBe('meet');
+  });
+
+  it('refuse un client_id vide plutôt que de le prendre pour un client', async () => {
+    // Le paramètre présent mais vide est le cas discriminant : `get` rend une
+    // chaîne, pas null, et sans garde elle traverserait jusqu'à l'URL
+    // d'autorisation. Le SSO la refuserait après que la personne s'est
+    // authentifiée pour rien.
+    mockFetch((url) => {
+      if (url.includes('/config/')) {
+        return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: 'https://auth.example/oauth2/authorize?response_type=code&client_id=',
+        },
+      });
+    });
+
+    const result = await fetchInstanceConfig('https://meet.inconnu.example');
+
+    expect(result).toEqual({ ok: false, error: 'oidc-undiscoverable' });
+  });
+
+  it("échoue proprement quand une instance inconnue n'annonce aucun client", async () => {
+    mockFetch((url) => {
+      if (url.includes('/config/')) {
+        return new Response(JSON.stringify(CONFIG_WITHOUT_OIDC), { status: 200 });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'https://auth.example/oauth2/authorize?response_type=code' },
+      });
+    });
+
+    const result = await fetchInstanceConfig('https://meet.inconnu.example');
+
+    expect(result).toEqual({ ok: false, error: 'oidc-undiscoverable' });
+  });
+});
