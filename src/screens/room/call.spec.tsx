@@ -1,3 +1,4 @@
+import { VideoTrack } from '@livekit/react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
@@ -16,7 +17,32 @@ const mockConnect = jest.fn();
 const mockDisconnect = jest.fn();
 const mockDispose = jest.fn();
 const mockUnsubscribed = jest.fn();
-const mockRoom = { localParticipant: {} };
+
+// La publication caméra du participant local, posée par le test qui en a
+// besoin. Sans elle, la vignette locale est un carton nommé — l'état de départ
+// d'une séance dont la caméra n'a pas encore démarré.
+let mockCameraPublication: unknown;
+
+// Le double de `Room` doit désormais tenir le contrat que `src/call/participants`
+// lit : un participant local, une carte de distants, et une émission
+// d'événements à laquelle s'abonner. Un objet vide passait tant que personne ne
+// lisait la Room ; il ferait maintenant tomber l'écran au premier rendu.
+const mockRoom: {
+  localParticipant: unknown;
+  remoteParticipants: Map<string, unknown>;
+  on: () => unknown;
+  off: () => unknown;
+} = {
+  localParticipant: {
+    identity: 'me',
+    isLocal: true,
+    isSpeaking: false,
+    getTrackPublication: () => mockCameraPublication,
+  },
+  remoteParticipants: new Map<string, unknown>(),
+  on: () => mockRoom,
+  off: () => mockRoom,
+};
 
 // L'état que `getState()` rend. Le test le pose avant le montage, puis publie
 // les transitions suivantes par `publish()` — exactement les deux voies qu'offre
@@ -93,6 +119,8 @@ beforeEach(() => {
   mockUnsubscribed.mockReset();
   mockListeners.clear();
   mockCallState = { status: 'connected' };
+  mockCameraPublication = undefined;
+  jest.mocked(VideoTrack).mockClear();
 
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
   jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
@@ -128,6 +156,31 @@ describe('CallScreen', () => {
       expect(screen.getByTestId('active-speaker')).toBeTruthy();
       expect(screen.getByTestId('filmstrip')).toBeTruthy();
     });
+  });
+
+  it('pose sa propre vignette sur la scène tant qu’on est seul', async () => {
+    // Le seul bout de chaîne que cet écran peut montrer : la Room est lue, la
+    // sélection tranche, la coquille pose une vignette. Ce que cette vignette
+    // affiche vraiment, personne ici ne peut le vérifier.
+    await render(<CallScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('tile-me')).toBeTruthy());
+    expect(screen.getByTestId('tile-placeholder-me')).toBeTruthy();
+  });
+
+  it('porte la face courante de la caméra jusqu’au miroir de sa propre image', async () => {
+    // La face vit dans l'état de l'écran, le miroir se décide dans la
+    // sélection : si l'écran ne lui passe pas la face courante, sa propre image
+    // reste retournée après le passage en caméra arrière, et tout ce qu'elle
+    // filme devient illisible. Rien d'autre ne relie ces deux bouts.
+    mockCameraPublication = { trackSid: 'ts-me', source: 'camera', isMuted: false, track: {} };
+    await render(<CallScreen />);
+    await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
+    expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
+
+    await fireEvent.press(screen.getByTestId('switch-camera'));
+
+    await waitFor(() => expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(false));
   });
 
   it("suit les transitions publiées après l'abonnement", async () => {

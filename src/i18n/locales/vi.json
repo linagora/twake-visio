@@ -23,6 +23,7 @@
   "call.reconnecting": "Đang kết nối lại…",
   "call.ended": "Cuộc họp đã kết thúc",
   "call.switchCamera": "Đổi máy ảnh",
+  "call.unnamedParticipant": "Người tham gia không tên",
   "error.network": "Không thể kết nối",
   "error.unauthorized": "Phiên đã hết hạn, vui lòng đăng nhập lại"
 }

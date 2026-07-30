@@ -23,6 +23,7 @@
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",
   "call.switchCamera": "Переключить камеру",
+  "call.unnamedParticipant": "Участник без имени",
   "error.network": "Не удалось подключиться",
   "error.unauthorized": "Сессия истекла, войдите снова"
 }
