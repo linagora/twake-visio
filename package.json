@@ -10,6 +10,8 @@
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "lefthook install"
   },
   "dependencies": {

@@ -1,5 +1,7 @@
 pre-commit:
   commands:
+    format:
+      run: npm run format:check
     lint:
       run: npm run lint
     typecheck:
