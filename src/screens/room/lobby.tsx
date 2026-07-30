@@ -1,10 +1,10 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 
-import { requestEntry } from 'src/api/rooms';
+import { fetchRoomAccess, requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount } from 'src/auth/accounts';
 import { tokens } from 'src/ui/tokens';
@@ -18,6 +18,13 @@ type LobbyState =
   | { kind: 'waiting' }
   | { kind: 'no-moderator' }
   | { kind: 'failed'; message: 'error.network' | 'error.unauthorized' };
+
+// Le backend n'annonce pas une admission, il la laisse constater : le bloc
+// `livekit` apparaît dans le salon dès que l'appelant a le droit d'entrer.
+// Aucun flux d'événements n'est exposé côté meet, la scrutation est donc la
+// seule voie. Trois secondes tiennent l'attente courte sans marteler le
+// serveur pendant qu'une réunion se remplit.
+const ADMISSION_POLL_MS = 3000;
 
 const styles = StyleSheet.create({
   root: {
@@ -40,6 +47,7 @@ function toFailedOrNoModerator(error: ApiError): LobbyState {
 
 export function LobbyScreen(): React.ReactElement {
   const { t } = useTranslation();
+  const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   // Sans compte actif, personne n'est à annoncer au salon. L'état de départ le
   // dit dès le premier rendu : le poser depuis l'effet appellerait setState de
@@ -60,6 +68,45 @@ export function LobbyScreen(): React.ReactElement {
       )
       .catch(() => setState({ kind: 'failed', message: 'error.network' }));
   }, [slug]);
+
+  // On scrute aussi sans modérateur : c'est un état d'attente, pas une fin de
+  // course. Quelqu'un qui peut ouvrir peut arriver une minute plus tard, et
+  // l'écran doit alors basculer tout seul.
+  const awaitingAdmission = state.kind === 'waiting' || state.kind === 'no-moderator';
+
+  useEffect(() => {
+    if (!awaitingAdmission) return;
+    const account = getActiveAccount();
+    if (account === null) return;
+
+    let stopped = false;
+    const timer = setInterval(() => {
+      void fetchRoomAccess(account, slug)
+        .then((result) => {
+          if (stopped) return;
+          if (result.ok) {
+            stopped = true;
+            clearInterval(timer);
+            router.replace(`/room/${slug}/call`);
+            return;
+          }
+          // Une coupure passagère ne doit pas éjecter quelqu'un de la file
+          // d'attente : on continue de scruter. Une session expirée, elle,
+          // ne se résoudra pas toute seule et demande une action.
+          if (result.error.kind === 'unauthorized') {
+            stopped = true;
+            clearInterval(timer);
+            setState({ kind: 'failed', message: 'error.unauthorized' });
+          }
+        })
+        .catch(() => undefined);
+    }, ADMISSION_POLL_MS);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [awaitingAdmission, slug, router]);
 
   if (state.kind === 'requesting') {
     return (
