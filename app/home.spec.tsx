@@ -36,7 +36,7 @@ describe('HomeScreen', () => {
       value: [{ id: 'r-1', slug: 'point-hebdo', name: 'Point hebdo', accessLevel: 'trusted' }],
     });
 
-    render(<HomeScreen />);
+    await render(<HomeScreen />);
 
     await waitFor(() => {
       expect(screen.getByText('Point hebdo')).toBeTruthy();
@@ -49,7 +49,7 @@ describe('HomeScreen', () => {
       .spyOn(rooms, 'fetchMyRooms')
       .mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
-    render(<HomeScreen />);
+    await render(<HomeScreen />);
 
     await waitFor(() => {
       expect(screen.queryByTestId('room-item')).toBe(null);
@@ -60,9 +60,9 @@ describe('HomeScreen', () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
-    render(<HomeScreen />);
-    fireEvent.changeText(screen.getByTestId('join-code-input'), '  point-hebdo  ');
-    fireEvent.press(screen.getByTestId('join-btn'));
+    await render(<HomeScreen />);
+    await fireEvent.changeText(screen.getByTestId('join-code-input'),'  point-hebdo  ');
+    await fireEvent.press(screen.getByTestId('join-btn'));
 
     expect(mockPush).toHaveBeenCalledWith('/room/point-hebdo/prejoin');
   });
@@ -71,9 +71,9 @@ describe('HomeScreen', () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
-    render(<HomeScreen />);
-    fireEvent.changeText(screen.getByTestId('join-code-input'), '   ');
-    fireEvent.press(screen.getByTestId('join-btn'));
+    await render(<HomeScreen />);
+    await fireEvent.changeText(screen.getByTestId('join-code-input'),'   ');
+    await fireEvent.press(screen.getByTestId('join-btn'));
 
     expect(mockPush).not.toHaveBeenCalled();
   });

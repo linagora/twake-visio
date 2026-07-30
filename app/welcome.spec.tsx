@@ -9,8 +9,8 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('WelcomeScreen', () => {
-  it('propose les trois entrées exigées', () => {
-    render(<WelcomeScreen />);
+  it('propose les trois entrées exigées', async () => {
+    await render(<WelcomeScreen />);
 
     expect(screen.queryByTestId('sign-in-btn')).not.toBeNull();
     expect(screen.queryByTestId('sign-up-btn')).not.toBeNull();
