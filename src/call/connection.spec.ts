@@ -249,6 +249,62 @@ describe('createCallSession — événements du serveur', () => {
   });
 });
 
+describe('createCallSession — événements périmés', () => {
+  it('ignore un Disconnected tardif qui raturerait une nouvelle tentative', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    await session.disconnect();
+
+    const transport = pauseTransport();
+    const rejoining = session.connect(ACCESS);
+    expect(session.getState()).toEqual({ status: 'connecting' });
+
+    // Fenêtre réelle, établie sur la source de livekit-client@2.21.0 :
+    // `Room.connect` relâche son disconnectLock tôt, et le `catch` de sa
+    // fonction de connexion peut atteindre `handleDisconnect` plusieurs `await`
+    // plus tard — donc après le départ d'une nouvelle tentative. Le drapeau
+    // `hangingUp` ne couvrait que la fenêtre d'un `disconnect()` en cours.
+    emit('disconnected');
+
+    expect(session.getState()).toEqual({ status: 'connecting' });
+
+    transport.open();
+    await rejoining;
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
+  it('ignore un Reconnecting reçu hors séance', async () => {
+    const session = createCallSession();
+
+    emit('reconnecting');
+
+    // Sans garde, l'état passait à `reconnecting` — d'où `connect()` est
+    // refusé. La session était figée sans aucune sortie, et aucun écran
+    // n'appelle `disconnect()` sur une session qu'il croit `idle`.
+    expect(session.getState()).toEqual({ status: 'idle' });
+
+    await session.connect(ACCESS);
+
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
+  it('ignore un Reconnecting reçu après la fin de la séance', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    emit('disconnected');
+    expect(session.getState()).toEqual({ status: 'disconnected', reason: 'closed' });
+
+    emit('reconnecting');
+
+    // Une séance finie ne repart pas en `reconnecting` : `connect()` y est
+    // refusé, et la session se retrouverait figée par la même porte.
+    expect(session.getState()).toEqual({ status: 'disconnected', reason: 'closed' });
+    await session.connect(ACCESS);
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+});
+
 describe('createCallSession — coupure volontaire', () => {
   it('publie idle sans faire clignoter d\'erreur, alors que le SDK émet Disconnected', async () => {
     // `Room.disconnect()` émet `RoomEvent.Disconnected`. Rejouer cet événement

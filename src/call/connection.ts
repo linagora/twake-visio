@@ -33,6 +33,12 @@ export type CallSession = {
 // séance est déjà ouverte. Aucune non plus tant qu'une tentative est en vol,
 // et cet appel-là rend la promesse de la tentative en cours.
 //
+// Les événements du serveur ne publient que s'ils proviennent de l'ère
+// courante — la même garde de génération que les commandes. Un `Disconnected`
+// tardif issu d'une connexion abandonnée ne rature donc pas une nouvelle
+// tentative, et un `Reconnecting` reçu hors séance ne fige pas la session dans
+// un état d'où `connect()` est refusé.
+//
 // `disconnected` porte toujours un motif, parce que l'écran doit pouvoir dire
 // pourquoi la séance s'est arrêtée. `idle` est réservé à l'absence de séance :
 // avant la première connexion, et après un raccrochage volontaire.
@@ -55,10 +61,12 @@ export function createCallSession(): CallSession {
   // écran que l'utilisateur vient de quitter.
   let generation = 0;
 
-  // `Room.disconnect()` émet lui aussi `RoomEvent.Disconnected`. Sans ce
-  // drapeau, un raccrochage volontaire ferait clignoter `disconnected` — que
-  // l'UI lit comme une erreur — juste avant `idle`.
-  let hangingUp = false;
+  // L'ère qui possède la connexion vivante, `null` tant qu'aucune tentative
+  // n'a abouti. C'est ce qui met les événements du serveur sous la *même*
+  // garde que les commandes : toute commande ouvre une nouvelle ère, ce qui
+  // orpheline la connexion précédente, et un événement issu d'une ère périmée
+  // ne publie plus rien.
+  let established: number | null = null;
 
   function setState(next: CallState): void {
     state = next;
@@ -84,14 +92,37 @@ export function createCallSession(): CallSession {
     }
   }
 
-  room.on(RoomEvent.Reconnecting, () => setState({ status: 'reconnecting' }));
+  // Vrai seulement quand la connexion vivante appartient à l'ère courante.
+  // Faux avant toute connexion, après un raccrochage, et pour tout événement
+  // qu'une commande plus récente a rendu caduc.
+  function ownsLiveConnection(): boolean {
+    return established === generation;
+  }
+
+  function onReconnecting(): void {
+    if (!ownsLiveConnection()) return;
+    setState({ status: 'reconnecting' });
+  }
+
   // Sans ce retour à `connected`, l'écran resterait bloqué sur « reconnexion »
   // alors que la séance a repris.
-  room.on(RoomEvent.Reconnected, () => setState({ status: 'connected' }));
-  room.on(RoomEvent.Disconnected, () => {
-    if (hangingUp) return;
+  function onReconnected(): void {
+    if (!ownsLiveConnection()) return;
+    setState({ status: 'connected' });
+  }
+
+  function onDisconnected(): void {
+    if (!ownsLiveConnection()) return;
+    // La séance est finie : refermer l'ère. Sans cela un `Reconnecting` tardif
+    // ferait repartir la machine de `disconnected` vers `reconnecting`, état
+    // depuis lequel `connect()` est refusé — la session serait figée.
+    generation += 1;
     setState({ status: 'disconnected', reason: 'closed' });
-  });
+  }
+
+  room.on(RoomEvent.Reconnecting, onReconnecting);
+  room.on(RoomEvent.Reconnected, onReconnected);
+  room.on(RoomEvent.Disconnected, onDisconnected);
 
   // Ne rejette jamais : l'issue d'une tentative est portée par l'état publié,
   // pas par la promesse. Tous les appelants concurrents reçoivent donc le même
@@ -111,6 +142,9 @@ export function createCallSession(): CallSession {
     }
 
     if (era !== generation) return;
+    // Cette ère possède désormais la connexion : les événements du serveur qui
+    // en proviennent seront publiés, ceux d'une ère précédente non.
+    if (outcome.status === 'connected') established = era;
     setState(outcome);
   }
 
@@ -146,15 +180,17 @@ export function createCallSession(): CallSession {
     generation += 1;
     const era = generation;
     pending = null;
-    hangingUp = true;
     try {
+      // `Room.disconnect()` émet lui-même `RoomEvent.Disconnected`. La
+      // nouvelle ère ouverte juste au-dessus l'orpheline, donc un raccrochage
+      // volontaire ne fait plus clignoter `disconnected` — que l'UI lit comme
+      // une erreur — avant `idle`. C'est ce que faisait un drapeau ad hoc, que
+      // la garde de génération remplace.
       await room.disconnect();
     } catch {
       // Une coupure qui échoue laisse tout de même la séance terminée côté
       // application : garder l'état précédent bloquerait l'écran sur un appel
       // dont plus rien ne sort, sans aucun recours pour l'utilisateur.
-    } finally {
-      hangingUp = false;
     }
 
     // Une coupure lente peut se terminer après qu'une nouvelle tentative a
