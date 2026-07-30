@@ -1255,7 +1255,9 @@ describe('buildAuthorizeUrl', () => {
 
 describe('exchangeCode', () => {
   it('n\'envoie aucun client_secret', async () => {
-    const spy = jest.fn(
+    // Génériques explicites : sans paramètres déclarés, noUncheckedIndexedAccess
+    // rejette l'accès à calls[0][1] comme hors tuple.
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
       async () =>
         new Response(
           JSON.stringify({
@@ -1966,7 +1968,11 @@ beforeEach(() => {
 describe('authedFetch', () => {
   it('joint le jeton porteur à la requête', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('at');
-    const spy = jest.fn(async () => new Response(JSON.stringify({ id: 1 }), { status: 200 }));
+    // Les génériques explicites sont nécessaires : sans paramètres déclarés,
+    // noUncheckedIndexedAccess rejette l'accès à calls[0][1] comme hors tuple.
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+      async () => new Response(JSON.stringify({ id: 1 }), { status: 200 }),
+    );
     globalThis.fetch = spy as unknown as typeof fetch;
 
     const result = await authedFetch<{ id: number }>(ACCOUNT, '/api/v1.0/users/me/');
@@ -2199,6 +2205,8 @@ describe('fetchRoomAccess', () => {
 
 describe('createRoom', () => {
   it('transmet le nom et le niveau d\'accès choisis', async () => {
+    // spyOn conserve la signature d'authedFetch, donc calls[0][2] est typé
+    // sans générique supplémentaire, contrairement à un jest.fn() nu.
     const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
       ok: true,
       value: { id: 'r-2', slug: 'point-hebdo', access_level: 'public' },
