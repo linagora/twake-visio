@@ -4,8 +4,18 @@ import React from 'react';
 import { tokens } from 'src/ui/tokens';
 import { WaitingBanner } from './waitingBanner';
 
+// Interpole vraiment `name`, contrairement au mock habituel du dépôt qui
+// rend la clé telle quelle : c'est la seule façon de distinguer, dans un
+// test, quel champ du participant finit à l'écran. Sans elle,
+// `t('waiting.knocking', { name: participant.id })` rendrait la même chose
+// que la bonne implémentation, et rien ne dirait que le modérateur lit
+// l'UUID brute plutôt que le nom.
+const mockT = jest.fn((key: string, options?: { name?: string }) =>
+  options?.name !== undefined ? `${key}:${options.name}` : key,
+);
+
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: mockT }),
 }));
 
 const ADA = { id: 'p-1', username: 'Ada' };
@@ -49,6 +59,31 @@ describe('WaitingBanner', () => {
     expect(screen.queryByTestId('waiting-others')).toBe(null);
   });
 
+  // M1 : `t('waiting.knocking', { name: participant.id })` passait les cinq
+  // tests ci-dessus aussi bien que la bonne implémentation — rien n'assurait
+  // quel champ finissait à l'écran. Le mock interpolant ci-dessus distingue
+  // les deux : `Ada` ici, `p-1` avec la régression.
+  it('affiche le nom de la personne, pas un autre champ', async () => {
+    await render(<WaitingBanner participant={ADA} remaining={0} onAnswer={jest.fn()} />);
+
+    expect(screen.getByText('waiting.knocking:Ada')).toBeTruthy();
+  });
+
+  it('affiche un repli traduit quand le nom est vide', async () => {
+    // Même convention que stage.tsx et participantsPanel.tsx : jamais
+    // d'identifiant brut ni de vide à l'écran. Le bandeau était le seul des
+    // trois composants affichant un nom à ne pas l'avoir.
+    await render(
+      <WaitingBanner
+        participant={{ id: 'p-9', username: '' }}
+        remaining={0}
+        onAnswer={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('waiting.knocking:call.unnamedParticipant')).toBeTruthy();
+  });
+
   // C1 : le bandeau est sombre dans les deux schémas (`surfaceDark`, un
   // littéral), mais ni le nom ni le compteur ne posaient de couleur de texte
   // avant ce correctif — ils retombaient sur `theme.colors.onSurface`, qui
@@ -58,7 +93,7 @@ describe('WaitingBanner', () => {
   it('pose la couleur claire du texte sur le fond sombre du bandeau', async () => {
     await render(<WaitingBanner participant={ADA} remaining={1} onAnswer={jest.fn()} />);
 
-    expect(screen.getByText('waiting.knocking')).toHaveStyle({ color: tokens.color.textDark });
+    expect(screen.getByText('waiting.knocking:Ada')).toHaveStyle({ color: tokens.color.textDark });
     expect(screen.getByTestId('waiting-others')).toHaveStyle({ color: tokens.color.textDark });
   });
 

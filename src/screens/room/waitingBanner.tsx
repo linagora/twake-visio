@@ -39,10 +39,16 @@ export function WaitingBanner({
 
   if (participant === null) return null;
 
+  // Même repli que stage.tsx et participantsPanel.tsx : jamais d'identifiant
+  // brut ni de vide à l'écran. Le bandeau était le seul des trois à afficher
+  // un nom sans ce repli.
+  const name = participant.username.trim();
+  const label = name.length > 0 ? name : t('call.unnamedParticipant');
+
   return (
     <View testID="waiting-banner" style={styles.root}>
       <Text variant="titleMedium" style={styles.text}>
-        {t('waiting.knocking', { name: participant.username })}
+        {t('waiting.knocking', { name: label })}
       </Text>
       {remaining > 0 ? (
         <Text testID="waiting-others" style={styles.text}>
