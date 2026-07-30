@@ -52,6 +52,25 @@ describe('authedFetch', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('ne rejoue qu\'une seule fois, même si le 401 persiste', async () => {
+    // Sans borne, un 401 persistant accompagné d'un rafraîchissement qui
+    // réussit boucle indéfiniment et martèle le SSO. Aucun autre test ne
+    // distingue « rejoue une fois » de « rejoue sans fin » : chacun résout au
+    // second appel ou échoue au rafraîchissement du premier. C'est
+    // toHaveBeenCalledTimes(2) qui borne, et rien d'autre.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
+    jest.spyOn(session, 'forceRefresh').mockResolvedValue('fresh');
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+      async () => new Response(null, { status: 401 }),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/users/me/');
+
+    expect(result).toEqual({ ok: false, error: { kind: 'unauthorized' } });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('rend unauthorized quand le rafraîchissement échoue', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue('stale');
     jest.spyOn(session, 'forceRefresh').mockResolvedValue(null);
