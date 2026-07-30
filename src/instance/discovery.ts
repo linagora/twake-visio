@@ -1,5 +1,5 @@
 import { REQUEST_TIMEOUT_MS } from 'src/constants';
-import { findKnownClientId } from 'src/instance/knownInstances';
+
 import type { InstanceConfig, InstanceResult } from 'src/instance/types';
 
 type RawConfig = {
@@ -27,9 +27,21 @@ async function fetchJson(url: string): Promise<unknown | null> {
   }
 }
 
-// La redirection de /authenticate/ porte l'issuer dans son URL d'autorisation.
-// Repli non contractuel, à retirer quand toutes les instances exposent config.oidc.
-async function resolveOidcFromRedirect(serverUrl: string): Promise<string | null> {
+// La redirection de /authenticate/ porte l'issuer ET le client_id dans son URL
+// d'autorisation. On prend les deux : l'application réutilise le client OIDC de
+// l'instance plutôt que d'en exiger un qui lui soit propre, ce qui la rend
+// utilisable sur une instance qu'on ne connaît pas.
+//
+// Les valeurs diffèrent bel et bien d'un déploiement à l'autre — mesuré le
+// 2026-07-30 : `livekit-meet` sur meet.linagora.com et visio.twake.app, tous
+// deux adossés à sso.linagora.com, mais `meet` sur meet.twake.app, adossé à
+// sign-up.twake.app. Une valeur codée en dur serait fausse quelque part.
+//
+// Repli non contractuel, à retirer quand toutes les instances exposent
+// config.oidc.
+type RedirectOidc = { readonly issuer: string; readonly clientId: string };
+
+async function resolveOidcFromRedirect(serverUrl: string): Promise<RedirectOidc | null> {
   const response = await fetch(`${serverUrl}/api/v1.0/authenticate/`, {
     redirect: 'manual',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -38,7 +50,9 @@ async function resolveOidcFromRedirect(serverUrl: string): Promise<string | null
   if (location === null) return null;
   try {
     const authorizeUrl = new URL(location);
-    return authorizeUrl.origin;
+    const clientId = authorizeUrl.searchParams.get('client_id');
+    if (clientId === null || clientId.length === 0) return null;
+    return { issuer: authorizeUrl.origin, clientId };
   } catch {
     return null;
   }
@@ -62,16 +76,17 @@ export async function fetchInstanceConfig(serverUrl: string): Promise<InstanceRe
   let issuer = raw.oidc?.issuer ?? null;
   let clientId = raw.oidc?.mobile_client_id ?? null;
 
-  if (issuer === null) {
+  if (issuer === null || clientId === null) {
+    let fromRedirect: RedirectOidc | null;
     try {
-      issuer = await resolveOidcFromRedirect(normalized);
+      fromRedirect = await resolveOidcFromRedirect(normalized);
     } catch {
       return { ok: false, error: 'unreachable' };
     }
-  }
-
-  if (clientId === null) {
-    clientId = findKnownClientId(new URL(normalized).host);
+    // Ce que l'endpoint contractuel annonce prime ; le repli ne comble que ce
+    // qui manque, jamais ne remplace.
+    issuer = issuer ?? fromRedirect?.issuer ?? null;
+    clientId = clientId ?? fromRedirect?.clientId ?? null;
   }
 
   if (issuer === null || clientId === null) {
