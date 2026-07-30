@@ -65,10 +65,44 @@ describe('createRoom', () => {
 
     const init = spy.mock.calls[0]?.[2] as RequestInit;
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({
-      name: 'Point hebdo',
-      access_level: 'public',
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.name).toBe('Point hebdo');
+    expect(body.access_level).toBe('public');
+  });
+
+  it('envoie un code que le client web sait router', async () => {
+    // Sans ce code, le serveur dérive le slug du nom : « Test mobile » devenait
+    // « test-mobile », que le routeur web refuse. Le salon existait mais
+    // n'était joignable ni par lien ni depuis un navigateur.
+    const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-2', slug: 'abc-defg-hij', access_level: 'public' },
     });
+
+    await createRoom(ACCOUNT, { name: 'Test mobile', accessLevel: 'public' });
+
+    const init = spy.mock.calls[0]?.[2] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.slug).toMatch(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/);
+  });
+
+  it('tire un code différent à chaque création', async () => {
+    const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-2', slug: 'abc-defg-hij', access_level: 'public' },
+    });
+
+    await createRoom(ACCOUNT, { name: 'Un', accessLevel: 'public' });
+    await createRoom(ACCOUNT, { name: 'Deux', accessLevel: 'public' });
+
+    // Un code constant ferait échouer la seconde création sur le refus
+    // « Room with this Slug already exists », que l'utilisateur ne pourrait
+    // pas résoudre en changeant le nom.
+    const slugs = spy.mock.calls.map((call) => {
+      const body = JSON.parse(String((call[2] as RequestInit).body)) as Record<string, unknown>;
+      return body.slug;
+    });
+    expect(slugs[0]).not.toBe(slugs[1]);
   });
 });
 
