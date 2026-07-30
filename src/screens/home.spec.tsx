@@ -2,8 +2,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import React from 'react';
 
 import * as rooms from 'src/api/rooms';
+import type { Room } from 'src/call/types';
 import * as accounts from 'src/auth/accounts';
-import { HomeScreen } from './home';
+import { filterRooms, HomeScreen } from './home';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -74,5 +75,70 @@ describe('HomeScreen', () => {
     await fireEvent.press(screen.getByTestId('join-btn'));
 
     expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+describe('filterRooms', () => {
+  const room = (slug: string, name?: string): Room => ({
+    id: 'r-' + slug,
+    slug,
+    name: name ?? slug,
+    accessLevel: 'public',
+  });
+
+  it('remonte les réunions nommées avant les codes', () => {
+    // Le défaut constaté sur appareil : des dizaines de slugs triés
+    // alphabétiquement noyaient les deux réunions réellement nommées.
+    const result = filterRooms(
+      [room('zzz-aaa-bbb'), room('point-hebdo', 'Point hebdo'), room('aaa-bbb-ccc')],
+      '',
+    );
+
+    expect(result.map((r) => r.slug)).toEqual(['point-hebdo', 'aaa-bbb-ccc', 'zzz-aaa-bbb']);
+  });
+
+  it('trie chaque groupe par ordre alphabétique', () => {
+    const result = filterRooms([room('b', 'Revue'), room('a', 'Ateliers')], '');
+
+    expect(result.map((r) => r.name)).toEqual(['Ateliers', 'Revue']);
+  });
+
+  it('filtre sur le nom', () => {
+    const result = filterRooms([room('x', 'Point hebdo'), room('y', 'Revue')], 'hebdo');
+
+    expect(result.map((r) => r.name)).toEqual(['Point hebdo']);
+  });
+
+  it('filtre aussi sur le code, souvent lu ailleurs', () => {
+    // Le nom doit différer du slug, sinon chercher dans le nom seul trouverait
+    // quand même le code et le test ne garderait rien.
+    const result = filterRooms(
+      [room('aet-jgqg-fpa', 'Point hebdo'), room('afk-segd-yzm', 'Revue')],
+      'jgqg',
+    );
+
+    expect(result.map((r) => r.slug)).toEqual(['aet-jgqg-fpa']);
+  });
+
+  it('ignore la casse et les espaces autour de la recherche', () => {
+    const result = filterRooms([room('x', 'Point hebdo')], '  HEBDO  ');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('ne filtre rien sur une recherche vide', () => {
+    const result = filterRooms([room('a'), room('b')], '   ');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it("ne modifie pas la liste qu'on lui passe", () => {
+    const rooms = [room('b', 'Revue'), room('a', 'Ateliers')];
+
+    filterRooms(rooms, '');
+
+    // Trier sur place muterait l'état React et le rendu suivant partirait d'un
+    // ordre déjà changé, sans que personne ne l'ait demandé.
+    expect(rooms.map((r) => r.slug)).toEqual(['b', 'a']);
   });
 });
