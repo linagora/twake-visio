@@ -20,8 +20,17 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 // The project's tsconfig sets `types: ["jest"]`, which excludes `@types/node`
-// from automatic inclusion; the triple-slash reference above opts this file
-// back in without widening that setting project-wide.
+// from automatic inclusion; the triple-slash reference above opts back in.
+//
+// CORRECTION: an earlier version of this comment claimed the reference was
+// scoped to this file. That is wrong, and verified wrong: a `/// <reference
+// types="node" />` is program-global in TypeScript. With this file present
+// anywhere in the program, `tsc` resolves Node builtins (`fs`, `path`, …)
+// from *any* file, including `src/` and `app/`, where they typecheck but do
+// not exist at runtime in React Native. TypeScript cannot hold this
+// boundary; `eslint.config.js`'s `no-restricted-imports` rule for
+// `src/**`/`app/**` (which excludes `__mocks__/**`) is what actually does.
+// Do not remove that rule on the assumption this reference is contained.
 
 export const CryptoDigestAlgorithm = {
   SHA1: 'SHA-1',
