@@ -1,8 +1,9 @@
 import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { StyleSheet, useColorScheme } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { initI18n } from 'src/i18n';
 import { listKnownHosts } from 'src/instance/knownInstances';
@@ -42,8 +43,20 @@ export default function RootLayout(): React.ReactElement | null {
   if (!i18nReady) return null;
 
   return (
-    <PaperProvider theme={makeTheme(scheme === 'dark' ? 'dark' : 'light')}>
-      <Stack screenOptions={{ headerShown: false }} />
-    </PaperProvider>
+    <SafeAreaProvider>
+      <PaperProvider theme={makeTheme(scheme === 'dark' ? 'dark' : 'light')}>
+        {/* Les en-têtes sont masqués, donc rien ne pousse le contenu sous la
+            barre d'état : sans ces marges, le premier élément de chaque écran
+            passe sous l'heure et les icônes système. Appliquées ici une fois
+            plutôt que dans chacun des sept écrans. */}
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
+          <Stack screenOptions={{ headerShown: false }} />
+        </SafeAreaView>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+});
