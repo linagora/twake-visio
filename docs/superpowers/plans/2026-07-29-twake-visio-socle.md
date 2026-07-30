@@ -1565,7 +1565,14 @@ describe('registre de comptes', () => {
     addAccount({ ...first, displayName: 'Ada Lovelace' });
 
     expect(getActiveAccount()?.id).toBe(second.id);
-    expect(listAccounts()).toHaveLength(2);
+
+    // La mise à jour se fait sur place : position conservée et enregistrement
+    // remplacé. Un filter+append passerait les deux assertions précédentes.
+    const listed = listAccounts();
+    expect(listed).toHaveLength(2);
+    expect(listed[0]?.id).toBe(first.id);
+    expect(listed[0]?.displayName).toBe('Ada Lovelace');
+    expect(listed[1]?.id).toBe(second.id);
   });
 
   it('bascule le compte actif', () => {
@@ -1640,11 +1647,18 @@ import type { TokenSet } from 'src/auth/oidc';
 
 const KEY_SAFE = /^[A-Za-z0-9.-]$/;
 
-// Échappement injectif : chaque caractère hors alphabet devient `_XXXX` sur
-// quatre hexadécimaux — largeur fixe, donc sans ambiguïté — et `_` lui-même est
-// échappé. Un remplacement uniforme par `_` ne l'est pas : `host:8443` et
-// `host/8443` produisent alors la même clé, et un compte lit les jetons de
-// l'autre sans que rien ne le signale.
+// Échappement injectif : chaque caractère hors alphabet devient `_XXXXXX` sur
+// exactement six hexadécimaux, et `_` lui-même est échappé.
+//
+// Six, et non quatre : `padStart` impose un plancher, pas un plafond, donc un
+// point de code hors du plan de base déborde. Avec quatre, `U+10000` donne
+// `_10000` — indistinguable de `U+1000` suivi du chiffre `0`. Le plus grand
+// point de code Unicode étant U+10FFFF, six chiffres suffisent toujours et la
+// largeur est alors réellement fixe.
+//
+// Un remplacement uniforme par `_`, lui, n'est injectif pour rien : `host:8443`
+// et `host/8443` produisent la même clé, et un compte lit les jetons de l'autre
+// sans que rien ne le signale.
 function encodeKey(value: string): string {
   let out = '';
   for (const char of value) {
@@ -1653,7 +1667,7 @@ function encodeKey(value: string): string {
       continue;
     }
     const code = char.codePointAt(0) ?? 0;
-    out += `_${code.toString(16).padStart(4, '0')}`;
+    out += `_${code.toString(16).padStart(6, '0')}`;
   }
   return out;
 }
@@ -1717,6 +1731,18 @@ describe('dérivation de clé', () => {
 
     const mock = jest.mocked(setItemAsync);
     expect(mock).toHaveBeenCalledTimes(2);
+    const [firstKey] = mock.mock.calls[0] ?? [];
+    const [secondKey] = mock.mock.calls[1] ?? [];
+    expect(firstKey).not.toBe(secondKey);
+  });
+
+  it('reste injective sur un point de code hors du plan de base', async () => {
+    // padStart impose un plancher : avec quatre chiffres, U+10000 et
+    // U+1000 suivi de « 0 » produisaient la même clé.
+    await saveTokens('a\u{10000}b', TOKENS);
+    await saveTokens('a\u1000' + '0b', TOKENS);
+
+    const mock = jest.mocked(setItemAsync);
     const [firstKey] = mock.mock.calls[0] ?? [];
     const [secondKey] = mock.mock.calls[1] ?? [];
     expect(firstKey).not.toBe(secondKey);
