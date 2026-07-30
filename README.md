@@ -97,6 +97,4 @@ l'introspection contre `https://sso.linagora.com/oauth2/introspect`.
 ## Conception
 
 - Règles pour les agents et écarts assumés : `AGENTS.md`
-
-La spécification et le plan d'implémentation vivent sous `docs/superpowers/`, qui n'est
-pas versionné.
+- Spécifications et plans d'implémentation : `docs/superpowers/`

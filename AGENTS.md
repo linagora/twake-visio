@@ -112,6 +112,27 @@ The iOS Simulator cannot publish camera or microphone — iOS testing needs a de
 Seven locales (`en fr es it de vi ru`), all filled before merge. No hardcoded
 user-facing string. `src/i18n/index.spec.ts` fails if a key is missing anywhere.
 
+## Ce qui est versionné, et ce qui ne l'est pas
+
+`docs/superpowers/` **est versionné** : les spécifications et les plans d'implémentation
+sont des documents de conception, au même titre que ce fichier. Ils portent des faits
+mesurés — motifs d'URL relevés dans un bundle, versions de serveur lues dans une réponse,
+limites de débit lues dans une configuration — que rien d'autre ne consigne, et un
+implémenteur travaille depuis eux.
+
+`.superpowers/` **est ignoré** : ledgers, briefs, rapports et paquets de revue d'une
+exécution. Éphémère par nature, régénérable, sans valeur une fois la branche fusionnée.
+
+La distinction a été payée. Sortir `docs/superpowers/` du suivi a coûté, en une journée :
+les prérequis d'enregistrement OIDC disparus du dépôt et rapatriés dans le `README` en
+catastrophe, une spécification qu'un relecteur ne pouvait pas ouvrir depuis GitHub, un plan
+à recopier à la main dans chaque worktree — et la **perte effective** du plan du socle et
+de son document de conception, 5363 lignes effacées du disque par une fusion, récupérées
+depuis l'historique.
+
+Un document qu'aucune branche ne porte ne suit pas les worktrees, ne survit pas à un clone,
+et disparaît sans bruit à la première fusion qui le supprime.
+
 ## Tests
 
 `*.spec.ts` / `*.spec.tsx`, colocated. No snapshots. Bar: `npm test`,
