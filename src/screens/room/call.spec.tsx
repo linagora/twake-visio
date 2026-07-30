@@ -865,4 +865,33 @@ describe('CallScreen, échec de modération', () => {
 
     expect(screen.queryByTestId('moderation-error')).toBeNull();
   });
+
+  // M7 : le commentaire au-dessus des trois gestionnaires promet qu'« un
+  // succès efface une éventuelle erreur affichée par un essai précédent »,
+  // mais aucun test ne partait d'un état d'erreur pour le vérifier — muter
+  // `result.ok ? null : …` en `result.ok ? moderationError : …` laissait les
+  // tests précédents verts.
+  it('efface une erreur affichée par un essai précédent quand le suivant réussit', async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    const muteSpy = jest.spyOn(participants, 'muteParticipant');
+    muteSpy.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+    await waitFor(() => {
+      expect(screen.getByTestId('moderation-error')).toHaveTextContent('error.network');
+    });
+
+    muteSpy.mockResolvedValueOnce({ ok: true, value: undefined });
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('moderation-error')).toBeNull();
+    });
+  });
 });
