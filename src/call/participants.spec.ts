@@ -43,32 +43,37 @@ function camera(overrides: Partial<FakePublication> = {}): FakePublication {
 
 // Un double de `Room` qui enregistre réellement ses gestionnaires par nom
 // d'événement : c'est la seule façon de vérifier à quoi le magasin s'abonne, et
-// qu'il détache exactement ce qu'il a attaché. `off` ne retire que si la
-// référence correspond — le piège classique du gestionnaire anonyme.
+// qu'il détache exactement ce qu'il a attaché.
+//
+// Les gestionnaires sont rangés dans une liste, pas dans un ensemble, parce que
+// c'est ce que fait un `EventEmitter` : le même gestionnaire attaché deux fois
+// est appelé deux fois, et `off` n'en retire qu'une occurrence. Un ensemble
+// masquerait précisément la fuite qu'une double attache provoque. `off` ne
+// retire que si la référence correspond — le piège du gestionnaire anonyme.
 type RoomProbe = {
   readonly room: Room;
   readonly remotes: Map<string, Participant>;
   readonly subscribedEvents: () => string[];
+  readonly handlerCount: (event: string) => number;
   readonly emit: (event: string) => void;
 };
 
 function fakeRoom(local: Participant, remotes: readonly Participant[] = []): RoomProbe {
-  const handlers = new Map<string, Set<() => void>>();
+  const handlers = new Map<string, (() => void)[]>();
   const remoteParticipants = new Map<string, Participant>(remotes.map((p) => [p.identity, p]));
 
   const room = {
     localParticipant: local,
     remoteParticipants,
     on(event: string, handler: () => void): unknown {
-      const set = handlers.get(event) ?? new Set<() => void>();
-      set.add(handler);
-      handlers.set(event, set);
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
       return room;
     },
     off(event: string, handler: () => void): unknown {
-      const set = handlers.get(event);
-      set?.delete(handler);
-      if (set?.size === 0) handlers.delete(event);
+      const attached = handlers.get(event) ?? [];
+      const index = attached.indexOf(handler);
+      if (index !== -1) attached.splice(index, 1);
+      if (attached.length === 0) handlers.delete(event);
       return room;
     },
   };
@@ -77,6 +82,7 @@ function fakeRoom(local: Participant, remotes: readonly Participant[] = []): Roo
     room: room as unknown as Room,
     remotes: remoteParticipants,
     subscribedEvents: () => Array.from(handlers.keys()).sort(),
+    handlerCount: (event: string) => (handlers.get(event) ?? []).length,
     emit: (event: string) => {
       for (const handler of Array.from(handlers.get(event) ?? [])) handler();
     },
@@ -284,5 +290,22 @@ describe('createRoomViewStore', () => {
     expect(subscribedEvents()).not.toEqual([]);
     emit('participantConnected');
     expect(staying).toHaveBeenCalledTimes(1);
+  });
+
+  it('n’attache qu’un seul jeu de gestionnaires, quel que soit le nombre d’abonnés', () => {
+    // Une Room attache par liste, pas par ensemble : le même gestionnaire posé
+    // deux fois est appelé deux fois, et `off` n'en retire qu'une occurrence.
+    // Un second abonnement qui réattacherait laisserait donc un gestionnaire
+    // derrière lui à la fermeture de l'écran — une Room qui survit à sa page.
+    const { room, handlerCount, subscribedEvents } = fakeRoom(ME);
+    const store = createRoomViewStore(room);
+
+    const first = store.subscribe(() => undefined);
+    const second = store.subscribe(() => undefined);
+
+    expect(handlerCount('participantConnected')).toBe(1);
+    first();
+    second();
+    expect(subscribedEvents()).toEqual([]);
   });
 });

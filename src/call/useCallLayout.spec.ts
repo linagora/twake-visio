@@ -25,23 +25,25 @@ type RoomProbe = {
   readonly emit: (event: string) => void;
 };
 
+// Les gestionnaires sont rangés dans une liste, comme le fait un
+// `EventEmitter` : `off` n'en retire qu'une occurrence, et un ensemble
+// masquerait la fuite d'une double attache.
 function fakeRoom(): RoomProbe {
-  const handlers = new Map<string, Set<() => void>>();
+  const handlers = new Map<string, (() => void)[]>();
   const remoteParticipants = new Map<string, Participant>();
 
   const room = {
     localParticipant: person('me', true),
     remoteParticipants,
     on(event: string, handler: () => void): unknown {
-      const set = handlers.get(event) ?? new Set<() => void>();
-      set.add(handler);
-      handlers.set(event, set);
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
       return room;
     },
     off(event: string, handler: () => void): unknown {
-      const set = handlers.get(event);
-      set?.delete(handler);
-      if (set?.size === 0) handlers.delete(event);
+      const attached = handlers.get(event) ?? [];
+      const index = attached.indexOf(handler);
+      if (index !== -1) attached.splice(index, 1);
+      if (attached.length === 0) handlers.delete(event);
       return room;
     },
   };
