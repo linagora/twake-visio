@@ -3,7 +3,7 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
-import HomeScreen from './home';
+import { HomeScreen } from './home';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
