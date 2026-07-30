@@ -35,14 +35,22 @@ export async function forceRefresh(
       const result = await refreshTokens(config, tokens.refreshToken);
       if (!result.ok) return null;
 
-      await saveTokens(accountId, result.value);
+      // Une écriture refusée ne doit pas faire jeter un jeton déjà obtenu : la
+      // session est valide, seule sa persistance a manqué. L'écarter renverrait
+      // l'utilisateur vers une reconnexion dont il n'a aucun besoin.
+      try {
+        await saveTokens(accountId, result.value);
+      } catch {
+        // Jeton utilisable pour cette session, simplement non persisté.
+      }
+
       return result.value.accessToken;
     } catch {
-      // Une écriture Keychain refusée, ou tout rejet non typé : pour l'appelant
-      // c'est « pas de jeton », exactement comme un refus explicite du SSO. Ne
-      // pas laisser remonter, sinon le client API l'étiquette « network » à tort
-      // et l'utilisateur lit « connexion impossible » alors que sa session est
-      // simplement à renouveler.
+      // Tout autre rejet vaut « pas de jeton » pour l'appelant. Le laisser
+      // remonter le ferait étiqueter « network » par le client API, et
+      // l'utilisateur lirait « connexion impossible » au lieu de « session à
+      // renouveler ». `attempt` ne rejette donc jamais, ce qui donne le même
+      // contrat aux appelants concurrents qui attendent cette même promesse.
       return null;
     }
   })();

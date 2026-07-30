@@ -177,9 +177,9 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
       idToken: null,
       expiresAt: Date.now() - 1_000,
     });
-    jest
+    const refresh = jest
       .spyOn(oidc, 'refreshTokens')
-      .mockRejectedValueOnce(new Error('keychain refusé'))
+      .mockRejectedValueOnce(new Error('SSO injoignable'))
       .mockResolvedValueOnce({
         ok: true,
         value: {
@@ -191,6 +191,36 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
       });
 
     expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+
+    // C'est cette assertion qui prouve la libération du verrou, et elle tient
+    // que l'échec soit un rejet ou une résolution : si la carte n'était pas
+    // vidée, le second appel recevrait la promesse déjà résolue du premier et
+    // rendrait null sans rappeler le SSO.
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('conserve un jeton valide quand seule sa persistance échoue', async () => {
+    // refreshTokens réussit, l'écriture Keychain est refusée. Écarter le jeton
+    // ici renverrait l'utilisateur vers une reconnexion alors que sa session
+    // vient d'être renouvelée avec succès.
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({
+      ok: true,
+      value: {
+        accessToken: 'fresh',
+        refreshToken: 'rt2',
+        idToken: null,
+        expiresAt: Date.now() + 3_600_000,
+      },
+    });
+    jest.spyOn(storage, 'saveTokens').mockRejectedValue(new Error('keychain refusé'));
+
     expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
   });
 
