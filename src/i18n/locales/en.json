@@ -37,6 +37,10 @@
   "call.ended": "The meeting has ended",
   "call.switchCamera": "Switch camera",
   "call.unnamedParticipant": "Unnamed participant",
+  "waiting.knocking": "{{name}} would like to join",
+  "waiting.admit": "Admit",
+  "waiting.refuse": "Refuse",
+  "waiting.others": "{{count}} more waiting",
   "error.network": "Cannot connect",
   "error.unauthorized": "Session expired, please sign in again"
 }

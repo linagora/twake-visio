@@ -37,6 +37,10 @@
   "call.ended": "La reunión ha terminado",
   "call.switchCamera": "Cambiar de cámara",
   "call.unnamedParticipant": "Participante sin nombre",
+  "waiting.knocking": "{{name}} quiere unirse",
+  "waiting.admit": "Admitir",
+  "waiting.refuse": "Rechazar",
+  "waiting.others": "{{count}} más en espera",
   "error.network": "No se puede conectar",
   "error.unauthorized": "Sesión expirada, vuelva a iniciar sesión"
 }

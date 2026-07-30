@@ -37,6 +37,10 @@
   "call.ended": "Die Besprechung ist beendet",
   "call.switchCamera": "Kamera wechseln",
   "call.unnamedParticipant": "Teilnehmer ohne Namen",
+  "waiting.knocking": "{{name}} möchte beitreten",
+  "waiting.admit": "Zulassen",
+  "waiting.refuse": "Ablehnen",
+  "waiting.others": "{{count}} weitere warten",
   "error.network": "Verbindung nicht möglich",
   "error.unauthorized": "Sitzung abgelaufen, bitte melden Sie sich erneut an"
 }

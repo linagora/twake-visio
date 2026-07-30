@@ -37,6 +37,10 @@
   "call.ended": "La réunion est terminée",
   "call.switchCamera": "Changer de caméra",
   "call.unnamedParticipant": "Participant sans nom",
+  "waiting.knocking": "{{name}} demande à entrer",
+  "waiting.admit": "Admettre",
+  "waiting.refuse": "Refuser",
+  "waiting.others": "{{count}} autre(s) en attente",
   "error.network": "Connexion impossible",
   "error.unauthorized": "Session expirée, reconnectez-vous"
 }

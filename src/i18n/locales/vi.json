@@ -37,6 +37,10 @@
   "call.ended": "Cuộc họp đã kết thúc",
   "call.switchCamera": "Đổi máy ảnh",
   "call.unnamedParticipant": "Người tham gia không tên",
+  "waiting.knocking": "{{name}} muốn tham gia",
+  "waiting.admit": "Cho vào",
+  "waiting.refuse": "Từ chối",
+  "waiting.others": "còn {{count}} người đang chờ",
   "error.network": "Không thể kết nối",
   "error.unauthorized": "Phiên đã hết hạn, vui lòng đăng nhập lại"
 }
