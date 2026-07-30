@@ -35,6 +35,7 @@ const GRANTED = {
     room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
     livekitUrl: 'wss://livekit.linagora.com',
     token: 'lk',
+    isAdministrable: false,
   },
 } as const;
 

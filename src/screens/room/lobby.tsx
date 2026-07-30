@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 
-import { fetchRoomAccess, requestEntry } from 'src/api/rooms';
+import { requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount } from 'src/auth/accounts';
 import { tokens } from 'src/ui/tokens';
@@ -17,14 +17,15 @@ type LobbyState =
   | { kind: 'requesting' }
   | { kind: 'waiting' }
   | { kind: 'no-moderator' }
+  | { kind: 'denied' }
   | { kind: 'failed'; message: 'error.network' | 'error.unauthorized' };
 
-// Le backend n'annonce pas une admission, il la laisse constater : le bloc
-// `livekit` apparaît dans le salon dès que l'appelant a le droit d'entrer.
-// Aucun flux d'événements n'est exposé côté meet, la scrutation est donc la
-// seule voie. Trois secondes tiennent l'attente courte sans marteler le
-// serveur pendant qu'une réunion se remplit.
-const ADMISSION_POLL_MS = 3000;
+// `request-entry` est fait pour être rappelé — « if waiting, refresh timeout
+// to maintain position » — et porte à lui seul l'admission, le refus et le
+// jeton. Aucun flux d'événements n'est exposé côté meet, la scrutation est
+// donc la seule voie. Cinq secondes est la cadence validée : elle tient
+// l'attente courte sans marteler le serveur pendant qu'une réunion se remplit.
+const ADMISSION_POLL_MS = 5000;
 
 const styles = StyleSheet.create({
   root: {
@@ -81,22 +82,28 @@ export function LobbyScreen(): React.ReactElement {
 
     let stopped = false;
     const timer = setInterval(() => {
-      void fetchRoomAccess(account, slug)
+      void requestEntry(account, slug, account.displayName)
         .then((result) => {
           if (stopped) return;
-          if (result.ok) {
+          if (!result.ok) {
+            // Une coupure passagère ne doit pas éjecter quelqu'un de la file.
+            if (result.error.kind === 'unauthorized') {
+              stopped = true;
+              clearInterval(timer);
+              setState({ kind: 'failed', message: 'error.unauthorized' });
+            }
+            return;
+          }
+          if (result.value.status === 'accepted') {
             stopped = true;
             clearInterval(timer);
             router.replace(`/room/${slug}/call`);
             return;
           }
-          // Une coupure passagère ne doit pas éjecter quelqu'un de la file
-          // d'attente : on continue de scruter. Une session expirée, elle,
-          // ne se résoudra pas toute seule et demande une action.
-          if (result.error.kind === 'unauthorized') {
+          if (result.value.status === 'denied') {
             stopped = true;
             clearInterval(timer);
-            setState({ kind: 'failed', message: 'error.unauthorized' });
+            setState({ kind: 'denied' });
           }
         })
         .catch(() => undefined);
@@ -121,6 +128,16 @@ export function LobbyScreen(): React.ReactElement {
       <View style={styles.root}>
         <Text testID="lobby-no-moderator" variant="titleMedium" style={styles.message}>
           {t('lobby.noModerator')}
+        </Text>
+      </View>
+    );
+  }
+
+  if (state.kind === 'denied') {
+    return (
+      <View style={styles.root}>
+        <Text testID="lobby-denied" variant="titleMedium" style={styles.message}>
+          {t('lobby.denied')}
         </Text>
       </View>
     );

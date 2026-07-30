@@ -1,23 +1,35 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Button, IconButton, Text } from 'react-native-paper';
+import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
 
+import {
+  muteParticipant,
+  removeParticipant,
+  updateParticipantRole,
+  type ParticipantRole,
+} from 'src/api/participants';
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
-import { getActiveAccount } from 'src/auth/accounts';
+import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { createCallSession } from 'src/call/connection';
+import type { ParticipantView } from 'src/call/layout';
 import {
   setCameraEnabled,
   setMicrophoneEnabled,
   switchCamera,
   type FacingMode,
 } from 'src/call/media';
+import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
-import type { CallState } from 'src/call/types';
+import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
+import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
+import { firstWaiting } from 'src/rooms/waitingQueue';
+import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { CallStage } from 'src/screens/room/stage';
+import { WaitingBanner } from 'src/screens/room/waitingBanner';
 import { tokens } from 'src/ui/tokens';
 
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
@@ -25,12 +37,14 @@ import { tokens } from 'src/ui/tokens';
 // s'affiche tel quel.
 type MessageKey = 'error.network' | 'error.unauthorized' | 'call.ended' | 'call.permissionsDenied';
 
-// L'API répond avant toute connexion LiveKit : c'est là — et là seulement —
-// qu'un jeton refusé se distingue d'une panne. `lobby` voudrait dire que
-// l'accès a été retiré entre le pré-écran et ici ; le plan ne décrit aucun
-// retour vers la salle d'attente depuis la séance, ce cas est donc traité
-// comme les autres refus plutôt qu'inventé.
-function toAccessMessage(error: ApiError): MessageKey {
+// La même distinction grossière sert deux appelants : l'accès initial au
+// salon (où c'est là, et là seulement, qu'un jeton refusé se distingue d'une
+// panne — `lobby` voudrait dire que l'accès a été retiré entre le pré-écran
+// et ici, et le plan ne décrit aucun retour vers la salle d'attente depuis la
+// séance, ce cas est donc traité comme les autres refus plutôt qu'inventé) et
+// les trois actions de modération plus bas, dont l'échec ordinaire arrive de
+// la même façon : une valeur `ApiResult`, jamais une exception.
+function toApiErrorMessage(error: ApiError): MessageKey {
   return error.kind === 'unauthorized' ? 'error.unauthorized' : 'error.network';
 }
 
@@ -46,6 +60,25 @@ function toAccessMessage(error: ApiError): MessageKey {
 function toDisconnectMessage(reason: string): MessageKey {
   return reason === 'closed' ? 'call.ended' : 'error.network';
 }
+
+// `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
+// chaque rendu, y compris quand personne n'est connecté. `access` — qui
+// gouverne la garde juste en dessous — ne se remplit que depuis l'effet de
+// connexion, lui-même arrêté dès qu'il constate l'absence de compte : ce
+// repli ne sert donc jamais de véritable requête, il ne fait que satisfaire le
+// typage d'un appel de Hook qui ne peut pas être conditionnel.
+const NO_ACCOUNT: Account = {
+  id: '',
+  instance: {
+    serverUrl: '',
+    issuer: '',
+    clientId: '',
+    livekitUrl: '',
+    features: { recording: false, subtitle: false, telephony: false },
+  },
+  email: '',
+  displayName: '',
+};
 
 const styles = StyleSheet.create({
   // La scène reste sombre dans les deux schémas : c'est la convention de toute
@@ -115,6 +148,64 @@ export function CallScreen(): React.ReactElement {
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
   const layout = useCallLayout(session.getRoom(), facing);
 
+  // Un compte frais à chaque rendu, comme au premier rendu de `failure`
+  // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
+  // un état — c'est le même accesseur que l'effet de connexion et que
+  // `handleShare` lisent déjà chacun de leur côté.
+  const account = getActiveAccount();
+
+  // L'accès complet, pas seulement ses morceaux : la salle d'attente et le
+  // panneau de modération ont chacun besoin d'une facette différente de
+  // `RoomAccess`, et dupliquer l'effet de connexion pour chacune n'aurait
+  // aucune raison d'être.
+  const [access, setAccess] = useState<RoomAccess | null>(null);
+  const [participantsOpen, setParticipantsOpen] = useState(false);
+
+  // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
+  // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
+  // comme un rejet : un simple `.catch()` sur ces trois actions ne le
+  // verrait donc jamais passer. Une seule case suffit : les trois actions ne
+  // se déclenchent qu'un geste à la fois.
+  const [moderationError, setModerationError] = useState<MessageKey | null>(null);
+
+  // Une deuxième lecture de la Room, indépendante de `useCallLayout` :
+  // celle-ci choisit qui a la scène et réordonne la bande sous le doigt à
+  // chaque changement de locuteur (voir `src/call/layout`) — un panneau de
+  // modération qui suivrait cet ordre ferait glisser une ligne sous le pouce
+  // qui s'apprête à appuyer. Le panneau a besoin de l'ordre stable de la Room
+  // elle-même, jamais de celui, mouvant, choisi pour la scène.
+  const roomViewStore = useMemo(() => createRoomViewStore(session.getRoom()), [session]);
+  const roomView = useSyncExternalStore(roomViewStore.subscribe, roomViewStore.getSnapshot);
+  const participants = useMemo<readonly ParticipantView[]>(
+    () => [roomView.local, ...roomView.remotes],
+    [roomView],
+  );
+
+  // `Room.id` est `string | null` depuis le premier commit d'API : distinct
+  // d'`access?.room.id`, dont les usages plus bas l'écrasaient en `''` — au
+  // lieu de garder l'absence — ce qui fabriquait des routes de la forme
+  // `/api/v1.0/rooms//mute-participant/`.
+  const roomId = access?.room.id ?? null;
+
+  // Les trois gardes réunies : un salon public n'a pas de salle d'attente,
+  // sans privilège le serveur refuserait la requête, et sans identifiant de
+  // salon il n'y a pas de route à construire. Sans ce dernier, un salon
+  // administrable dont `room.id` vaut `null` scrutait quand même
+  // `/api/v1.0/rooms//waiting-participants/` toutes les cinq secondes.
+  const canModerate = access !== null && access.isAdministrable && roomId !== null;
+  const hasLobby = access !== null && access.room.accessLevel !== 'public';
+
+  // `roomId ?? ''` ne sert jamais de véritable requête : dès que `roomId` est
+  // `null`, `canModerate` (et donc `enabled` ci-dessous) vaut déjà `false`, et
+  // l'effet de scrutation du Hook ne se déclenche pas. Le repli n'existe que
+  // pour le typage d'un appel de Hook qui ne peut pas être conditionnel —
+  // même raison que `NO_ACCOUNT` juste au-dessus.
+  const { waiting, answer } = useWaitingParticipants(
+    account ?? NO_ACCOUNT,
+    roomId ?? '',
+    canModerate && hasLobby,
+  );
+
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
   // libération de la session.
@@ -132,18 +223,27 @@ export function CallScreen(): React.ReactElement {
   // chacune de ses relances, et un effet de connexion qui dépendrait de `micOn`
   // couperait la séance à chaque appui sur le micro.
   useEffect(() => {
-    const account = getActiveAccount();
-    if (account === null) return;
+    // Nom distinct du `account` de plus haut : celui-ci vit dans la fermeture
+    // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
+    // est relu à chaque rendu — les confondre masquerait laquelle des deux
+    // valeurs alimente vraiment `fetchRoomAccess`.
+    const activeAccount = getActiveAccount();
+    if (activeAccount === null) return;
 
     let cancelled = false;
 
-    fetchRoomAccess(account, slug)
+    fetchRoomAccess(activeAccount, slug)
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {
-          setFailure(toAccessMessage(result.error));
+          setFailure(toApiErrorMessage(result.error));
           return;
         }
+
+        // Connu dès que le serveur confirme l'accès, indépendamment de la
+        // suite : la salle d'attente et le panneau de modération ne dépendent
+        // pas de la négociation média ni de la connexion LiveKit ci-dessous.
+        setAccess(result.value);
 
         // Le manifeste déclare caméra et micro, mais Android exige de les
         // demander à l'exécution. Sans cette demande ils restent refusés, rien
@@ -204,9 +304,12 @@ export function CallScreen(): React.ReactElement {
   // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
   // mène pas à sa réunion.
   const handleShare = async (): Promise<void> => {
-    const account = getActiveAccount();
-    if (account === null) return;
-    const url = `${account.instance.serverUrl}/${slug}`;
+    // Nom distinct du `account` de plus haut pour la même raison que dans
+    // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
+    // à chaque rendu.
+    const activeAccount = getActiveAccount();
+    if (activeAccount === null) return;
+    const url = `${activeAccount.instance.serverUrl}/${slug}`;
     try {
       await Share.share({ message: url, url });
     } catch {
@@ -222,6 +325,66 @@ export function CallScreen(): React.ReactElement {
       .disconnect()
       .catch(() => undefined)
       .finally(() => router.replace('/home'));
+  };
+
+  const handleToggleParticipants = (): void => {
+    setParticipantsOpen((open) => !open);
+  };
+
+  // `answer` a déjà retiré la personne de la file de façon optimiste (voir
+  // `useWaitingParticipants`) ; elle ne fait que rendre le résultat du
+  // réseau. Même lecture que les trois actions ci-dessous : `result.ok`
+  // d'abord, un `.catch()` séparé pour l'exception inattendue. Sans elle, un
+  // 403 sur `enter` — un autre modérateur a répondu entre-temps, ou le droit
+  // d'administrer a été retiré — n'avait aucun retour visible, et la
+  // personne réapparaissait en fin de file cinq secondes plus tard sans un
+  // mot : le modérateur croyait avoir ouvert la porte, la personne dehors
+  // n'entrait jamais.
+  const handleAnswerEntry = (id: string, allow: boolean): void => {
+    answer(id, allow)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
+  };
+
+  // Les trois actions de modération portent l'identité LiveKit que
+  // `ParticipantsPanel` leur passe (`ParticipantView.identity`, reçue ici comme
+  // `identity`) — jamais l'UUID de lobby que porte `WaitingParticipant.id` et
+  // qu'utilise `handleAnswerEntry` ci-dessus. Les deux ne s'échangent pas, et le panneau
+  // ne connaît de toute façon que la première. Ces rappels ne sont atteignables
+  // que depuis une ligne du panneau, lequel ne montre ses actions que lorsque
+  // `canModerate` vaut vrai — donc lorsque `account` et `roomId` sont déjà
+  // remplis. La garde `if (account === null || roomId === null) return;`
+  // n'existe que pour le typage, jamais pour un cas atteint en pratique — et
+  // elle évite du même coup le `?? ''` qui fabriquait
+  // `/api/v1.0/rooms//mute-participant/` quand `room.id` valait `null`.
+  //
+  // Chacune lit `result.ok` : un `.catch()` seul ne couvrirait qu'une
+  // exception inattendue d'`authedFetch`, jamais le chemin d'échec ordinaire
+  // de ces trois fonctions, qui est une valeur (`{ ok: false }`) résolue, pas
+  // rejetée. Sans cette lecture, couper le micro ou promouvoir n'ont aucun
+  // retour visible, et expulser ne fait disparaître la ligne que si le
+  // serveur a réellement expulsé — un 403 devient indiscernable d'un appui
+  // non enregistré. Un succès efface une éventuelle erreur affichée par un
+  // essai précédent.
+  const handleMuteParticipant = (identity: string): void => {
+    if (account === null || roomId === null) return;
+    muteParticipant(account, roomId, identity)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
+  };
+
+  const handleRemoveParticipant = (identity: string): void => {
+    if (account === null || roomId === null) return;
+    removeParticipant(account, roomId, identity)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
+  };
+
+  const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
+    if (account === null || roomId === null) return;
+    updateParticipantRole(account, roomId, identity, role)
+      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setModerationError('error.network'));
   };
 
   const message: MessageKey | null =
@@ -252,9 +415,31 @@ export function CallScreen(): React.ReactElement {
 
   return (
     <View style={styles.root}>
-      {/* Parti pris mobile : locuteur actif en grand, vignettes en bande. La
-          grille du web rend chaque visage illisible sur un écran de téléphone. */}
-      <CallStage layout={layout} />
+      {/* Au-dessus de la scène : ne rend rien tant que personne n'attend, donc
+          toujours monté, jamais enveloppé d'une condition. */}
+      <WaitingBanner
+        participant={firstWaiting(waiting)}
+        remaining={Math.max(waiting.length - 1, 0)}
+        onAnswer={handleAnswerEntry}
+      />
+
+      {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
+          deux se disputeraient la même vidéo, qui est la raison d'être de cet
+          écran. La barre de contrôle, elle, reste en place dans les deux cas —
+          le même bouton referme le panneau, et quitter reste toujours possible. */}
+      {participantsOpen ? (
+        <ParticipantsPanel
+          participants={participants}
+          canModerate={canModerate}
+          onMute={handleMuteParticipant}
+          onRemove={handleRemoveParticipant}
+          onRole={handleChangeParticipantRole}
+        />
+      ) : (
+        // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
+        // grille du web rend chaque visage illisible sur un écran de téléphone.
+        <CallStage layout={layout} />
+      )}
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
           en croyant que c'est cassé, et raccroche alors que ça se rétablit. */}
@@ -296,6 +481,13 @@ export function CallScreen(): React.ReactElement {
           accessibilityLabel={t('call.share')}
         />
         <IconButton
+          testID="participants-toggle"
+          icon="account-multiple"
+          iconColor={tokens.color.textDark}
+          onPress={handleToggleParticipants}
+          accessibilityLabel={t('participants.title')}
+        />
+        <IconButton
           testID="leave-btn"
           icon="phone-hangup"
           // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
@@ -305,6 +497,18 @@ export function CallScreen(): React.ReactElement {
           accessibilityLabel={t('call.leave')}
         />
       </View>
+
+      {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
+          seul `visible` bascule, `Snackbar` gère elle-même son animation et
+          son délai de disparition. Le seul retour visible d'un micro coupé,
+          d'une expulsion ou d'un changement de rôle qui échoue. */}
+      <Snackbar
+        testID="moderation-error"
+        visible={moderationError !== null}
+        onDismiss={() => setModerationError(null)}
+      >
+        {moderationError !== null ? t(moderationError) : ''}
+      </Snackbar>
     </View>
   );
 }

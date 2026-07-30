@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Kamera deaktiviert",
   "lobby.waiting": "Warten auf Genehmigung",
   "lobby.noModerator": "Derzeit ist kein Moderator anwesend",
+  "lobby.denied": "Ihre Beitrittsanfrage wurde abgelehnt",
   "call.leave": "Verlassen",
   "call.share": "Link teilen",
   "call.muted": "Stummgeschaltet",
@@ -36,6 +37,14 @@
   "call.ended": "Die Besprechung ist beendet",
   "call.switchCamera": "Kamera wechseln",
   "call.unnamedParticipant": "Teilnehmer ohne Namen",
+  "participants.title": "Teilnehmer",
+  "participants.mute": "Stummschalten",
+  "participants.remove": "Entfernen",
+  "participants.promote": "Zum Administrator machen",
+  "waiting.knocking": "{{name}} möchte beitreten",
+  "waiting.admit": "Zulassen",
+  "waiting.refuse": "Ablehnen",
+  "waiting.others": "{{count}} weitere warten",
   "error.network": "Verbindung nicht möglich",
   "error.unauthorized": "Sitzung abgelaufen, bitte melden Sie sich erneut an"
 }

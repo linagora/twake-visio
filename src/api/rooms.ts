@@ -1,4 +1,5 @@
 import { authedFetch } from 'src/api/client';
+import type { ParticipantRole } from 'src/api/participants';
 import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
@@ -10,9 +11,8 @@ type RawRoom = {
   name?: string;
   access_level: AccessLevel;
   livekit?: { url: string; room: string; token: string };
+  is_administrable?: boolean;
 };
-
-type RoomRole = 'owner' | 'administrator' | 'member';
 
 function toRoom(raw: RawRoom): Room {
   return {
@@ -42,7 +42,12 @@ export async function fetchRoomAccess(
 
   return {
     ok: true,
-    value: { room: toRoom(result.value), livekitUrl: livekit.url, token: livekit.token },
+    value: {
+      room: toRoom(result.value),
+      livekitUrl: livekit.url,
+      token: livekit.token,
+      isAdministrable: result.value.is_administrable === true,
+    },
   };
 }
 
@@ -130,7 +135,7 @@ export async function grantRoomAccess(
   account: Account,
   roomId: string,
   userId: string,
-  role: RoomRole,
+  role: ParticipantRole,
 ): Promise<ApiResult<void>> {
   const result = await authedFetch<unknown>(account, '/api/v1.0/resource-accesses/', {
     method: 'POST',
@@ -141,12 +146,40 @@ export async function grantRoomAccess(
   return { ok: true, value: undefined };
 }
 
+export type EntryStatus = 'waiting' | 'accepted' | 'denied';
+
+export type EntryOutcome = {
+  readonly participantId: string;
+  readonly status: EntryStatus;
+  readonly livekitUrl: string | null;
+  readonly token: string | null;
+};
+
+type RawEntry = {
+  id: string;
+  status?: string;
+  livekit?: { url: string; room: string; token: string };
+};
+
+// Un statut que ce code ne connaît pas est traité comme une attente. Le prendre
+// pour une admission ferait entrer sans jeton ; le prendre pour un refus
+// chasserait quelqu'un que le serveur n'a pas chassé.
+function toEntryStatus(raw: string | undefined): EntryStatus {
+  if (raw === 'accepted') return 'accepted';
+  if (raw === 'denied') return 'denied';
+  return 'waiting';
+}
+
+// L'endpoint est conçu pour être rappelé — « if waiting, refresh timeout to
+// maintain position » — et porte à lui seul l'admission, le refus et le jeton.
+// C'est donc lui qu'il faut scruter, et non `fetchRoomAccess`, qui ne change
+// pas sur un refus.
 export async function requestEntry(
   account: Account,
   slug: string,
   username: string,
-): Promise<ApiResult<{ participantId: string }>> {
-  const result = await authedFetch<{ id: string }>(
+): Promise<ApiResult<EntryOutcome>> {
+  const result = await authedFetch<RawEntry>(
     account,
     `/api/v1.0/rooms/${encodeURIComponent(slug)}/request-entry/`,
     {
@@ -156,5 +189,14 @@ export async function requestEntry(
     },
   );
   if (!result.ok) return result;
-  return { ok: true, value: { participantId: result.value.id } };
+
+  return {
+    ok: true,
+    value: {
+      participantId: result.value.id,
+      status: toEntryStatus(result.value.status),
+      livekitUrl: result.value.livekit?.url ?? null,
+      token: result.value.livekit?.token ?? null,
+    },
+  };
 }

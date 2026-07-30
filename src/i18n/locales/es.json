@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Cámara desactivada",
   "lobby.waiting": "Esperando aprobación",
   "lobby.noModerator": "No hay ningún moderador presente en este momento",
+  "lobby.denied": "Su solicitud de entrada ha sido rechazada",
   "call.leave": "Salir",
   "call.share": "Compartir el enlace",
   "call.muted": "Silenciado",
@@ -36,6 +37,14 @@
   "call.ended": "La reunión ha terminado",
   "call.switchCamera": "Cambiar de cámara",
   "call.unnamedParticipant": "Participante sin nombre",
+  "participants.title": "Participantes",
+  "participants.mute": "Silenciar",
+  "participants.remove": "Expulsar",
+  "participants.promote": "Hacer administrador",
+  "waiting.knocking": "{{name}} quiere unirse",
+  "waiting.admit": "Admitir",
+  "waiting.refuse": "Rechazar",
+  "waiting.others": "{{count}} más en espera",
   "error.network": "No se puede conectar",
   "error.unauthorized": "Sesión expirada, vuelva a iniciar sesión"
 }

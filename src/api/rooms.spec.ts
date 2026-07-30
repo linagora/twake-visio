@@ -1,4 +1,4 @@
-import { createRoom, fetchMyRooms, fetchRoomAccess } from 'src/api/rooms';
+import { createRoom, fetchMyRooms, fetchRoomAccess, requestEntry } from 'src/api/rooms';
 import * as client from 'src/api/client';
 import type { Account } from 'src/auth/accounts';
 
@@ -174,5 +174,131 @@ describe('fetchMyRooms, pagination', () => {
     await fetchMyRooms(ACCOUNT);
 
     expect(fetchSpy).toHaveBeenCalledTimes(20);
+  });
+});
+
+describe('requestEntry', () => {
+  it('rend le statut et le jeton quand la demande est acceptée', async () => {
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'p-1',
+        status: 'accepted',
+        username: 'Ada',
+        livekit: { url: 'wss://livekit.linagora.com', room: 'r-1', token: 'lk' },
+      },
+    });
+
+    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
+  });
+
+  it('rend le refus, que rien ne permettait de détecter auparavant', async () => {
+    // La salle d'attente scrutait fetchRoomAccess, qui ne change pas sur un
+    // refus : la personne attendait indéfiniment.
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'p-1', status: 'denied', username: 'Ada' },
+    });
+
+    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('denied');
+    expect(result.value.token).toBe(null);
+    // Un refus ne porte pas de bloc livekit : sans cette assertion, un
+    // fallback cassé sur `livekitUrl` (par exemple une URL par défaut au lieu
+    // de `null`) passerait ce test aussi bien qu'avec le bon comportement —
+    // seul `token` était couvert, `livekitUrl` ne l'était pas.
+    expect(result.value.livekitUrl).toBe(null);
+  });
+
+  it("traite un statut inconnu comme une attente plutôt que d'inventer", async () => {
+    // Le backend peut gagner un état. Le prendre pour une admission ferait
+    // entrer quelqu'un sans jeton ; le prendre pour un refus le chasserait à
+    // tort. L'attente est le seul choix qui ne perde rien.
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'p-1', status: 'quelque-chose-de-neuf', username: 'Ada' },
+    });
+
+    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('waiting');
+  });
+});
+
+describe('fetchRoomAccess, droit de modérer', () => {
+  it('rend is_administrable', async () => {
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'reunion',
+        access_level: 'trusted',
+        is_administrable: true,
+        livekit: { url: 'wss://lk', room: 'r-1', token: 'lk' },
+      },
+    });
+
+    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isAdministrable).toBe(true);
+  });
+
+  it("vaut false quand le serveur ne le dit pas, plutôt que d'ouvrir la modération", async () => {
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'reunion',
+        access_level: 'trusted',
+        livekit: { url: 'wss://lk', room: 'r-1', token: 'lk' },
+      },
+    });
+
+    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isAdministrable).toBe(false);
+  });
+
+  it('refuse une valeur seulement vraie au sens large, pas exactement `true`', async () => {
+    // `authedFetch` rend le JSON par un cast non vérifié (`as T`) : rien ne
+    // garantit à l'exécution que le champ est un booléen. Un test qui ne
+    // couvrirait que « présent contre absent » laisserait passer une
+    // comparaison de vérité (`Boolean(x)`), qui ouvrirait la modération sur
+    // n'importe quelle valeur non nulle envoyée par erreur.
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'reunion',
+        access_level: 'trusted',
+        is_administrable: 1,
+        livekit: { url: 'wss://lk', room: 'r-1', token: 'lk' },
+      },
+    });
+
+    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isAdministrable).toBe(false);
   });
 });

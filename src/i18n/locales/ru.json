@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Камера выключена",
   "lobby.waiting": "Ожидание подтверждения",
   "lobby.noModerator": "В данный момент модератор отсутствует",
+  "lobby.denied": "Ваш запрос на вход отклонён",
   "call.leave": "Покинуть",
   "call.share": "Поделиться ссылкой",
   "call.muted": "Микрофон выключен",
@@ -36,6 +37,14 @@
   "call.ended": "Встреча завершена",
   "call.switchCamera": "Переключить камеру",
   "call.unnamedParticipant": "Участник без имени",
+  "participants.title": "Участники",
+  "participants.mute": "Отключить микрофон",
+  "participants.remove": "Удалить",
+  "participants.promote": "Назначить администратором",
+  "waiting.knocking": "{{name}} хочет присоединиться",
+  "waiting.admit": "Впустить",
+  "waiting.refuse": "Отклонить",
+  "waiting.others": "ещё {{count}} в ожидании",
   "error.network": "Не удалось подключиться",
   "error.unauthorized": "Сессия истекла, войдите снова"
 }

@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Đã tắt camera",
   "lobby.waiting": "Đang chờ phê duyệt",
   "lobby.noModerator": "Hiện không có người điều hành nào có mặt",
+  "lobby.denied": "Yêu cầu tham gia của bạn đã bị từ chối",
   "call.leave": "Rời khỏi",
   "call.share": "Chia sẻ liên kết",
   "call.muted": "Đã tắt tiếng",
@@ -36,6 +37,14 @@
   "call.ended": "Cuộc họp đã kết thúc",
   "call.switchCamera": "Đổi máy ảnh",
   "call.unnamedParticipant": "Người tham gia không tên",
+  "participants.title": "Người tham gia",
+  "participants.mute": "Tắt tiếng",
+  "participants.remove": "Xóa",
+  "participants.promote": "Đặt làm quản trị viên",
+  "waiting.knocking": "{{name}} muốn tham gia",
+  "waiting.admit": "Cho vào",
+  "waiting.refuse": "Từ chối",
+  "waiting.others": "còn {{count}} người đang chờ",
   "error.network": "Không thể kết nối",
   "error.unauthorized": "Phiên đã hết hạn, vui lòng đăng nhập lại"
 }

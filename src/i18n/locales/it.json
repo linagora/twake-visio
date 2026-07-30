@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Videocamera disattivata",
   "lobby.waiting": "In attesa di approvazione",
   "lobby.noModerator": "Nessun moderatore è attualmente presente",
+  "lobby.denied": "La tua richiesta di partecipazione è stata rifiutata",
   "call.leave": "Abbandona",
   "call.share": "Condividi il link",
   "call.muted": "Microfono disattivato",
@@ -36,6 +37,14 @@
   "call.ended": "La riunione è terminata",
   "call.switchCamera": "Cambia fotocamera",
   "call.unnamedParticipant": "Partecipante senza nome",
+  "participants.title": "Partecipanti",
+  "participants.mute": "Disattiva microfono",
+  "participants.remove": "Rimuovi",
+  "participants.promote": "Rendi amministratore",
+  "waiting.knocking": "{{name}} chiede di entrare",
+  "waiting.admit": "Ammetti",
+  "waiting.refuse": "Rifiuta",
+  "waiting.others": "altri {{count}} in attesa",
   "error.network": "Impossibile connettersi",
   "error.unauthorized": "Sessione scaduta, accedi di nuovo"
 }
