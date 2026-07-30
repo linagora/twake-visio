@@ -1,4 +1,5 @@
 import { authedFetch } from 'src/api/client';
+import type { ParticipantRole } from 'src/api/participants';
 import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
@@ -12,8 +13,6 @@ type RawRoom = {
   livekit?: { url: string; room: string; token: string };
   is_administrable?: boolean;
 };
-
-type RoomRole = 'owner' | 'administrator' | 'member';
 
 function toRoom(raw: RawRoom): Room {
   return {
@@ -136,7 +135,7 @@ export async function grantRoomAccess(
   account: Account,
   roomId: string,
   userId: string,
-  role: RoomRole,
+  role: ParticipantRole,
 ): Promise<ApiResult<void>> {
   const result = await authedFetch<unknown>(account, '/api/v1.0/resource-accesses/', {
     method: 'POST',
