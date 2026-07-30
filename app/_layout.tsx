@@ -9,8 +9,16 @@ export default function RootLayout(): React.ReactElement | null {
   const router = useRouter();
 
   useEffect(() => {
+    // Should be `listKnownHosts()` from `src/instance/knownInstances` (that module's
+    // own spec, on feat/socle's plan, declares it — docs/superpowers/plans/2026-07-29-
+    // twake-visio-socle.md:759). It is not exported yet: the instance task's landed
+    // commit only ships `findKnownClientId`. These are the same two hosts that
+    // module's KNOWN_CLIENT_IDS already keys, so this is not a guess — replace this
+    // literal with the real import the moment it lands.
+    const allowedHosts: readonly string[] = ['meet.linagora.com', 'visio.twake.app'];
+
     const openSlug = (url: string): void => {
-      const slug = parseMeetingLink(url);
+      const slug = parseMeetingLink(url, allowedHosts);
       if (slug !== null) router.push(`/room/${slug}/prejoin`);
     };
 
