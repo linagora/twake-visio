@@ -463,6 +463,30 @@ describe('CallScreen, salle d’attente', () => {
     expect(list).not.toHaveBeenCalled();
   });
 
+  // I3 : `canModerate` valait vrai dès `isAdministrable`, sans regarder
+  // `room.id` (`string | null` depuis le premier commit d'API). Un salon
+  // administrable dont l'id est `null` scrutait quand même
+  // `/api/v1.0/rooms//waiting-participants/` toutes les cinq secondes — la
+  // chaîne vide venant du repli `access?.room.id ?? ''`.
+  it("n'interroge pas la file quand l'identifiant de salon est absent, même administrable", async () => {
+    const list = jest.spyOn(participants, 'listWaitingParticipants');
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+        livekitUrl: 'wss://lk',
+        token: 'lk',
+        isAdministrable: true,
+      },
+    });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await tick();
+
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it('interroge la file dès que les deux conditions sont réunies', async () => {
     // La garde n'est pas testée que par ses refus : un `&&` mal câblé (par
     // exemple un `||`, ou une des deux moitiés oubliée) peut aussi bloquer un
@@ -671,6 +695,31 @@ describe('CallScreen, panneau des participants', () => {
     // Le `GRANTED` par défaut du `beforeEach` global porte déjà
     // `isAdministrable: false` : rien à surcharger ici.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+
+    await waitFor(() => expect(screen.getAllByTestId('participant-row')).toHaveLength(2));
+    expect(screen.queryByTestId('participant-mute')).toBeNull();
+    expect(screen.queryByTestId('participant-remove')).toBeNull();
+    expect(screen.queryByTestId('participant-promote')).toBeNull();
+  });
+
+  // I3, même garde que la salle d'attente ci-dessus : un salon administrable
+  // dont `room.id` est `null` ne doit pas non plus proposer d'action, sans
+  // quoi l'appui fabriquerait `/api/v1.0/rooms//mute-participant/`.
+  it("ne montre aucune action de modération quand l'identifiant de salon est absent", async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+        livekitUrl: 'wss://lk',
+        token: 'lk',
+        isAdministrable: true,
+      },
+    });
 
     await render(<CallScreen />);
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());

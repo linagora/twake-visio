@@ -181,14 +181,28 @@ export function CallScreen(): React.ReactElement {
     [roomView],
   );
 
-  // Les deux gardes réunies : un salon public n'a pas de salle d'attente, et
-  // sans privilège le serveur refuserait la requête.
-  const canModerate = access !== null && access.isAdministrable;
+  // `Room.id` est `string | null` depuis le premier commit d'API : distinct
+  // d'`access?.room.id`, dont les usages plus bas l'écrasaient en `''` — au
+  // lieu de garder l'absence — ce qui fabriquait des routes de la forme
+  // `/api/v1.0/rooms//mute-participant/`.
+  const roomId = access?.room.id ?? null;
+
+  // Les trois gardes réunies : un salon public n'a pas de salle d'attente,
+  // sans privilège le serveur refuserait la requête, et sans identifiant de
+  // salon il n'y a pas de route à construire. Sans ce dernier, un salon
+  // administrable dont `room.id` vaut `null` scrutait quand même
+  // `/api/v1.0/rooms//waiting-participants/` toutes les cinq secondes.
+  const canModerate = access !== null && access.isAdministrable && roomId !== null;
   const hasLobby = access !== null && access.room.accessLevel !== 'public';
 
+  // `roomId ?? ''` ne sert jamais de véritable requête : dès que `roomId` est
+  // `null`, `canModerate` (et donc `enabled` ci-dessous) vaut déjà `false`, et
+  // l'effet de scrutation du Hook ne se déclenche pas. Le repli n'existe que
+  // pour le typage d'un appel de Hook qui ne peut pas être conditionnel —
+  // même raison que `NO_ACCOUNT` juste au-dessus.
   const { waiting, answer } = useWaitingParticipants(
     account ?? NO_ACCOUNT,
-    access?.room.id ?? '',
+    roomId ?? '',
     canModerate && hasLobby,
   );
 
@@ -338,8 +352,11 @@ export function CallScreen(): React.ReactElement {
   // qu'utilise `handleAnswerEntry` ci-dessus. Les deux ne s'échangent pas, et le panneau
   // ne connaît de toute façon que la première. Ces rappels ne sont atteignables
   // que depuis une ligne du panneau, lequel ne montre ses actions que lorsque
-  // `canModerate` vaut vrai — donc lorsque `access` est déjà rempli ; le repli
-  // `?? ''` / `?? NO_ACCOUNT` n'existe que pour le typage.
+  // `canModerate` vaut vrai — donc lorsque `account` et `roomId` sont déjà
+  // remplis. La garde `if (account === null || roomId === null) return;`
+  // n'existe que pour le typage, jamais pour un cas atteint en pratique — et
+  // elle évite du même coup le `?? ''` qui fabriquait
+  // `/api/v1.0/rooms//mute-participant/` quand `room.id` valait `null`.
   //
   // Chacune lit `result.ok` : un `.catch()` seul ne couvrirait qu'une
   // exception inattendue d'`authedFetch`, jamais le chemin d'échec ordinaire
@@ -350,19 +367,22 @@ export function CallScreen(): React.ReactElement {
   // non enregistré. Un succès efface une éventuelle erreur affichée par un
   // essai précédent.
   const handleMuteParticipant = (identity: string): void => {
-    muteParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity)
+    if (account === null || roomId === null) return;
+    muteParticipant(account, roomId, identity)
       .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
       .catch(() => setModerationError('error.network'));
   };
 
   const handleRemoveParticipant = (identity: string): void => {
-    removeParticipant(account ?? NO_ACCOUNT, access?.room.id ?? '', identity)
+    if (account === null || roomId === null) return;
+    removeParticipant(account, roomId, identity)
       .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
       .catch(() => setModerationError('error.network'));
   };
 
   const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
-    updateParticipantRole(account ?? NO_ACCOUNT, access?.room.id ?? '', identity, role)
+    if (account === null || roomId === null) return;
+    updateParticipantRole(account, roomId, identity, role)
       .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
       .catch(() => setModerationError('error.network'));
   };
