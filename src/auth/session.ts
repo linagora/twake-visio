@@ -28,14 +28,23 @@ export async function forceRefresh(
   if (pending !== undefined) return pending;
 
   const attempt = (async (): Promise<string | null> => {
-    const tokens = await loadTokens(accountId);
-    if (tokens === null || tokens.refreshToken === null) return null;
+    try {
+      const tokens = await loadTokens(accountId);
+      if (tokens === null || tokens.refreshToken === null) return null;
 
-    const result = await refreshTokens(config, tokens.refreshToken);
-    if (!result.ok) return null;
+      const result = await refreshTokens(config, tokens.refreshToken);
+      if (!result.ok) return null;
 
-    await saveTokens(accountId, result.value);
-    return result.value.accessToken;
+      await saveTokens(accountId, result.value);
+      return result.value.accessToken;
+    } catch {
+      // Une écriture Keychain refusée, ou tout rejet non typé : pour l'appelant
+      // c'est « pas de jeton », exactement comme un refus explicite du SSO. Ne
+      // pas laisser remonter, sinon le client API l'étiquette « network » à tort
+      // et l'utilisateur lit « connexion impossible » alors que sa session est
+      // simplement à renouveler.
+      return null;
+    }
   })();
 
   inFlight.set(accountId, attempt);

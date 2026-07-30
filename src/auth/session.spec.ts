@@ -122,6 +122,78 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     );
   });
 
+  it('ne lance qu\'un rafraîchissement même si la lecture du stockage est lente', async () => {
+    // Le test précédent ne suffit pas : avec un loadTokens résolu
+    // immédiatement, les trois appelants sont traités en FIFO dans le même lot
+    // de microtâches, et le premier a fini sa séquence synchrone avant que le
+    // second ne reprenne. Le test passerait donc même si l'insertion dans la
+    // carte avait lieu APRÈS un await. Un loadTokens lent supprime cette
+    // chance de timing : si l'insertion n'est pas synchrone, les trois
+    // franchissent la vérification pendant l'attente.
+    jest.spyOn(storage, 'loadTokens').mockImplementation(
+      async () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                accessToken: 'old',
+                refreshToken: 'rt',
+                idToken: null,
+                expiresAt: Date.now() - 1_000,
+              }),
+            10,
+          ),
+        ),
+    );
+    const refresh = jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({
+      ok: true,
+      value: {
+        accessToken: 'fresh',
+        refreshToken: 'rt2',
+        idToken: null,
+        expiresAt: Date.now() + 3_600_000,
+      },
+    });
+
+    await Promise.all([
+      forceRefresh(ACCOUNT, CONFIG),
+      forceRefresh(ACCOUNT, CONFIG),
+      forceRefresh(ACCOUNT, CONFIG),
+    ]);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('libère le verrou après un rejet, pour qu\'une reconnexion reste possible', async () => {
+    // Le test suivant couvre un refus typé du SSO, qui est une résolution.
+    // Celui-ci couvre un vrai rejet — saveTokens n'entoure pas setItemAsync
+    // d'un try/catch, donc une écriture Keychain refusée en est un. Un nettoyage
+    // placé sur le chemin de succès plutôt que dans un finally laisserait la
+    // promesse rejetée dans la carte, et le compte ne pourrait plus jamais se
+    // reconnecter sans redémarrer l'application.
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest
+      .spyOn(oidc, 'refreshTokens')
+      .mockRejectedValueOnce(new Error('keychain refusé'))
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          accessToken: 'fresh',
+          refreshToken: 'rt2',
+          idToken: null,
+          expiresAt: Date.now() + 3_600_000,
+        },
+      });
+
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe(null);
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toBe('fresh');
+  });
+
   it('renvoie null et libère le verrou quand le rafraîchissement échoue', async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue({
       accessToken: 'old',
