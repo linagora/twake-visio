@@ -1503,7 +1503,15 @@ beforeEach(() => {
 describe('makeAccountId', () => {
   it('compose l\'identité depuis l\'issuer et le sujet', () => {
     expect(makeAccountId('https://sso.linagora.com', 'u-1')).toBe(
-      'https://sso.linagora.com|u-1',
+      'https%3A%2F%2Fsso.linagora.com|u-1',
+    );
+  });
+
+  it('ne confond pas deux comptes dont le découpage naïf serait ambigu', () => {
+    // Un sub de la forme `google-oauth2|109` est réellement émis par certains
+    // fournisseurs. Sans encodage, ces deux appels donnent la même chaîne.
+    expect(makeAccountId('https://sso.linagora.com', 'google-oauth2|109')).not.toBe(
+      makeAccountId('https://sso.linagora.com|google-oauth2', '109'),
     );
   });
 });
@@ -1535,6 +1543,28 @@ describe('registre de comptes', () => {
       displayName: 'Bob',
     });
 
+    expect(listAccounts()).toHaveLength(2);
+  });
+
+  it('ne vole pas le compte actif en ré-ajoutant un compte non actif', () => {
+    const first = addAccount({
+      id: makeAccountId(CONFIG.issuer, 'u-1'),
+      instance: CONFIG,
+      email: 'ada@linagora.com',
+      displayName: 'Ada',
+    });
+    const second = addAccount({
+      id: makeAccountId(CONFIG.issuer, 'u-2'),
+      instance: CONFIG,
+      email: 'bob@linagora.com',
+      displayName: 'Bob',
+    });
+    setActiveAccount(second.id);
+
+    // Un rafraîchissement de session en arrière-plan repasse par addAccount.
+    addAccount({ ...first, displayName: 'Ada Lovelace' });
+
+    expect(getActiveAccount()?.id).toBe(second.id);
     expect(listAccounts()).toHaveLength(2);
   });
 
@@ -1607,8 +1637,29 @@ import type { TokenSet } from 'src/auth/oidc';
 
 // expo-secure-store adosse Keychain (iOS) et Keystore (Android). MMKV n'est
 // pas chiffré par défaut et ne doit jamais porter de jeton.
+
+const KEY_SAFE = /^[A-Za-z0-9.-]$/;
+
+// Échappement injectif : chaque caractère hors alphabet devient `_XXXX` sur
+// quatre hexadécimaux — largeur fixe, donc sans ambiguïté — et `_` lui-même est
+// échappé. Un remplacement uniforme par `_` ne l'est pas : `host:8443` et
+// `host/8443` produisent alors la même clé, et un compte lit les jetons de
+// l'autre sans que rien ne le signale.
+function encodeKey(value: string): string {
+  let out = '';
+  for (const char of value) {
+    if (KEY_SAFE.test(char)) {
+      out += char;
+      continue;
+    }
+    const code = char.codePointAt(0) ?? 0;
+    out += `_${code.toString(16).padStart(4, '0')}`;
+  }
+  return out;
+}
+
 function keyFor(accountId: string): string {
-  return `tokens.${accountId.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+  return `tokens.${encodeKey(accountId)}`;
 }
 
 export async function saveTokens(accountId: string, tokens: TokenSet): Promise<void> {
@@ -1630,6 +1681,90 @@ export async function clearTokens(accountId: string): Promise<void> {
 }
 ```
 
+- [ ] **Step 3b: Écrire les tests du stockage sécurisé**
+
+`src/auth/storage.spec.ts` :
+
+```ts
+import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
+
+import type { TokenSet } from 'src/auth/oidc';
+import { clearTokens, loadTokens, saveTokens } from 'src/auth/storage';
+
+jest.mock('expo-secure-store', () => ({
+  setItemAsync: jest.fn(async () => undefined),
+  getItemAsync: jest.fn(async () => null),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));
+
+const TOKENS: TokenSet = {
+  accessToken: 'at',
+  refreshToken: 'rt',
+  idToken: 'it',
+  expiresAt: 1_800_000_000_000,
+};
+
+const ACCOUNT = 'https%3A%2F%2Fsso.linagora.com|u-1';
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('dérivation de clé', () => {
+  it('ne fait pas collisionner deux comptes ne différant que par un caractère hors alphabet', async () => {
+    await saveTokens('https%3A%2F%2Fhost%3A8443|u1', TOKENS);
+    await saveTokens('https%3A%2F%2Fhost%2F8443|u1', TOKENS);
+
+    const mock = jest.mocked(setItemAsync);
+    expect(mock).toHaveBeenCalledTimes(2);
+    const [firstKey] = mock.mock.calls[0] ?? [];
+    const [secondKey] = mock.mock.calls[1] ?? [];
+    expect(firstKey).not.toBe(secondKey);
+  });
+
+  it('emploie une seule et même clé pour écrire, lire et purger', async () => {
+    await saveTokens(ACCOUNT, TOKENS);
+    await loadTokens(ACCOUNT);
+    await clearTokens(ACCOUNT);
+
+    const [written] = jest.mocked(setItemAsync).mock.calls[0] ?? [];
+    const [read] = jest.mocked(getItemAsync).mock.calls[0] ?? [];
+    const [deleted] = jest.mocked(deleteItemAsync).mock.calls[0] ?? [];
+    expect(read).toBe(written);
+    expect(deleted).toBe(written);
+  });
+});
+
+describe('saveTokens', () => {
+  it('écrit le TokenSet sérialisé dans le magasin chiffré', async () => {
+    await saveTokens(ACCOUNT, TOKENS);
+    expect(setItemAsync).toHaveBeenCalledWith(
+      expect.stringMatching(/^tokens\./),
+      JSON.stringify(TOKENS),
+    );
+  });
+});
+
+describe('loadTokens', () => {
+  it('restitue à l\'identique ce que saveTokens a écrit', async () => {
+    jest.mocked(getItemAsync).mockResolvedValueOnce(JSON.stringify(TOKENS));
+    expect(await loadTokens(ACCOUNT)).toEqual(TOKENS);
+  });
+
+  it('rend null quand rien n\'est stocké', async () => {
+    jest.mocked(getItemAsync).mockResolvedValueOnce(null);
+    expect(await loadTokens(ACCOUNT)).toBe(null);
+  });
+
+  it('rend null sur un contenu corrompu, sans lever', async () => {
+    // Indistinguable d'une absence pour l'appelant, ce qui est voulu : dans les
+    // deux cas il faut se reconnecter. Mais il ne faut surtout pas planter.
+    jest.mocked(getItemAsync).mockResolvedValueOnce('{ pas du json');
+    expect(await loadTokens(ACCOUNT)).toBe(null);
+  });
+});
+```
+
 - [ ] **Step 4: Implémenter le registre de comptes**
 
 `src/auth/accounts.ts` :
@@ -1647,13 +1782,24 @@ export type Account = {
 let accounts: Account[] = [];
 let activeId: string | null = null;
 
+// Les deux parties sont encodées avant d'être jointes. Sans cela, un `sub` de la
+// forme `google-oauth2|109` — que certains fournisseurs OIDC émettent réellement —
+// rendrait deux comptes distincts strictement identiques : `iss|google-oauth2|109`
+// se lit aussi bien comme (`iss`, `google-oauth2|109`) que comme
+// (`iss|google-oauth2`, `109`). Ils se confondraient dans le registre.
 export function makeAccountId(issuer: string, sub: string): string {
-  return `${issuer}|${sub}`;
+  return `${encodeURIComponent(issuer)}|${encodeURIComponent(sub)}`;
 }
 
+// N'active le compte que s'il n'y en a pas déjà un, ou s'il s'agit de lui-même.
+// Un rafraîchissement de session en arrière-plan repasse par ici, et volerait
+// sinon le compte actif à celui que l'utilisateur regarde.
 export function addAccount(account: Account): Account {
-  accounts = [...accounts.filter((a) => a.id !== account.id), account];
-  activeId = account.id;
+  const known = accounts.some((a) => a.id === account.id);
+  accounts = known
+    ? accounts.map((a) => (a.id === account.id ? account : a))
+    : [...accounts, account];
+  if (activeId === null) activeId = account.id;
   return account;
 }
 
@@ -2533,7 +2679,12 @@ import { getRandomBytes } from 'expo-crypto';
 import { openAuthSessionAsync } from 'expo-web-browser';
 
 import { fetchMe } from 'src/api/users';
-import { addAccount, makeAccountId, type Account } from 'src/auth/accounts';
+import {
+  addAccount,
+  makeAccountId,
+  setActiveAccount,
+  type Account,
+} from 'src/auth/accounts';
 import { buildAuthorizeUrl, exchangeCode } from 'src/auth/oidc';
 import { createPkcePair } from 'src/auth/pkce';
 import { saveTokens } from 'src/auth/storage';
@@ -2602,7 +2753,12 @@ export async function signIn(
   };
   await saveTokens(account.id, tokens.value);
 
-  return { ok: true, value: addAccount(account) };
+  // addAccount enregistre sans activer, pour qu'un rafraîchissement en arrière-plan
+  // ne vole pas le compte actif. Une connexion explicite, elle, doit bien basculer.
+  const registered = addAccount(account);
+  setActiveAccount(registered.id);
+
+  return { ok: true, value: registered };
 }
 ```
 
