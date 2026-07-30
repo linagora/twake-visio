@@ -1,6 +1,6 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
 import { IconButton, Menu } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
@@ -60,7 +60,14 @@ export function CameraMenu({
           titleStyle={barStyles.menuTitle}
           leadingIcon={
             camera.deviceId === activeDeviceId
-              ? () => <View testID={`camera-check-${camera.deviceId}`} style={barStyles.check} />
+              ? () => (
+                  <MaterialCommunityIcons
+                    testID={`camera-check-${camera.deviceId}`}
+                    name="check"
+                    size={24}
+                    style={barStyles.check}
+                  />
+                )
               : undefined
           }
           // Composé par i18next, jamais en JavaScript : une chaîne assemblée

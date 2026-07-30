@@ -28,9 +28,15 @@ export const barStyles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.md,
     paddingVertical: tokens.spacing.sm,
   },
-  // La coche du menu. Sa seule fonction est d'occuper la gouttière d'icône
-  // d'un `Menu.Item` ; sa couleur vient de l'icône que Paper y pose.
-  check: { width: 24, height: 24 },
+  // La coche du menu : un glyphe `MaterialCommunityIcons` rendu directement
+  // par `cameraMenu.tsx`, jamais par la résolution habituelle d'un
+  // `Menu.Item`. Pour un `leadingIcon` fonction, `Icon.tsx` (react-native-paper)
+  // appelle `s({ color, size, direction, testID })`, mais rien n'oblige la
+  // fonction à lire cet argument — la nôtre ne le faisait pas, et un `View`
+  // vide n'a de toute façon ni contenu ni fond à colorer. La couleur est donc
+  // portée ici, explicitement, et jamais celle que Paper calculerait depuis
+  // le thème.
+  check: { color: tokens.color.textDark },
 });
 
 // 16,65:1 sur `backgroundDark`. Aucun `IconButton` de cette barre ne porte

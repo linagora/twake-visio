@@ -1,8 +1,10 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
+import { tokens } from 'src/ui/tokens';
 import { CameraMenu } from './cameraMenu';
 
 jest.mock('react-i18next', () => ({
@@ -32,6 +34,17 @@ async function settleMenus(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 32));
   });
 }
+
+// Le caractère que `MaterialCommunityIcons` dessine réellement pour "check",
+// lu depuis la même table que le composant plutôt que recopié à la main : un
+// caractère de zone privée Unicode codé en dur serait illisible et fragile
+// face à un changement de police. `Icon.tsx` (react-native-paper) ne le
+// reçoit jamais — la coche court-circuite sa résolution habituelle — donc
+// c'est bien ce glyphe-ci, et nul autre, que la coche doit produire.
+function codepointFor(glyph: number | string): string {
+  return typeof glyph === 'number' ? String.fromCodePoint(glyph) : glyph;
+}
+const CHECK_GLYPH = codepointFor(MaterialCommunityIcons.glyphMap.check);
 
 const FRONT: CameraChoice = {
   deviceId: 'cam-front',
@@ -132,6 +145,33 @@ describe('CameraMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('camera-check-cam-back')).toBeTruthy());
     expect(screen.queryByTestId('camera-check-cam-front')).toBeNull();
+  });
+
+  // I1 : la coche était un `View` 24×24 sans fond ni contenu — un `leadingIcon`
+  // fonction n'est jamais appelé avec la couleur que `Menu.Item` calculerait
+  // pour un `leadingIcon` chaîne, et un `View` vide reste invisible quelle que
+  // soit la couleur qu'on lui passerait de toute façon. RNTL ne rend pas les
+  // couleurs, donc ce test ne peut pas garder un contraste — seulement qu'un
+  // vrai glyphe est dessiné (pas une boîte vide) et qu'il porte une couleur
+  // explicite issue des tokens.
+  it('dessine un vrai glyphe pour la coche, jamais une boîte vide', async () => {
+    await render(
+      withPaper(
+        <CameraMenu
+          cameras={[FRONT, BACK]}
+          activeDeviceId="cam-back"
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+        />,
+      ),
+    );
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+
+    const check = await waitFor(() => screen.getByTestId('camera-check-cam-back'));
+
+    expect(check.props.children[0]).toBe(CHECK_GLYPH);
+    expect(check).toHaveStyle({ color: tokens.color.textDark });
   });
 
   it("ne coche rien quand aucune caméra n'est connue", async () => {
