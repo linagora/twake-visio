@@ -1,6 +1,7 @@
 import { VideoTrack } from '@livekit/react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Share } from 'react-native';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
@@ -329,5 +330,37 @@ describe('CallScreen', () => {
     await fireEvent.press(screen.getByTestId('error-leave-btn'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/home'));
+  });
+});
+
+describe('CallScreen, partage du lien', () => {
+  it("partage un lien qui porte sur l'instance du compte", async () => {
+    // Le lien doit venir de l'instance de la personne connectée. Une constante
+    // enverrait tout le monde sur meet.linagora.com, y compris quelqu'un dont
+    // la réunion vit ailleurs.
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('share-btn'));
+
+    await waitFor(() => {
+      expect(share).toHaveBeenCalledWith({
+        message: 'https://meet.linagora.com/reunion',
+        url: 'https://meet.linagora.com/reunion',
+      });
+    });
+  });
+
+  it("ne fait pas tomber l'écran quand le partage est annulé", async () => {
+    jest.spyOn(Share, 'share').mockRejectedValue(new Error('annulé'));
+
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('share-btn'));
+
+    // Un partage annulé est un geste ordinaire, pas une panne : la séance
+    // continue.
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
   });
 });

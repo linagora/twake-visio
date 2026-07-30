@@ -29,6 +29,7 @@
   "lobby.waiting": "Đang chờ phê duyệt",
   "lobby.noModerator": "Hiện không có người điều hành nào có mặt",
   "call.leave": "Rời khỏi",
+  "call.share": "Chia sẻ liên kết",
   "call.muted": "Đã tắt tiếng",
   "call.permissionsDenied": "Cần quyền truy cập máy ảnh và micrô để tham gia",
   "call.reconnecting": "Đang kết nối lại…",

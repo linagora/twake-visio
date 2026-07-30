@@ -29,6 +29,7 @@
   "lobby.waiting": "In attesa di approvazione",
   "lobby.noModerator": "Nessun moderatore è attualmente presente",
   "call.leave": "Abbandona",
+  "call.share": "Condividi il link",
   "call.muted": "Microfono disattivato",
   "call.permissionsDenied": "Per partecipare serve l'accesso a fotocamera e microfono",
   "call.reconnecting": "Riconnessione…",

@@ -1,3 +1,4 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
@@ -44,7 +45,15 @@ export default function RootLayout(): React.ReactElement | null {
 
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={makeTheme(scheme === 'dark' ? 'dark' : 'light')}>
+      {/* react-native-paper nomme ses icones mais n'en embarque aucune : sans
+          ce fournisseur, chaque IconButton rend un carre vide. Constate sur
+          appareil, la barre de controle de la seance etait quatre carres. */}
+      <PaperProvider
+        theme={makeTheme(scheme === 'dark' ? 'dark' : 'light')}
+        settings={{
+          icon: (props) => <MaterialCommunityIcons {...props} />,
+        }}
+      >
         {/* Les en-têtes sont masqués, donc rien ne pousse le contenu sous la
             barre d'état : sans ces marges, le premier élément de chaque écran
             passe sous l'heure et les icônes système. Appliquées ici une fois

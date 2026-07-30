@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
+import { Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Text } from 'react-native-paper';
 
 import { fetchRoomAccess } from 'src/api/rooms';
@@ -200,6 +200,20 @@ export function CallScreen(): React.ReactElement {
       .catch(() => undefined);
   };
 
+  // Le lien porte sur l'instance du compte, jamais sur une constante : une
+  // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
+  // mène pas à sa réunion.
+  const handleShare = async (): Promise<void> => {
+    const account = getActiveAccount();
+    if (account === null) return;
+    const url = `${account.instance.serverUrl}/${slug}`;
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      // Le partage annulé n'est pas une erreur, et rien à dire de plus.
+    }
+  };
+
   const handleLeave = (): void => {
     // La fermeture d'abord, la navigation ensuite. Naviguer démonte l'écran, et
     // le nettoyage peut alors ne jamais atteindre le serveur : les autres
@@ -273,6 +287,13 @@ export function CallScreen(): React.ReactElement {
           iconColor={tokens.color.textDark}
           onPress={handleSwitchCamera}
           accessibilityLabel={t('call.switchCamera')}
+        />
+        <IconButton
+          testID="share-btn"
+          icon="share-variant"
+          iconColor={tokens.color.textDark}
+          onPress={handleShare}
+          accessibilityLabel={t('call.share')}
         />
         <IconButton
           testID="leave-btn"

@@ -29,6 +29,7 @@
   "lobby.waiting": "Waiting for approval",
   "lobby.noModerator": "No moderator is currently present",
   "call.leave": "Leave",
+  "call.share": "Share the link",
   "call.muted": "Muted",
   "call.permissionsDenied": "Camera and microphone access is required to join",
   "call.reconnecting": "Reconnecting…",
