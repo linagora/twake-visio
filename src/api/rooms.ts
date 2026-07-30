@@ -1,5 +1,4 @@
 import { authedFetch } from 'src/api/client';
-import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
 import type { AccessLevel, Room, RoomAccess } from 'src/call/types';
@@ -104,15 +103,7 @@ export async function createRoom(
   const result = await authedFetch<RawRoom>(account, '/api/v1.0/rooms/', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    // Le code est tiré ici, pas dérivé du nom par le serveur. Le routeur du
-    // client web n'accepte que la forme `xxx-yyyy-zzz` : un slug dérivé de
-    // « Test mobile » donnait « test-mobile », que le web refuse, rendant le
-    // salon injoignable depuis un navigateur et son lien impartageable.
-    body: JSON.stringify({
-      name: input.name,
-      slug: generateRoomCode(),
-      access_level: input.accessLevel,
-    }),
+    body: JSON.stringify({ name: input.name, access_level: input.accessLevel }),
   });
   if (!result.ok) return result;
   return { ok: true, value: toRoom(result.value) };
