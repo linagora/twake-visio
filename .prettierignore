@@ -1,0 +1,9 @@
+node_modules
+.expo
+android
+ios
+package-lock.json
+
+# Documents de planification, figés une fois écrits. Les reformater produirait
+# un diff de plusieurs milliers de lignes sans rien apporter à leur lecture.
+docs/superpowers
