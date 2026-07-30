@@ -24,6 +24,7 @@
   "lobby.noModerator": "В данный момент модератор отсутствует",
   "call.leave": "Покинуть",
   "call.muted": "Микрофон выключен",
+  "call.permissionsDenied": "Для подключения нужен доступ к камере и микрофону",
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",
   "call.switchCamera": "Переключить камеру",

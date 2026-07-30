@@ -28,3 +28,21 @@ export const registerGlobals = jest.fn();
  * rendered a stub and asserted on its output would only be testing the stub.
  */
 export const VideoTrack = jest.fn((): null => null);
+
+/**
+ * `src/call/connection.ts` opens and closes an audio session around the
+ * transport. The real one drives the platform audio engine through the same
+ * absent native module.
+ *
+ * Both are `jest.fn()` rather than no-ops so a test can assert the ordering
+ * that matters: the session must be open *before* `room.connect()`, and closed
+ * when the call ends. Getting that wrong is invisible under Jest and fatal on a
+ * device — the transport establishes, publication does not follow, and
+ * negotiation times out on a message that names nothing. This mock's earlier
+ * absence of `AudioSession` was flagged as an uncovered risk before it became
+ * one.
+ */
+export const AudioSession = {
+  startAudioSession: jest.fn(async (): Promise<void> => undefined),
+  stopAudioSession: jest.fn(async (): Promise<void> => undefined),
+};

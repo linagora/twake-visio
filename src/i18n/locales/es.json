@@ -24,6 +24,7 @@
   "lobby.noModerator": "No hay ningún moderador presente en este momento",
   "call.leave": "Salir",
   "call.muted": "Silenciado",
+  "call.permissionsDenied": "Se necesita acceso a la cámara y al micrófono para unirse",
   "call.reconnecting": "Reconectando…",
   "call.ended": "La reunión ha terminado",
   "call.switchCamera": "Cambiar de cámara",

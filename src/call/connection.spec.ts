@@ -1,4 +1,4 @@
-import { registerGlobals } from '@livekit/react-native';
+import { AudioSession, registerGlobals } from '@livekit/react-native';
 
 import { createCallSession, type CallSession } from 'src/call/connection';
 import type { RoomAccess } from 'src/call/types';
@@ -68,7 +68,10 @@ function settleAll(): Promise<void> {
 // transports demandés, y compris ceux qu'un verrou cassé aurait laissés
 // passer : n'en dénouer qu'un ferait expirer le test au lieu de nommer ce qui
 // a lâché.
-function pauseTransport(): { open: () => void; openOnly: (index: number) => void } {
+function pauseTransport(): {
+  open: () => Promise<void>;
+  openOnly: (index: number) => Promise<void>;
+} {
   const waiting: (() => void)[] = [];
   mockConnect.mockImplementation(
     () =>
@@ -76,13 +79,19 @@ function pauseTransport(): { open: () => void; openOnly: (index: number) => void
         waiting.push(resolve);
       }),
   );
+  // `attempt` ouvre la session audio avant le transport, donc `room.connect`
+  // n'est atteint qu'au tour de microtâches suivant. Dénouer sans avoir laissé
+  // passer ce tour ne dénouerait rien : la file `waiting` serait encore vide et
+  // le test attendrait un transport que personne n'a demandé.
   return {
-    open: () => {
+    open: async () => {
+      await settleAll();
       for (const resolve of waiting) resolve();
     },
     // Dénoue un transport précis, pour les cas où deux tentatives se
     // chevauchent et où l'ordre de dénouement est justement ce qu'on teste.
-    openOnly: (index: number) => {
+    openOnly: async (index: number) => {
+      await settleAll();
       const resolve = waiting[index];
       if (resolve === undefined) throw new Error(`Aucun transport n° ${index} en attente`);
       resolve();
@@ -147,6 +156,61 @@ describe('createCallSession — état initial', () => {
   });
 });
 
+describe('createCallSession — session audio', () => {
+  it('ouvre la session audio avant le transport, pas après', async () => {
+    // L'ordre est tout : `@livekit/react-native` configure le moteur audio de
+    // la plateforme dans `startAudioSession()`. Ouvrir le transport d'abord
+    // laisse la publication sans moteur, et la négociation expire sur un
+    // « negotiation timed out » qui ne nomme pas sa cause. Constaté sur
+    // appareil avant que ce module ne l'appelle.
+    const order: string[] = [];
+    jest.mocked(AudioSession.startAudioSession).mockImplementation(async () => {
+      order.push('audio');
+    });
+    mockConnect.mockImplementation(async () => {
+      order.push('transport');
+    });
+
+    const session = createCallSession();
+    await session.connect(ACCESS);
+
+    expect(order).toEqual(['audio', 'transport']);
+  });
+
+  it('referme la session audio au raccrochage', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    jest.mocked(AudioSession.stopAudioSession).mockClear();
+
+    await session.disconnect();
+
+    // Laissée ouverte, elle garde le routage audio de la plateforme et le
+    // haut-parleur reste détourné pour le reste de l'application.
+    expect(jest.mocked(AudioSession.stopAudioSession)).toHaveBeenCalled();
+  });
+
+  it('referme la session audio au démontage', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    jest.mocked(AudioSession.stopAudioSession).mockClear();
+
+    session.dispose();
+
+    expect(jest.mocked(AudioSession.stopAudioSession)).toHaveBeenCalled();
+  });
+
+  it("n'empêche pas la séance quand la session audio échoue à se refermer", async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    jest.mocked(AudioSession.stopAudioSession).mockRejectedValueOnce(new Error('route occupée'));
+
+    // Un échec de fermeture ne doit pas faire rejeter `disconnect()` : l'écran
+    // resterait bloqué sur une séance que l'utilisateur vient de quitter.
+    await expect(session.disconnect()).resolves.toBeUndefined();
+    expect(session.getState()).toEqual({ status: 'idle' });
+  });
+});
+
 describe('createCallSession — établissement', () => {
   it('publie connecting dès la demande, puis connected une fois le transport ouvert', async () => {
     const transport = pauseTransport();
@@ -161,7 +225,7 @@ describe('createCallSession — établissement', () => {
     expect(seen).toEqual(['connecting']);
     expect(session.getState()).toEqual({ status: 'connecting' });
 
-    transport.open();
+    await transport.open();
     await joining;
 
     expect(seen).toEqual(['connecting', 'connected']);
@@ -210,7 +274,7 @@ describe('createCallSession — verrou de concurrence', () => {
 
     const first = session.connect(ACCESS);
     const second = session.connect(ACCESS);
-    transport.open();
+    await transport.open();
     await Promise.all([first, second]);
 
     expect(mockConnect).toHaveBeenCalledTimes(1);
@@ -235,7 +299,7 @@ describe('createCallSession — verrou de concurrence', () => {
     expect(settled).toEqual([]);
     expect(session.getState()).toEqual({ status: 'connecting' });
 
-    transport.open();
+    await transport.open();
     await settleAll();
 
     expect(settled).toEqual(['first', 'second']);
@@ -286,13 +350,13 @@ describe('createCallSession — mécanismes du verrou', () => {
     // La tentative abandonnée se dénoue maintenant, après que la nouvelle a
     // posé son propre verrou. Sans le contrôle d'ère dans le dénouement, elle
     // relâcherait un verrou qui ne lui appartient plus.
-    transport.openOnly(0);
+    await transport.openOnly(0);
     await abandoned;
 
     void session.connect(ACCESS);
     expect(mockConnect).toHaveBeenCalledTimes(2);
 
-    transport.openOnly(1);
+    await transport.openOnly(1);
     await rejoining;
     expect(session.getState()).toEqual({ status: 'connected' });
   });
@@ -320,17 +384,21 @@ describe('createCallSession — mécanismes du verrou', () => {
     const abandoned = session.connect(ACCESS);
 
     await session.disconnect();
-    transport.open();
+    await transport.open();
     await abandoned;
 
     const rejoining = session.connect(ACCESS);
+    // La session audio s'ouvre avant le transport, donc le second
+    // `room.connect` tombe au tour suivant. Ce qui est gardé ici est qu'il ait
+    // lieu, pas qu'il soit synchrone.
+    await settleAll();
 
     // Le verrou doit être relâché par la coupure elle-même : la tentative
     // abandonnée verra son ère périmée et ne le relâchera pas. Sans cela la
     // session ne pourrait plus jamais se reconnecter.
     expect(mockConnect).toHaveBeenCalledTimes(2);
 
-    transport.open();
+    await transport.open();
     await rejoining;
     expect(session.getState()).toEqual({ status: 'connected' });
   });
@@ -355,7 +423,7 @@ describe('createCallSession — mécanismes du verrou', () => {
     // cours de route, et il recevrait un état publié avant son abonnement.
     expect(late).toEqual([]);
 
-    transport.open();
+    await transport.open();
     await joining;
 
     expect(late).toEqual(['connected']);
@@ -409,7 +477,7 @@ describe('createCallSession — événements périmés', () => {
 
     expect(session.getState()).toEqual({ status: 'connecting' });
 
-    transport.open();
+    await transport.open();
     await rejoining;
     expect(session.getState()).toEqual({ status: 'connected' });
   });
@@ -514,7 +582,7 @@ describe('createCallSession — coupure volontaire', () => {
     // Le SDK avorte la connexion en vol, mais rien ne garantit l'ordre : la
     // promesse peut se dénouer après la coupure. Elle ne doit alors plus rien
     // publier, sinon l'écran de pré-jonction quitté rebascule en séance.
-    transport.open();
+    await transport.open();
     await joining;
 
     expect(session.getState()).toEqual({ status: 'idle' });
@@ -555,7 +623,7 @@ describe('createCallSession — coupure volontaire', () => {
     // milieu d'une connexion.
     expect(session.getState()).toEqual({ status: 'connecting' });
 
-    transport.open();
+    await transport.open();
     await rejoining;
 
     expect(session.getState()).toEqual({ status: 'connected' });

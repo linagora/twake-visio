@@ -24,6 +24,7 @@
   "lobby.noModerator": "Aucun modérateur n'est actuellement présent",
   "call.leave": "Quitter",
   "call.muted": "Micro coupé",
+  "call.permissionsDenied": "L'accès à la caméra et au micro est nécessaire pour rejoindre",
   "call.reconnecting": "Reconnexion…",
   "call.ended": "La réunion est terminée",
   "call.switchCamera": "Changer de caméra",

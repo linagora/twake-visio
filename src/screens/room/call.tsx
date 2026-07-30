@@ -14,6 +14,7 @@ import {
   switchCamera,
   type FacingMode,
 } from 'src/call/media';
+import { ensureMediaPermissions } from 'src/call/permissions';
 import type { CallState } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { CallStage } from 'src/screens/room/stage';
@@ -22,7 +23,7 @@ import { tokens } from 'src/ui/tokens';
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
 // sont des clés de traduction : rien de ce qui vient du réseau ou du SDK ne
 // s'affiche tel quel.
-type MessageKey = 'error.network' | 'error.unauthorized' | 'call.ended';
+type MessageKey = 'error.network' | 'error.unauthorized' | 'call.ended' | 'call.permissionsDenied';
 
 // L'API répond avant toute connexion LiveKit : c'est là — et là seulement —
 // qu'un jeton refusé se distingue d'une panne. `lobby` voudrait dire que
@@ -143,6 +144,17 @@ export function CallScreen(): React.ReactElement {
           setFailure(toAccessMessage(result.error));
           return;
         }
+
+        // Le manifeste déclare caméra et micro, mais Android exige de les
+        // demander à l'exécution. Sans cette demande ils restent refusés, rien
+        // n'est publié, et la négociation WebRTC expire sur un message qui ne
+        // nomme pas sa cause — mesuré sur appareil. On demande avant d'ouvrir
+        // le transport, pour que le refus se lise au lieu de se deviner.
+        if (!(await ensureMediaPermissions())) {
+          if (!cancelled) setFailure('call.permissionsDenied');
+          return;
+        }
+        if (cancelled) return;
 
         // `connect()` ne rejette jamais : l'issue est publiée sur l'abonnement
         // ci-dessus, elle n'est pas portée par la promesse. Il n'y a donc pas

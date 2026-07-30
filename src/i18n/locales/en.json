@@ -24,6 +24,7 @@
   "lobby.noModerator": "No moderator is currently present",
   "call.leave": "Leave",
   "call.muted": "Muted",
+  "call.permissionsDenied": "Camera and microphone access is required to join",
   "call.reconnecting": "Reconnecting…",
   "call.ended": "The meeting has ended",
   "call.switchCamera": "Switch camera",

@@ -24,6 +24,7 @@
   "lobby.noModerator": "Nessun moderatore è attualmente presente",
   "call.leave": "Abbandona",
   "call.muted": "Microfono disattivato",
+  "call.permissionsDenied": "Per partecipare serve l'accesso a fotocamera e microfono",
   "call.reconnecting": "Riconnessione…",
   "call.ended": "La riunione è terminata",
   "call.switchCamera": "Cambia fotocamera",

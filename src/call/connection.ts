@@ -1,4 +1,4 @@
-import { registerGlobals } from '@livekit/react-native';
+import { AudioSession, registerGlobals } from '@livekit/react-native';
 import { Room, RoomEvent } from 'livekit-client';
 
 import type { CallState, RoomAccess } from 'src/call/types';
@@ -178,6 +178,12 @@ export function createCallSession(): CallSession {
 
     let outcome: CallState;
     try {
+      // `@livekit/react-native` exige une session audio ouverte avant de
+      // rejoindre : sur natif, c'est elle qui configure le moteur audio de la
+      // plateforme. Sans elle, le transport s'établit mais la publication ne
+      // suit pas, et la négociation expire sur un « negotiation timed out »
+      // qui ne nomme pas sa cause. Constaté sur appareil.
+      await AudioSession.startAudioSession();
       await room.connect(access.livekitUrl, access.token);
       outcome = { status: 'connected' };
     } catch (err: unknown) {
@@ -241,6 +247,8 @@ export function createCallSession(): CallSession {
     room.off(RoomEvent.Disconnected, onDisconnected);
     listeners.clear();
 
+    void AudioSession.stopAudioSession().catch(() => undefined);
+
     // Le nettoyage d'un `useEffect` est synchrone : il ne peut pas attendre.
     // La coupure part donc sans être attendue. Sans elle, la Room reste
     // vivante après la disparition de l'écran, et avec elle le micro, la
@@ -269,6 +277,11 @@ export function createCallSession(): CallSession {
       // application : garder l'état précédent bloquerait l'écran sur un appel
       // dont plus rien ne sort, sans aucun recours pour l'utilisateur.
     }
+
+    // La session audio ne survit pas au raccrochage : la laisser ouverte garde
+    // le mode de routage audio de la plateforme, et le haut-parleur reste
+    // détourné pour le reste de l'application.
+    await AudioSession.stopAudioSession().catch(() => undefined);
 
     // Une coupure lente peut se terminer après qu'une nouvelle tentative a
     // repris la main. Publier `idle` raturerait alors le `connecting` de cette
