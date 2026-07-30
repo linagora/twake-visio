@@ -23,6 +23,7 @@
   "call.reconnecting": "Verbindung wird wiederhergestellt…",
   "call.ended": "Die Besprechung ist beendet",
   "call.switchCamera": "Kamera wechseln",
+  "call.unnamedParticipant": "Teilnehmer ohne Namen",
   "error.network": "Verbindung nicht möglich",
   "error.unauthorized": "Sitzung abgelaufen, bitte melden Sie sich erneut an"
 }

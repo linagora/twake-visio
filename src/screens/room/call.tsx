@@ -15,6 +15,8 @@ import {
   type FacingMode,
 } from 'src/call/media';
 import type { CallState } from 'src/call/types';
+import { useCallLayout } from 'src/call/useCallLayout';
+import { CallStage } from 'src/screens/room/stage';
 import { tokens } from 'src/ui/tokens';
 
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
@@ -49,15 +51,6 @@ const styles = StyleSheet.create({
   // la visioconférence, et un fond clair autour d'une vignette vidéo éblouit
   // dans une pièce éteinte.
   root: { flex: 1, backgroundColor: tokens.color.backgroundDark },
-  stage: { flex: 1, backgroundColor: tokens.color.surfaceDark },
-  filmstrip: {
-    // Trois pas de la plus grande unité d'espacement : de quoi montrer une
-    // vignette lisible sans manger la scène.
-    height: tokens.spacing.xl * 3,
-    flexDirection: 'row',
-    gap: tokens.spacing.xs,
-    padding: tokens.spacing.xs,
-  },
   banner: { alignItems: 'center', paddingVertical: tokens.spacing.sm },
   bannerText: { color: tokens.color.textDark },
   controls: {
@@ -110,6 +103,16 @@ export function CallScreen(): React.ReactElement {
   // Le SDK n'expose pas la face courante de la caméra : c'est l'écran qui la
   // conserve, et il repart de celle que `switchCamera` lui rend.
   const [facing, setFacing] = useState<FacingMode>('user');
+
+  // La Room est prête et son identité stable dès le premier rendu — la session
+  // la construit dans son constructeur. Le crochet doit être appelé ici, avant
+  // les sorties anticipées ci-dessous : il n'y a pas de rendu où l'écran aurait
+  // le droit de ne pas l'appeler.
+  //
+  // Tout ce qui se décide de l'affichage est derrière ce seul appel :
+  // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
+  // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
+  const layout = useCallLayout(session.getRoom(), facing);
 
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
@@ -224,11 +227,8 @@ export function CallScreen(): React.ReactElement {
   return (
     <View style={styles.root}>
       {/* Parti pris mobile : locuteur actif en grand, vignettes en bande. La
-          grille du web rend chaque visage illisible sur un écran de téléphone.
-          Les deux surfaces sont posées ; aucune piste vidéo n'y est encore
-          rendue — le plan ne le spécifie nulle part. */}
-      <View style={styles.stage} testID="active-speaker" />
-      <View style={styles.filmstrip} testID="filmstrip" />
+          grille du web rend chaque visage illisible sur un écran de téléphone. */}
+      <CallStage layout={layout} />
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
           en croyant que c'est cassé, et raccroche alors que ça se rétablit. */}

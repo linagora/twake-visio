@@ -15,3 +15,16 @@
  * `Room` is ever constructed. `src/call/connection.spec.ts` does exactly that.
  */
 export const registerGlobals = jest.fn();
+
+/**
+ * `src/screens/room/stage.tsx` renders `VideoTrack`. The real one reaches for
+ * `RTCView` from `@livekit/react-native-webrtc` — a native view that does not
+ * exist under Jest.
+ *
+ * This stub renders nothing and only records the props it was given. That is
+ * deliberate, and it bounds what the shell's tests may claim: they can show
+ * *which* track reference, mirror and fit a surface asked for — the wiring —
+ * and they can never show that anything appeared on screen. A test that
+ * rendered a stub and asserted on its output would only be testing the stub.
+ */
+export const VideoTrack = jest.fn((): null => null);

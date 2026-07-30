@@ -23,6 +23,7 @@
   "call.reconnecting": "Reconectando…",
   "call.ended": "La reunión ha terminado",
   "call.switchCamera": "Cambiar de cámara",
+  "call.unnamedParticipant": "Participante sin nombre",
   "error.network": "No se puede conectar",
   "error.unauthorized": "Sesión expirada, vuelva a iniciar sesión"
 }
