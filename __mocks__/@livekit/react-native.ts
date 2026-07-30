@@ -45,4 +45,12 @@ export const VideoTrack = jest.fn((): null => null);
 export const AudioSession = {
   startAudioSession: jest.fn(async (): Promise<void> => undefined),
   stopAudioSession: jest.fn(async (): Promise<void> => undefined),
+  // Ajoutés pour `src/call/audioRoute.ts`. `getAudioOutputs` rend `string[]` et
+  // non des `MediaDeviceInfo` : sur Android ce sont les quatre catégories
+  // d'AudioSwitch, sur iOS la constante ['default', 'force_speaker'] écrite en
+  // dur côté JS. Le double part de `[]`, ce que rend la vraie fonction tant que
+  // `startAudioSession()` n'a pas tourné.
+  getAudioOutputs: jest.fn(async (): Promise<string[]> => []),
+  selectAudioOutput: jest.fn(async (): Promise<void> => undefined),
+  showAudioRoutePicker: jest.fn(async (): Promise<void> => undefined),
 };
