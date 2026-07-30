@@ -3,6 +3,7 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import type { Room } from 'src/call/types';
+import { forgetRoomTitle, rememberRoomTitle } from 'src/rooms/titles';
 import * as accounts from 'src/auth/accounts';
 import { filterRooms, HomeScreen } from './home';
 
@@ -86,15 +87,29 @@ describe('filterRooms', () => {
     accessLevel: 'public',
   });
 
-  it('remonte les réunions nommées avant les codes', () => {
-    // Le défaut constaté sur appareil : des dizaines de slugs triés
-    // alphabétiquement noyaient les deux réunions réellement nommées.
+  it("remonte les réunions dont on connaît l'intitulé avant les codes", () => {
+    // Le défaut constaté sur appareil : des dizaines de codes triés
+    // alphabétiquement noyaient les réunions que la personne avait créées.
+    // L'intitulé vivant sur l'appareil, c'est sa présence qui distingue les
+    // deux, plus l'écart entre le nom et le slug.
+    rememberRoomTitle('mno-pqrs-tuv', 'Point hebdo');
+
     const result = filterRooms(
-      [room('zzz-aaa-bbb'), room('point-hebdo', 'Point hebdo'), room('aaa-bbb-ccc')],
+      [room('zzz-aaaa-bbb'), room('mno-pqrs-tuv'), room('aaa-bbbb-ccc')],
       '',
     );
 
-    expect(result.map((r) => r.slug)).toEqual(['point-hebdo', 'aaa-bbb-ccc', 'zzz-aaa-bbb']);
+    expect(result.map((r) => r.slug)).toEqual(['mno-pqrs-tuv', 'aaa-bbbb-ccc', 'zzz-aaaa-bbb']);
+    forgetRoomTitle('mno-pqrs-tuv');
+  });
+
+  it("cherche aussi dans l'intitulé local, pas seulement dans le nom rendu", () => {
+    rememberRoomTitle('mno-pqrs-tuv', 'Point hebdo');
+
+    const result = filterRooms([room('mno-pqrs-tuv'), room('aaa-bbbb-ccc')], 'hebdo');
+
+    expect(result.map((r) => r.slug)).toEqual(['mno-pqrs-tuv']);
+    forgetRoomTitle('mno-pqrs-tuv');
   });
 
   it('trie chaque groupe par ordre alphabétique', () => {

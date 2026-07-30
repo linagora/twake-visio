@@ -65,10 +65,32 @@ describe('createRoom', () => {
 
     const init = spy.mock.calls[0]?.[2] as RequestInit;
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({
-      name: 'Point hebdo',
-      access_level: 'public',
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.access_level).toBe('public');
+    // Le nom envoyé est un code, pas l'intitulé saisi : meet impose
+    // `slug = slugify(name)` et le routeur de son client web n'accepte que
+    // cette forme. Envoyer « Point hebdo » donnait le slug `point-hebdo`, que
+    // le web refuse, rendant la réunion injoignable depuis un navigateur.
+    expect(body.name).toMatch(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/);
+    expect(body.name).not.toBe('Point hebdo');
+  });
+
+  it('tire un code différent pour deux réunions du même intitulé', async () => {
+    const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-2', slug: 'abc-defg-hij', access_level: 'public' },
     });
+
+    await createRoom(ACCOUNT, { name: 'Même intitulé', accessLevel: 'public' });
+    await createRoom(ACCOUNT, { name: 'Même intitulé', accessLevel: 'public' });
+
+    // Le code ne dépendant plus du nom, la seconde ne bute plus sur
+    // « Room with this Slug already exists ».
+    const names = spy.mock.calls.map((call) => {
+      const body = JSON.parse(String((call[2] as RequestInit).body)) as Record<string, unknown>;
+      return body.name;
+    });
+    expect(names[0]).not.toBe(names[1]);
   });
 });
 

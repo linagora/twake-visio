@@ -8,6 +8,7 @@ import { createRoom, grantRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { searchUsers, type Me } from 'src/api/users';
 import { getActiveAccount } from 'src/auth/accounts';
+import { rememberRoomTitle } from 'src/rooms/titles';
 import type { AccessLevel } from 'src/call/types';
 import { tokens } from 'src/ui/tokens';
 
@@ -111,6 +112,11 @@ export function CreateRoomScreen(): React.ReactElement {
       setFailure(toFailure(result.error));
       return;
     }
+
+    // L'intitulé saisi ne peut pas vivre côté serveur : le nom porte le code.
+    // On le garde sur l'appareil, faute de mieux, et l'écran d'accueil le
+    // résout pour les réunions créées ici.
+    rememberRoomTitle(result.value.slug, name);
 
     // perform_create n'attribue owner qu'au créateur. Sans ces appels, la
     // personne pour qui la réunion est organisée n'a aucun droit de modération.

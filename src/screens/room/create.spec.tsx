@@ -4,6 +4,7 @@ import React from 'react';
 import * as rooms from 'src/api/rooms';
 import * as users from 'src/api/users';
 import * as accounts from 'src/auth/accounts';
+import { findRoomTitle, forgetRoomTitle } from 'src/rooms/titles';
 import type { Account } from 'src/auth/accounts';
 import { CreateRoomScreen } from './create';
 
@@ -190,5 +191,43 @@ describe('CreateRoomScreen, échecs visibles', () => {
       expect(screen.getByText('room.nameRequired')).toBeTruthy();
     });
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('CreateRoomScreen, intitulé lisible', () => {
+  afterEach(() => {
+    forgetRoomTitle('abc-defg-hij');
+  });
+
+  it("retient l'intitulé saisi sous le code rendu par le serveur", async () => {
+    // Le nom envoyé au serveur est un code : sans cette mémorisation, la
+    // réunion que la personne vient de nommer réapparaîtrait dans la liste
+    // sous la forme `abc-defg-hij`, et son intitulé serait perdu à l'instant
+    // même où elle le tape.
+    jest.spyOn(rooms, 'createRoom').mockResolvedValue({
+      ok: true,
+      value: { id: 'r-9', slug: 'abc-defg-hij', name: 'abc-defg-hij', accessLevel: 'public' },
+    });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Point hebdo');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => {
+      expect(findRoomTitle('abc-defg-hij')).toBe('Point hebdo');
+    });
+  });
+
+  it('ne retient rien quand la création échoue', async () => {
+    jest.spyOn(rooms, 'createRoom').mockResolvedValue({ ok: false, error: { kind: 'network' } });
+
+    await render(<CreateRoomScreen />);
+    await fireEvent.changeText(screen.getByTestId('room-name-input'), 'Point hebdo');
+    await fireEvent.press(screen.getByTestId('submit-btn'));
+
+    await waitFor(() => expect(screen.getByText('error.network')).toBeTruthy());
+    // Retenir un intitulé pour un salon qui n'existe pas laisserait une entrée
+    // que rien ne viendrait jamais nettoyer.
+    expect(findRoomTitle('abc-defg-hij')).toBe(null);
   });
 });

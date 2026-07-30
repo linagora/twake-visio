@@ -1,4 +1,5 @@
 import { authedFetch } from 'src/api/client';
+import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
 import type { AccessLevel, Room, RoomAccess } from 'src/call/types';
@@ -96,6 +97,20 @@ export async function fetchMyRooms(account: Account): Promise<ApiResult<readonly
   return { ok: true, value: rooms };
 }
 
+// Le nom envoyé est un code tiré au sort, pas l'intitulé saisi.
+//
+// meet impose `slug = slugify(name)` — vérifié dans son modèle, l'affectation
+// est inconditionnelle et écrase tout slug fourni — et le routeur de son client
+// web n'accepte que la forme `xxx-yyyy-zzz`. Un salon nommé « Test mobile »
+// recevait donc le slug `test-mobile`, que le web refuse : la réunion existait
+// mais restait injoignable depuis un navigateur, et son lien impartageable.
+//
+// L'intitulé lisible est conservé à part, par `src/rooms/titles`. Il ne suit
+// pas la réunion : c'est le prix de ce modèle, et il est documenté là-bas.
+//
+// Effet de bord bienvenu : le code ne dépendant plus du nom, deux réunions
+// peuvent porter le même intitulé sans que la seconde échoue sur « Room with
+// this Slug already exists ».
 export async function createRoom(
   account: Account,
   input: { name: string; accessLevel: AccessLevel },
@@ -103,7 +118,7 @@ export async function createRoom(
   const result = await authedFetch<RawRoom>(account, '/api/v1.0/rooms/', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: input.name, access_level: input.accessLevel }),
+    body: JSON.stringify({ name: generateRoomCode(), access_level: input.accessLevel }),
   });
   if (!result.ok) return result;
   return { ok: true, value: toRoom(result.value) };
