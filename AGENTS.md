@@ -64,6 +64,34 @@ native build — whose peer wants a newer React patch than Expo pins. The altern
 **Do not widen this setting to paper over any other conflict**, and revisit it whenever
 LiveKit or Expo bumps React.
 
+### The reason is bounded. The effect is not.
+
+`legacy-peer-deps=true` makes npm behave like npm v6: it installs **no peer dependency
+at all, ever**. Not just `react-dom` — every peer of every package. A missing peer stays
+invisible until something reaches for it, so it surfaces as an unrelated failure, far
+from its cause. It has bitten three times:
+
+| Missing peer                                              | Wanted by                                           | How it surfaced                                 |
+| --------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------- |
+| `test-renderer`                                           | `@testing-library/react-native` 14                  | the first screen spec could not load the module |
+| `react-native-nitro-modules`                              | `react-native-mmkv` 4                               | the first native build failed in Gradle         |
+| `react-native-gesture-handler`, `react-native-reanimated` | `react-native-drawer-layout`, pulled by expo-router | found by sweeping, before they could bite       |
+
+Adding the last two pulled in `react-native-worklets`, and that one pulled in
+`@react-native/metro-config` — each absent for the same reason, each revealed only by
+installing the one before it.
+
+**So when something fails in a way that makes no sense — a module that cannot be found,
+a Gradle project that does not exist, a native crash on a screen that used to work —
+suspect a missing peer before suspecting your own code.** Sweep the tree rather than
+guessing: walk `node_modules/*/package.json`, collect every non-optional
+`peerDependencies` key, and report the ones with no directory of their own. Ignore the
+web-only hits (`react-dom`, `@testing-library/dom`, `@types/dom-mediacapture-record`) —
+those are the bounded reason above, and they are never executed in a native build.
+
+Install with `npx expo install`, never `npm install`, so the version matches the Expo
+SDK instead of being whatever was published last.
+
 ## Commit subject case
 
 `@commitlint/config-conventional` forbids sentence-case subjects by default, which
