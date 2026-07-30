@@ -12,6 +12,7 @@ const ACCESS: RoomAccess = {
 // les identifiants correspondant à /^mock/i.
 const mockConnect = jest.fn();
 const mockDisconnect = jest.fn();
+const mockOff = jest.fn();
 
 // La fabrique enregistre les gestionnaires d'événements par nom d'événement,
 // ce que `jest.fn()` ne permet pas : sans eux, une coupure serveur ne peut pas
@@ -23,9 +24,17 @@ jest.mock('livekit-client', () => ({
   Room: class {
     connect = mockConnect;
     disconnect = mockDisconnect;
-    off = jest.fn();
     on(event: string, handler: (...args: unknown[]) => void): unknown {
       mockHandlers.set(event, handler);
+      return this;
+    }
+    // `off` retire réellement le gestionnaire, et seulement si la référence
+    // correspond : un `dispose()` qui passerait une autre fonction — le piège
+    // classique des gestionnaires anonymes — ne détacherait rien, et la carte
+    // le montrerait.
+    off(event: string, handler: (...args: unknown[]) => void): unknown {
+      mockOff(event, handler);
+      if (mockHandlers.get(event) === handler) mockHandlers.delete(event);
       return this;
     }
   },
@@ -91,6 +100,7 @@ function silenceSubscriberErrors(): jest.SpyInstance {
 
 beforeEach(() => {
   mockHandlers.clear();
+  mockOff.mockReset();
   mockConnect.mockReset().mockResolvedValue(undefined);
   mockDisconnect.mockReset().mockResolvedValue(undefined);
 });
@@ -390,6 +400,70 @@ describe('createCallSession — coupure volontaire', () => {
 
     expect(mockConnect).toHaveBeenCalledTimes(2);
     expect(session.getState()).toEqual({ status: 'connected' });
+  });
+});
+
+describe('createCallSession — démontage', () => {
+  it('détache les trois gestionnaires du SDK', () => {
+    const session = createCallSession();
+    const registered = new Map(mockHandlers);
+    expect(registered.size).toBe(3);
+
+    session.dispose();
+
+    // Les écrans 17 à 19 créent une session par montage. Sans détachement,
+    // chaque montage laisse une Room abonnée derrière lui.
+    for (const [event, handler] of registered) {
+      expect(mockOff).toHaveBeenCalledWith(event, handler);
+    }
+    expect(mockHandlers.size).toBe(0);
+  });
+
+  it('coupe le transport sans se faire attendre', () => {
+    const session = createCallSession();
+
+    // Un nettoyage de `useEffect` est synchrone : il ne peut pas attendre. La
+    // coupure part donc sans être attendue, sinon la Room resterait vivante —
+    // et avec elle le micro, la caméra et le transport.
+    session.dispose();
+
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('survit à une coupure qui échoue au démontage', async () => {
+    mockDisconnect.mockRejectedValue(new Error('socket déjà morte'));
+    const session = createCallSession();
+
+    session.dispose();
+    await settleAll();
+
+    // Personne à qui signaler l'échec d'une coupure de démontage : le rejet ne
+    // doit surtout pas remonter non capturé.
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('relâche les abonnés et ne publie plus rien', async () => {
+    const session = createCallSession();
+    const seen = record(session);
+
+    session.dispose();
+    await session.connect(ACCESS);
+
+    expect(seen).toEqual([]);
+    expect(mockConnect).not.toHaveBeenCalled();
+    expect(session.getState()).toEqual({ status: 'idle' });
+  });
+
+  it('est idempotent', () => {
+    const session = createCallSession();
+
+    session.dispose();
+    session.dispose();
+
+    // Un écran démonté deux fois, ou démonté après un raccrochage, ne doit pas
+    // relancer une coupure sur une Room déjà libérée.
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+    expect(mockOff).toHaveBeenCalledTimes(3);
   });
 });
 

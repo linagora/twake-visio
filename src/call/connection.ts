@@ -10,6 +10,10 @@ export type CallSession = {
   subscribe: (listener: CallListener) => () => void;
   getState: () => CallState;
   getRoom: () => Room;
+  // Terminal : libère la Room et les abonnés. Une session démontée ne se
+  // reconnecte pas. À appeler depuis le nettoyage du `useEffect` qui a créé la
+  // session, sans quoi chaque montage d'écran laisse une Room vivante.
+  dispose: () => void;
 };
 
 // Ce module ne connaît ni OIDC ni instance : il reçoit une URL et un jeton.
@@ -42,6 +46,10 @@ export type CallSession = {
 // `disconnected` porte toujours un motif, parce que l'écran doit pouvoir dire
 // pourquoi la séance s'est arrêtée. `idle` est réservé à l'absence de séance :
 // avant la première connexion, et après un raccrochage volontaire.
+//
+// `dispose()` est en dehors de la machine : il la met à l'arrêt définitif. Il
+// ne publie aucun état — il n'y a plus personne à qui le publier — et rend
+// toute commande ultérieure sans effet.
 export function createCallSession(): CallSession {
   const room = new Room();
   const listeners = new Set<CallListener>();
@@ -67,6 +75,9 @@ export function createCallSession(): CallSession {
   // orpheline la connexion précédente, et un événement issu d'une ère périmée
   // ne publie plus rien.
   let established: number | null = null;
+
+  // Une session démontée est terminale : plus aucune commande n'a d'effet.
+  let disposed = false;
 
   function setState(next: CallState): void {
     state = next;
@@ -149,6 +160,7 @@ export function createCallSession(): CallSession {
   }
 
   function connect(access: RoomAccess): Promise<void> {
+    if (disposed) return Promise.resolve();
     if (pending !== null) return pending;
     // `reconnecting` compte comme une séance ouverte : le SDK est en train de
     // rétablir ce transport-là, en ouvrir un second le mettrait à la poubelle.
@@ -173,7 +185,33 @@ export function createCallSession(): CallSession {
     return pending;
   }
 
+  function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+
+    // Ouvrir une dernière ère : ce qui est en vol ne publiera plus rien, et
+    // les gestionnaires détachés ci-dessous ne pourraient de toute façon plus
+    // être appelés.
+    generation += 1;
+    pending = null;
+
+    room.off(RoomEvent.Reconnecting, onReconnecting);
+    room.off(RoomEvent.Reconnected, onReconnected);
+    room.off(RoomEvent.Disconnected, onDisconnected);
+    listeners.clear();
+
+    // Le nettoyage d'un `useEffect` est synchrone : il ne peut pas attendre.
+    // La coupure part donc sans être attendue. Sans elle, la Room reste
+    // vivante après la disparition de l'écran, et avec elle le micro, la
+    // caméra et le transport.
+    void room.disconnect().catch(() => {
+      // Un démontage n'a personne à qui signaler l'échec d'une coupure.
+    });
+  }
+
   async function disconnect(): Promise<void> {
+    if (disposed) return;
+
     // Périmer la tentative en vol et relâcher le verrou avant d'appeler le SDK :
     // `Room.disconnect()` interrompt lui-même la connexion en cours via son
     // AbortController, il n'y a donc pas de transport orphelin à attendre.
@@ -218,5 +256,7 @@ export function createCallSession(): CallSession {
     getRoom(): Room {
       return room;
     },
+
+    dispose,
   };
 }
