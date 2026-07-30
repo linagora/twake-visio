@@ -8,6 +8,8 @@ import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 
+type WaitingResult = ApiResult<readonly WaitingParticipant[]>;
+
 const ACCOUNT = { id: 'a', displayName: 'Ada' } as Account;
 
 function Probe({ enabled }: { enabled: boolean }): React.ReactElement {
@@ -106,7 +108,7 @@ describe('useWaitingParticipants', () => {
     // Une réponse partie avant que `enabled` ne repasse à faux peut arriver
     // après coup. L'appliquer ferait réapparaître une file d'attente sur un
     // salon qu'on ne modère plus.
-    let resolveFetch: (result: ApiResult<readonly WaitingParticipant[]>) => void = () => undefined;
+    let resolveFetch: (result: WaitingResult) => void = () => undefined;
     jest.spyOn(participants, 'listWaitingParticipants').mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -173,6 +175,50 @@ describe('useWaitingParticipants', () => {
     });
 
     expect(result.current.waiting).toEqual([ada, bob, cid]);
+  });
+
+  it("ignore la réponse d'un tour plus ancien qui arrive après un tour plus récent", async () => {
+    // Réseau mobile lent : le tour 1 est encore en vol quand le tour 2 part,
+    // et c'est le tour 2 — pas le tour 1 — qui répond en premier.
+    const ada = { id: 'p-1', username: 'Ada' };
+    const bob = { id: 'p-2', username: 'Bob' };
+    const resolvers: ((result: WaitingResult) => void)[] = [];
+    jest.spyOn(participants, 'listWaitingParticipants').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const { result } = await renderHook(() => useWaitingParticipants(ACCOUNT, 'r-1', true));
+
+    // Tour 1 : émis, ne répond pas tout de suite.
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    // Tour 2 : émis avant que le tour 1 n'ait répondu. Les deux sont en vol.
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(resolvers).toHaveLength(2);
+
+    // Le tour 2 répond en premier : un autre modérateur a admis Ada entre
+    // les deux tours, le serveur ne la liste donc plus.
+    await act(async () => {
+      resolvers[1]?.({ ok: true, value: [bob] });
+    });
+    expect(result.current.waiting).toEqual([bob]);
+
+    // Le tour 1, émis avant son admission, répond en dernier — avec Ada
+    // encore dans sa réponse, désormais périmée.
+    await act(async () => {
+      resolvers[0]?.({ ok: true, value: [ada, bob] });
+    });
+
+    // Une réponse plus ancienne qui arrive après une plus récente ne doit
+    // pas ressusciter quelqu'un qu'un tour plus frais a déjà retiré : le
+    // modérateur la reverrait et pourrait l'admettre une deuxième fois.
+    expect(result.current.waiting).toEqual([bob]);
   });
 });
 

@@ -30,10 +30,19 @@ export function useWaitingParticipants(
     if (!enabled) return;
 
     let stopped = false;
+    // `setInterval` relance un appel sans attendre la résolution du
+    // précédent : sur un réseau lent, un tour peut répondre après un tour
+    // plus récent que lui. Appliquer cette réponse périmée par-dessus un état
+    // plus frais ferait réapparaître, comme nouvelle arrivante, une personne
+    // qu'un tour plus récent a déjà retirée — par exemple quelqu'un que
+    // l'autre modérateur vient d'admettre. Seule la réponse du tour le plus
+    // récemment émis compte : `latestSeq` la désigne.
+    let latestSeq = 0;
     const timer = setInterval(() => {
+      const seq = ++latestSeq;
       void listWaitingParticipants(account, roomId)
         .then((result) => {
-          if (stopped || !result.ok) return;
+          if (stopped || !result.ok || seq !== latestSeq) return;
           setWaiting((current) => mergeWaiting(current, result.value));
         })
         .catch(() => undefined);
