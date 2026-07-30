@@ -89,6 +89,14 @@ user-facing string. `src/i18n/index.spec.ts` fails if a key is missing anywhere.
 `*.spec.ts` / `*.spec.tsx`, colocated. No snapshots. Bar: `npm test`,
 `npm run typecheck`, `npm run lint` green.
 
+**`@testing-library/react-native` 14 is asynchronous.** `render`, `fireEvent` and its
+`.press` / `.changeText` shorthands, `renderHook` and `cleanup` all return promises
+since RNTL moved onto the `test-renderer` package. Every call needs `await`. Forget it
+and `render` never binds `screen`, so the next query throws ``render` function has not
+been called` — and `tsc` will not warn you, because an unawaited promise is a valid
+expression statement. RNTL 14 also needs `test-renderer` as an explicit devDependency:
+`legacy-peer-deps=true` means npm never installs a peer on its own.
+
 ## The `unknown` double-assertion ban has one exception: spec files
 
 The project bans `x as unknown as T`, and `eslint.config.js` enforces that ban — but
@@ -106,3 +114,22 @@ The project rule is named exports only, never `export default` — and
 **expo-router requires a default export** to discover a route. The exception is
 enforced by a scoped eslint block matching `app/**/*.ts(x)` and extends to nothing in
 `src/`. A file that moves out of `app/` must lose its default export on the way.
+
+## Screens live in `src/screens`; `app/` holds thin routes only
+
+expo-router's `require.context` pulls **every** `.tsx` under `app/` into the bundle and
+excludes only `+api`, `+html` and `+middleware` — there is no test-file convention it
+honours. A spec colocated under `app/` therefore becomes a route *and* drags
+`@testing-library/react-native` into the production graph, where Metro dies on its
+`require("console")`. This is a build failure, not a warning.
+
+So an `app/` route file contains one line and no logic:
+
+```tsx
+export { WelcomeScreen as default } from 'src/screens/welcome';
+```
+
+The screen itself is a named export in `src/screens/`, mirroring the route path
+(`app/room/create.tsx` → `src/screens/room/create.tsx`), with its spec beside it.
+Colocation is preserved; the sweep never sees it. `_layout.tsx` and pure redirects like
+`index.tsx` are genuine routing and stay in `app/`.
