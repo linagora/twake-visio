@@ -13,7 +13,15 @@
     ],
     "android": {
       "package": "com.linagora.twakevisio",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+      "permissions": ["CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "meet.linagora.com" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "ios": {
       "bundleIdentifier": "com.linagora.twakevisio",
