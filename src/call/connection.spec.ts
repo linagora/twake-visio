@@ -66,7 +66,7 @@ function settleAll(): Promise<void> {
 // transports demandés, y compris ceux qu'un verrou cassé aurait laissés
 // passer : n'en dénouer qu'un ferait expirer le test au lieu de nommer ce qui
 // a lâché.
-function pauseTransport(): { open: () => void } {
+function pauseTransport(): { open: () => void; openOnly: (index: number) => void } {
   const waiting: (() => void)[] = [];
   mockConnect.mockImplementation(
     () =>
@@ -77,6 +77,13 @@ function pauseTransport(): { open: () => void } {
   return {
     open: () => {
       for (const resolve of waiting) resolve();
+    },
+    // Dénoue un transport précis, pour les cas où deux tentatives se
+    // chevauchent et où l'ordre de dénouement est justement ce qu'on teste.
+    openOnly: (index: number) => {
+      const resolve = waiting[index];
+      if (resolve === undefined) throw new Error(`Aucun transport n° ${index} en attente`);
+      resolve();
     },
   };
 }
@@ -228,6 +235,114 @@ describe('createCallSession — verrou de concurrence', () => {
 
     expect(mockConnect).toHaveBeenCalledTimes(1);
     expect(seen).toEqual([]);
+  });
+});
+
+// Ces cinq cas gardent des mécanismes qui, jusqu'ici, ne portaient qu'un
+// commentaire d'intention. Un commentaire ne survit pas à un refactor.
+describe('createCallSession — mécanismes du verrou', () => {
+  it('reste réutilisable quand room.connect lève de façon synchrone', async () => {
+    // Une URL invalide fait lever `room.connect` avant tout `await`. Le `catch`
+    // d'`attempt` s'exécute alors dans la portion synchrone : un nettoyage du
+    // verrou écrit à l'intérieur d'`attempt` s'exécuterait avant sa pose, et le
+    // verrou resterait fermé pour toujours — bouton « Réessayer » inerte.
+    mockConnect.mockImplementationOnce(() => {
+      throw new Error('URL invalide');
+    });
+    const session = createCallSession();
+
+    await session.connect(ACCESS);
+    expect(session.getState()).toEqual({ status: 'disconnected', reason: 'URL invalide' });
+
+    await session.connect(ACCESS);
+
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
+  it('ne laisse pas une tentative abandonnée relâcher le verrou d\'une autre', async () => {
+    const transport = pauseTransport();
+    const session = createCallSession();
+    const abandoned = session.connect(ACCESS);
+    await session.disconnect();
+    const rejoining = session.connect(ACCESS);
+
+    // La tentative abandonnée se dénoue maintenant, après que la nouvelle a
+    // posé son propre verrou. Sans le contrôle d'ère dans le dénouement, elle
+    // relâcherait un verrou qui ne lui appartient plus.
+    transport.openOnly(0);
+    await abandoned;
+
+    void session.connect(ACCESS);
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+
+    transport.openOnly(1);
+    await rejoining;
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
+  it('ne rouvre pas de transport pendant que le SDK rétablit le lien', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    emit('reconnecting');
+    const seen = record(session);
+
+    await session.connect(ACCESS);
+
+    // Le SDK ne se garde pas lui-même ici : `Room.connect` ne court-circuite
+    // que sur `connectFuture` et `state === Connected`. `Reconnecting` passe au
+    // travers et lancerait une tentative neuve, mettant à la poubelle le
+    // transport que le SDK est en train de rétablir.
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(session.getState()).toEqual({ status: 'reconnecting' });
+    expect(seen).toEqual([]);
+  });
+
+  it('permet de rejoindre après l\'annulation d\'une connexion en vol', async () => {
+    const transport = pauseTransport();
+    const session = createCallSession();
+    const abandoned = session.connect(ACCESS);
+
+    await session.disconnect();
+    transport.open();
+    await abandoned;
+
+    const rejoining = session.connect(ACCESS);
+
+    // Le verrou doit être relâché par la coupure elle-même : la tentative
+    // abandonnée verra son ère périmée et ne le relâchera pas. Sans cela la
+    // session ne pourrait plus jamais se reconnecter.
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+
+    transport.open();
+    await rejoining;
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+
+  it('fige la liste des abonnés le temps d\'une notification', async () => {
+    const transport = pauseTransport();
+    const session = createCallSession();
+    const late: string[] = [];
+    let added = false;
+    session.subscribe(() => {
+      if (added) return;
+      added = true;
+      session.subscribe((state) => {
+        late.push(state.status);
+      });
+    });
+
+    const joining = session.connect(ACCESS);
+
+    // Le nouvel abonné s'est inscrit pendant la notification de `connecting`.
+    // Sans copie de la liste, l'itération d'un Set visite ce qu'on y ajoute en
+    // cours de route, et il recevrait un état publié avant son abonnement.
+    expect(late).toEqual([]);
+
+    transport.open();
+    await joining;
+
+    expect(late).toEqual(['connected']);
   });
 });
 

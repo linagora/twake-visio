@@ -7,6 +7,11 @@ export type CallListener = (state: CallState) => void;
 export type CallSession = {
   connect: (access: RoomAccess) => Promise<void>;
   disconnect: () => Promise<void>;
+  // Les abonnés sont notifiés de façon synchrone, à l'intérieur de la
+  // transition. Un abonné ne doit donc pas rappeler `connect()` ni
+  // `disconnect()` en recevant un état : le verrou n'est armé qu'au retour de
+  // la transition en cours, et l'appel réentrant ouvrirait un second
+  // transport. Réagir à un état se fait depuis un effet, pas depuis l'abonné.
   subscribe: (listener: CallListener) => () => void;
   getState: () => CallState;
   getRoom: () => Room;
