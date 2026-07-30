@@ -10,3 +10,9 @@ const KNOWN_CLIENT_IDS: Readonly<Record<string, string>> = {
 export function findKnownClientId(host: string): string | null {
   return KNOWN_CLIENT_IDS[host.toLowerCase()] ?? null;
 }
+
+// Consommé par le filtre de liens profonds : un lien de réunion n'est accepté
+// que s'il porte sur une instance connue.
+export function listKnownHosts(): readonly string[] {
+  return Object.keys(KNOWN_CLIENT_IDS);
+}
