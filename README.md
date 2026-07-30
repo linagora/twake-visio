@@ -22,6 +22,7 @@ exige du code natif.
 
 ## Conception
 
-- Spécification : `docs/superpowers/specs/2026-07-29-twake-visio-socle-design.md`
-- Plan : `docs/superpowers/plans/2026-07-29-twake-visio-socle.md`
-- Règles pour les agents : `AGENTS.md`
+- Règles pour les agents et écarts assumés : `AGENTS.md`
+
+La spécification et le plan d'implémentation vivent sous `docs/superpowers/`, qui n'est
+pas versionné.
