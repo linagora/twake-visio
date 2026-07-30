@@ -46,14 +46,21 @@ Point de vigilance mesuré le 2026-07-30 sur
     token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic"]
     code_challenge_methods_supported:      ["plain", "S256"]
 
-PKCE est donc supporté, mais **`none` est absent** — or c'est ainsi qu'un client public
-s'authentifie. Soit les métadonnées sont périmées et l'enregistrement passe, soit le SSO
-ne gère pas encore de client public, et c'est bloquant : une application mobile ne peut
-pas porter de `client_secret`.
+PKCE est supporté et **`none` est absent** de la liste — or c'est ainsi qu'un client
+public s'authentifie. Ce sont bien les **métadonnées qui sont périmées**, pas la
+capacité : un échange de jeton en client public, avec PKCE et sans `client_secret`,
+aboutit sur ce SSO. Vérifié le 2026-07-30 avec l'outil de LemonLDAP lui-même :
+
+    llng --choice 1_LDAP --llng-server sso.linagora.com --pkce \
+         --client-id livekit-meet --redirect-uri "https://meet.linagora.com" oidc_tokens
+
+rend `access_token`, `id_token` et `refresh_token`. Ne pas conclure de l'absence de
+`none` que l'enregistrement d'un client public est impossible.
 
 Le client de l'application web de l'instance est `livekit-meet`, lisible dans la
-redirection de `/api/v1.0/authenticate/`. Il n'est **pas** réutilisable ici : client
-confidentiel, redirection web.
+redirection de `/api/v1.0/authenticate/`. Reste à établir si une redirection en schéma
+natif y est acceptée : la même commande avec `--redirect-uri "twakevisio://callback"`
+répond à la question.
 
 **Activer `lasuite.oidc_resource_server` sur le déploiement `meet.linagora.com`**, en
 ajoutant `ResourceServerAuthentication` aux classes d'authentification et en configurant
