@@ -57,10 +57,23 @@ aboutit sur ce SSO. Vérifié le 2026-07-30 avec l'outil de LemonLDAP lui-même 
 rend `access_token`, `id_token` et `refresh_token`. Ne pas conclure de l'absence de
 `none` que l'enregistrement d'un client public est impossible.
 
-Le client de l'application web de l'instance est `livekit-meet`, lisible dans la
-redirection de `/api/v1.0/authenticate/`. Reste à établir si une redirection en schéma
-natif y est acceptée : la même commande avec `--redirect-uri "twakevisio://callback"`
-répond à la question.
+La redirection en schéma natif **n'est pas autorisée aujourd'hui**, et il faut la faire
+déclarer. Établi le 2026-07-30 sur appareil, en empruntant le temps d'un essai le client
+`livekit-meet` de l'application web (lisible dans la redirection de
+`/api/v1.0/authenticate/`) : l'erreur du portail change de nature selon la cause, ce qui
+permet de les distinguer sans accès au SSO.
+
+| `client_id` envoyé | Erreur du portail LemonLDAP              | Cause                                                                        |
+| ------------------ | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `twake-visio`      | « Cette application n'est pas reconnue » | le client n'existe pas                                                       |
+| `livekit-meet`     | « URL non autorisée »                    | le client existe, `twakevisio://callback` n'est pas une redirection déclarée |
+
+Les deux enregistrements sont donc nécessaires, et le second ne se voit qu'une fois le
+premier fait. Noter aussi que le portail affiche son formulaire de connexion pour
+n'importe quelle redirection, y compris `schemeinexistant://x` : il ne la valide
+**qu'après** authentification, donc aucune sonde anonyme ne peut trancher.
+
+`livekit-meet` n'est de toute façon pas la cible : c'est le client de l'application web.
 
 **Activer `lasuite.oidc_resource_server` sur le déploiement `meet.linagora.com`**, en
 ajoutant `ResourceServerAuthentication` aux classes d'authentification et en configurant
