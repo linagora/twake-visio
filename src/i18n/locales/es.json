@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Cámara desactivada",
   "lobby.waiting": "Esperando aprobación",
   "lobby.noModerator": "No hay ningún moderador presente en este momento",
+  "lobby.denied": "Su solicitud de entrada ha sido rechazada",
   "call.leave": "Salir",
   "call.share": "Compartir el enlace",
   "call.muted": "Silenciado",

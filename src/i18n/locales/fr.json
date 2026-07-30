@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Caméra désactivée",
   "lobby.waiting": "En attente de validation",
   "lobby.noModerator": "Aucun modérateur n'est actuellement présent",
+  "lobby.denied": "Votre demande d'entrée a été refusée",
   "call.leave": "Quitter",
   "call.share": "Partager le lien",
   "call.muted": "Micro coupé",

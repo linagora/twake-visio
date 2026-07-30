@@ -3,7 +3,6 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
-import type { RoomAccess } from 'src/call/types';
 import { LobbyScreen } from './lobby';
 
 // Le nom doit commencer par `mock` : babel-plugin-jest-hoist remonte
@@ -147,17 +146,11 @@ describe('LobbyScreen', () => {
 });
 
 describe("LobbyScreen, chemin d'admission", () => {
-  // Typé explicitement en `RoomAccess`, plutôt que laissé inféré : un littéral
-  // non annoté aurait accepté d'omettre `isAdministrable` en silence — c'est
-  // exactement le masquage que ce champ obligatoire est censé rendre
-  // impossible. L'annotation force aussi `accessLevel` à rester la
-  // littérale `'trusted'` plutôt que d'être élargie en `string`, ce qui
-  // permet de passer `ACCESS` sans cast aux trois sites d'usage ci-dessous.
-  const ACCESS: RoomAccess = {
-    room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'trusted' },
-    livekitUrl: 'wss://livekit.linagora.com',
-    token: 'lk',
-    isAdministrable: false,
+  const WAITING = {
+    participantId: 'p-1',
+    status: 'waiting' as const,
+    livekitUrl: null,
+    token: null,
   };
 
   beforeEach(() => {
@@ -169,22 +162,16 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   // Fait avancer le temps puis laisse les promesses du tick se dénouer.
-  // `jest.advanceTimersByTime` seul rend la main avant que `fetchRoomAccess`
+  // `jest.advanceTimersByTime` seul rend la main avant que `requestEntry`
   // n'ait résolu, et l'assertion lirait un écran d'un tick de retard.
   async function tick(): Promise<void> {
     await act(async () => {
-      jest.advanceTimersByTime(3000);
+      jest.advanceTimersByTime(5000);
     });
   }
 
   it('entre en séance dès que le salon délivre un jeton', async () => {
-    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
-      ok: true,
-      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
-    });
-    const access = jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
     await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
@@ -192,10 +179,48 @@ describe("LobbyScreen, chemin d'admission", () => {
     await tick();
     expect(mockReplace).not.toHaveBeenCalled();
 
-    access.mockResolvedValue({ ok: true, value: ACCESS });
+    entry.mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
     await tick();
 
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
+  });
+
+  // Symétrique de « cesse de scruter une fois refusé » : une admission arrête
+  // aussi la scrutation. Sans ce test, retirer le `clearInterval` de la
+  // branche `accepted` ne fait rougir aucun test existant — `router.replace`
+  // est un mock ici et ne démonte pas l'écran, contrairement à une vraie
+  // navigation.
+  it('cesse de scruter une fois accepté', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    entry.mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
+    await tick();
+    expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
+    const callsAfterAcceptance = entry.mock.calls.length;
+
+    await tick();
+    await tick();
+
+    expect(entry.mock.calls.length).toBe(callsAfterAcceptance);
   });
 
   it("scrute aussi tant qu'aucun modérateur n'est là", async () => {
@@ -203,34 +228,34 @@ describe("LobbyScreen, chemin d'admission", () => {
     // quelqu'un qui peut ouvrir peut arriver plus tard, et l'écran doit
     // basculer tout seul. Sans scrutation dans cet état, la personne reste
     // devant « aucun modérateur » pour toujours.
-    jest
+    const entry = jest
       .spyOn(rooms, 'requestEntry')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
-    const access = jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
 
     await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy());
 
-    access.mockResolvedValue({ ok: true, value: ACCESS });
+    entry.mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
     await tick();
 
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 
   it("ne sort pas de la file d'attente sur une coupure passagère", async () => {
-    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
-      ok: true,
-      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
-    });
-    const access = jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'network' } });
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
     await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
 
+    entry.mockResolvedValue({ ok: false, error: { kind: 'network' } });
     await tick();
     await tick();
 
@@ -238,23 +263,26 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(screen.queryByTestId('lobby-error')).toBe(null);
 
     // La reprise se fait toute seule : la scrutation ne s'est pas arrêtée.
-    access.mockResolvedValue({ ok: true, value: ACCESS });
+    entry.mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
     await tick();
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 
   it("invite à se reconnecter si la session expire pendant l'attente", async () => {
-    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
-      ok: true,
-      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
-    });
-    jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
     await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
 
+    entry.mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
     await tick();
 
     expect(screen.getByText('error.unauthorized')).toBeTruthy();
@@ -262,19 +290,13 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   it("arrête de scruter une fois l'écran démonté", async () => {
-    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
-      ok: true,
-      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
-    });
-    const access = jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
     const view = await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
 
     await tick();
-    const callsBeforeUnmount = access.mock.calls.length;
+    const callsBeforeUnmount = entry.mock.calls.length;
     expect(callsBeforeUnmount).toBeGreaterThan(0);
 
     await view.unmount();
@@ -283,6 +305,46 @@ describe("LobbyScreen, chemin d'admission", () => {
 
     // Un intervalle non nettoyé continue d'interroger le serveur pour un
     // écran que plus personne ne regarde, et fait fuir un timer par visite.
-    expect(access.mock.calls.length).toBe(callsBeforeUnmount);
+    expect(entry.mock.calls.length).toBe(callsBeforeUnmount);
+  });
+
+  it('annonce un refus au lieu de faire attendre indéfiniment', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    entry.mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
+    });
+    await tick();
+
+    expect(screen.getByTestId('lobby-denied')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('cesse de scruter une fois refusé', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+    // L'appel initial (au montage) ne lit que `result.ok`, jamais `.status` :
+    // il pose donc `waiting` même si le serveur répond déjà `denied`. C'est
+    // la scrutation, un cycle plus tard, qui lit `.status` et fait basculer
+    // l'écran — d'où ce tick avant de guetter `lobby-denied`.
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    await tick();
+    await waitFor(() => expect(screen.getByTestId('lobby-denied')).toBeTruthy());
+    const callsAfterDenial = entry.mock.calls.length;
+
+    await tick();
+    await tick();
+
+    // Continuer à demander l'entrée après un refus revient à insister auprès
+    // du serveur pour une décision déjà prise.
+    expect(entry.mock.calls.length).toBe(callsAfterDenial);
   });
 });

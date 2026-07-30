@@ -28,6 +28,7 @@
   "prejoin.cameraOff": "Camera off",
   "lobby.waiting": "Waiting for approval",
   "lobby.noModerator": "No moderator is currently present",
+  "lobby.denied": "Your request to join was declined",
   "call.leave": "Leave",
   "call.share": "Share the link",
   "call.muted": "Muted",
