@@ -64,7 +64,24 @@ export function createCallSession(): CallSession {
     state = next;
     // Copie de la liste : un abonné qui se désabonne — ou en abonne un autre —
     // en recevant l'état ne doit pas changer qui reçoit *cette* notification.
-    for (const listener of Array.from(listeners)) listener(next);
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(next);
+      } catch (err: unknown) {
+        // Un abonné qui lève ne doit pas arrêter la machine à états. Sans ce
+        // filet, une erreur de rendu remontait jusqu'au `setState('connecting')`
+        // initial : `room.connect()` n'était jamais appelé, l'état restait
+        // `connecting` sans issue, `connect()` rejetait — perçant le contrat
+        // « ne rejette jamais » — et les abonnés suivants n'étaient plus
+        // notifiés alors que `state` avait avancé.
+        //
+        // Signalé plutôt qu'avalé : le défaut est chez l'abonné, et l'étouffer
+        // le rendrait indiagnosticable. `console.error` est autorisé par
+        // `eslint.config.js` et n'interrompt pas l'exécution, contrairement à
+        // un jet différé qui ferait tomber l'application en production.
+        console.error('[call] un abonné a levé en recevant un état', err);
+      }
+    }
   }
 
   room.on(RoomEvent.Reconnecting, () => setState({ status: 'reconnecting' }));

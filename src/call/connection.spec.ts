@@ -82,10 +82,21 @@ function record(session: CallSession): string[] {
   return seen;
 }
 
+// Un abonné qui lève est signalé sur `console.error`. Les tests qui en
+// provoquent un l'espionnent pour taire le bruit et vérifier que le défaut
+// n'est pas étouffé.
+function silenceSubscriberErrors(): jest.SpyInstance {
+  return jest.spyOn(console, 'error').mockImplementation(() => {});
+}
+
 beforeEach(() => {
   mockHandlers.clear();
   mockConnect.mockReset().mockResolvedValue(undefined);
   mockDisconnect.mockReset().mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 describe('createCallSession — état initial', () => {
@@ -323,6 +334,71 @@ describe('createCallSession — coupure volontaire', () => {
 
     expect(mockConnect).toHaveBeenCalledTimes(2);
     expect(session.getState()).toEqual({ status: 'connected' });
+  });
+});
+
+describe('createCallSession — un abonné qui lève', () => {
+  it('n\'empêche pas le transport de s\'ouvrir', async () => {
+    const reported = silenceSubscriberErrors();
+    const session = createCallSession();
+    session.subscribe(() => {
+      throw new Error('rendu impossible');
+    });
+
+    // Le premier état publié est `connecting`, avant même l'appel au SDK. Un
+    // abonné qui lève à ce moment-là empêchait `room.connect()` d'être appelé
+    // du tout : l'écran tournait sur une connexion jamais tentée.
+    await session.connect(ACCESS);
+
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(session.getState()).toEqual({ status: 'connected' });
+    // Signalé, pas avalé : le défaut est chez l'abonné, l'étouffer le rendrait
+    // indiagnosticable.
+    expect(reported).toHaveBeenCalled();
+  });
+
+  it('ne fait pas rejeter connect(), contrat sur lequel les écrans s\'appuient', async () => {
+    silenceSubscriberErrors();
+    const session = createCallSession();
+    session.subscribe(() => {
+      throw new Error('rendu impossible');
+    });
+
+    // Les écrans écrivent `void session.connect(...)` sans try/catch : un rejet
+    // ici serait un rejet non capturé en React Native.
+    await expect(session.connect(ACCESS)).resolves.toBeUndefined();
+  });
+
+  it('ne prive pas les abonnés suivants de leurs notifications', async () => {
+    silenceSubscriberErrors();
+    const session = createCallSession();
+    session.subscribe(() => {
+      throw new Error('rendu impossible');
+    });
+    const seen = record(session);
+
+    await session.connect(ACCESS);
+
+    // Sans isolation, `state` avançait mais les abonnés enregistrés après
+    // celui qui lève ne voyaient plus rien : `getState()` et les abonnés
+    // divergeaient en silence.
+    expect(seen).toEqual(['connecting', 'connected']);
+  });
+
+  it('laisse la session utilisable pour une tentative suivante', async () => {
+    silenceSubscriberErrors();
+    const session = createCallSession();
+    const unsubscribe = session.subscribe(() => {
+      throw new Error('rendu impossible');
+    });
+
+    await session.connect(ACCESS);
+    unsubscribe();
+    await session.disconnect();
+    await session.connect(ACCESS);
+
+    expect(session.getState()).toEqual({ status: 'connected' });
+    expect(mockConnect).toHaveBeenCalledTimes(2);
   });
 });
 
