@@ -18,9 +18,14 @@ Gradle veut un JDK 21 ; un JDK 24 échoue. Sur un téléphone qui n'est pas sur 
 réseau que la machine de développement, le client de développement ne joint pas Metro :
 
     adb reverse tcp:8081 tcp:8081
+    npx expo start --localhost
 
-Ensuite `npm start` suffit, la recompilation native n'est nécessaire qu'après un
-changement de code natif ou de dépendance.
+`expo run:android` lance toujours l'application sur l'adresse IP du réseau local, donc
+sur un téléphone en 4G ou 5G il faut relancer ensuite avec `--localhost` ; sans quoi le
+client de développement affiche « There was a problem loading the project ».
+
+La recompilation native n'est nécessaire qu'après un changement de code natif ou de
+dépendance.
 
 ## Vérifications
 
