@@ -210,6 +210,14 @@ export function createCallSession(): CallSession {
     // s'exécuterait avant la pose si `room.connect` levait de façon synchrone
     // (URL invalide), et le verrou resterait fermé pour toujours.
     const settled = attempt(access, era);
+
+    // `attempt` publie `connecting` dans sa portion synchrone : un abonné
+    // notifié là peut raccrocher avant que le verrou ne soit posé. L'ère est
+    // alors déjà périmée et `openEra()` a déjà relâché le verrou ; le poser
+    // ici le refermerait sur une tentative abandonnée, dont le `finally`
+    // refuse — à juste titre — de le relâcher. La session serait murée.
+    if (era !== generation) return settled;
+
     pending = settled.finally(() => {
       // Une tentative périmée ne relâche pas un verrou qui ne lui appartient
       // plus : `disconnect()` l'a déjà relâché, et une nouvelle tentative a pu

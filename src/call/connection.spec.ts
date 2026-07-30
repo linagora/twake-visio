@@ -716,3 +716,34 @@ describe('createCallSession — abonnement', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('abonné qui raccroche pendant la notification', () => {
+  it('ne mure pas la session quand un abonné raccroche sur connecting', async () => {
+    const session = createCallSession();
+
+    // Le cas réel : un écran démonté pendant l'établissement, ou une reprise
+    // automatique qui renonce dès qu'elle voit `connecting`. `disconnect()`
+    // part ici depuis la portion synchrone d'`attempt`, avant que `connect()`
+    // n'ait eu la main pour poser son verrou.
+    let hungUp = false;
+    session.subscribe((state) => {
+      if (state.status === 'connecting' && !hungUp) {
+        hungUp = true;
+        void session.disconnect();
+      }
+    });
+
+    await session.connect(ACCESS);
+    await settleAll();
+
+    mockConnect.mockClear();
+    await session.connect(ACCESS);
+    await settleAll();
+
+    // Sans la garde, le verrou reste fermé sur la tentative abandonnée et
+    // toute connexion ultérieure sort en ligne 1 : le transport ne s'ouvre
+    // plus jamais et l'utilisateur ne peut plus rejoindre.
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(session.getState()).toEqual({ status: 'connected' });
+  });
+});
