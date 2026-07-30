@@ -3,6 +3,7 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
+import type { RoomAccess } from 'src/call/types';
 import { LobbyScreen } from './lobby';
 
 // Le nom doit commencer par `mock` : babel-plugin-jest-hoist remonte
@@ -146,10 +147,17 @@ describe('LobbyScreen', () => {
 });
 
 describe("LobbyScreen, chemin d'admission", () => {
-  const ACCESS = {
+  // Typé explicitement en `RoomAccess`, plutôt que laissé inféré : un littéral
+  // non annoté aurait accepté d'omettre `isAdministrable` en silence — c'est
+  // exactement le masquage que ce champ obligatoire est censé rendre
+  // impossible. L'annotation force aussi `accessLevel` à rester la
+  // littérale `'trusted'` plutôt que d'être élargie en `string`, ce qui
+  // permet de passer `ACCESS` sans cast aux trois sites d'usage ci-dessous.
+  const ACCESS: RoomAccess = {
     room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'trusted' },
     livekitUrl: 'wss://livekit.linagora.com',
     token: 'lk',
+    isAdministrable: false,
   };
 
   beforeEach(() => {
@@ -184,7 +192,7 @@ describe("LobbyScreen, chemin d'admission", () => {
     await tick();
     expect(mockReplace).not.toHaveBeenCalled();
 
-    access.mockResolvedValue({ ok: true, value: ACCESS as never });
+    access.mockResolvedValue({ ok: true, value: ACCESS });
     await tick();
 
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
@@ -205,7 +213,7 @@ describe("LobbyScreen, chemin d'admission", () => {
     await render(<LobbyScreen />);
     await waitFor(() => expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy());
 
-    access.mockResolvedValue({ ok: true, value: ACCESS as never });
+    access.mockResolvedValue({ ok: true, value: ACCESS });
     await tick();
 
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
@@ -230,7 +238,7 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(screen.queryByTestId('lobby-error')).toBe(null);
 
     // La reprise se fait toute seule : la scrutation ne s'est pas arrêtée.
-    access.mockResolvedValue({ ok: true, value: ACCESS as never });
+    access.mockResolvedValue({ ok: true, value: ACCESS });
     await tick();
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
