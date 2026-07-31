@@ -5,6 +5,17 @@ import React from 'react';
 import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
 import { CallStage } from './stage';
 
+// `require`, jamais `import * as RN` : ce dernier passe par
+// `_interopRequireWildcard`, qui COPIE l'objet du module pour en faire un
+// espace de noms — `stage.tsx` lit lui `useWindowDimensions` sur l'objet BRUT
+// que `require` renvoie directement. Espionner la copie ne touche donc jamais
+// ce que `stage.tsx` appelle : mesuré, la copie répond au mock, `stage.tsx`
+// continue de lire la vraie implémentation. `require` renvoie le même objet
+// aux deux endroits, puisque le registre de modules de Jest le met en cache
+// par chemin résolu.
+/* eslint-disable-next-line @typescript-eslint/no-require-imports */
+const RN: typeof import('react-native') = require('react-native');
+
 // Ce que ces tests peuvent montrer, et ce qu'ils ne peuvent pas : `VideoTrack`
 // est un bouchon qui ne rend rien (voir `__mocks__/@livekit/react-native.ts`).
 // On vérifie donc **le câblage** — quelle référence de piste, quel miroir, quel
@@ -178,5 +189,36 @@ describe('cadrage par source', () => {
     await render(<CallStage layout={layout(scene, [vignette])} />);
 
     expect(propsFor('cam-3')?.objectFit).toBe('cover');
+  });
+});
+
+// L'orientation se lit sur les DIMENSIONS de la fenêtre, jamais sur une API
+// d'orientation : sur un pliable elles changent sans rotation. Mesuré sur Pixel
+// 10 Pro Fold — couverture 1080×2364, écran interne 2076×2152.
+describe('orientation', () => {
+  it('empile la bande sous la scène en portrait', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 400,
+      height: 800,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
+  });
+
+  it('range la bande en colonne sur le côté en paysage', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 800,
+      height: 400,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', false);
   });
 });

@@ -1,13 +1,25 @@
 import { VideoTrack } from '@livekit/react-native';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { Text } from 'react-native-paper';
 
 import type { CallLayout, Tile } from 'src/call/layout';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
+  // En paysage, la bande cesse d'être un ÉTAGE sous la scène pour devenir une
+  // COLONNE à côté : c'est ce qui lui rend la hauteur, précisément ce qui
+  // devient rare quand la fenêtre s'élargit plus qu'elle ne s'allonge.
+  rootLandscape: { flexDirection: 'row' },
   stage: { flex: 1, backgroundColor: tokens.color.surfaceDark },
   // `flexGrow: 0` : sans lui, un ScrollView réclame toute la place restante et
   // la scène disparaît.
@@ -23,6 +35,18 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.xs,
     padding: tokens.spacing.xs,
   },
+  // Le pendant de `filmstrip` en paysage : une largeur fixe au lieu d'une
+  // hauteur fixe, pour que la scène garde toute la hauteur de la fenêtre.
+  filmstripColumn: {
+    flexGrow: 0,
+    width: tokens.spacing.xl * 3,
+  },
+  filmstripContentColumn: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: tokens.spacing.xs,
+    padding: tokens.spacing.xs,
+  },
   // La bordure est toujours là, seule sa couleur change : une bordure qui
   // apparaît quand quelqu'un parle rognerait l'image de deux pixels à chaque
   // mot.
@@ -34,6 +58,10 @@ const styles = StyleSheet.create({
   },
   stageTile: { flex: 1 },
   thumbnailTile: { width: tokens.spacing.xl * 4, borderRadius: tokens.radius.md },
+  // Le pendant de `thumbnailTile` en paysage : la dimension fixe passe de la
+  // largeur à la hauteur, pour tenir dans la colonne plutôt que dans la
+  // rangée.
+  thumbnailTileColumn: { height: tokens.spacing.xl * 3, borderRadius: tokens.radius.md },
   speaking: { borderColor: tokens.color.primaryDark },
   video: { flex: 1 },
   placeholder: {
@@ -105,8 +133,21 @@ export type CallStageProps = {
 // la scène garderait sinon la même hauteur pour deux dispositions différentes,
 // et se redimensionnerait sous une vidéo en cours de lecture.
 export function CallStage({ layout }: CallStageProps): React.ReactElement {
+  const { width, height } = useWindowDimensions();
+  // Les dimensions de la fenêtre, jamais une API d'orientation : sur un
+  // pliable elles changent SANS rotation — Pixel 10 Pro Fold, couverture
+  // 1080×2364, écran interne 2076×2152.
+  //
+  // Un prédicat binaire suffit ici : il ne fait que choisir entre une bande en
+  // rangée et une bande en colonne, sans rien connaître des tuiles qu'elle
+  // contient. Il ne suffira plus le jour où la refonte de la grille comparera
+  // le rapport de la fenêtre à celui des tuiles plutôt qu'à 1 — l'écran interne
+  // de ce même pliable donne un rapport de 0,965, où ce prédicat binaire
+  // retourne toute la disposition sur 3,5 % de géométrie.
+  const landscape = width > height;
+
   return (
-    <>
+    <View style={[styles.root, landscape ? styles.rootLandscape : null]}>
       <View style={styles.stage} testID="active-speaker">
         {/* `contain` pour une caméra : `cover` agrandirait une source 16:9 sur un
             écran en portrait jusqu'à n'en montrer que 26 % — mesuré sur
@@ -116,21 +157,29 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
       </View>
 
       {/* Une bande de longueur inconnue : au-delà de trois vignettes, les
-          suivantes sortent de l'écran et seraient inatteignables sans défilement. */}
+          suivantes sortent de l'écran et seraient inatteignables sans
+          défilement. En paysage, elle bascule de rangée en colonne : c'est ce
+          qui rend sa hauteur à la scène plutôt que de la lui prendre. */}
       <ScrollView
         testID="filmstrip"
-        horizontal
+        horizontal={!landscape}
         showsHorizontalScrollIndicator={false}
-        style={styles.filmstrip}
-        contentContainerStyle={styles.filmstripContent}
+        showsVerticalScrollIndicator={false}
+        style={landscape ? styles.filmstripColumn : styles.filmstrip}
+        contentContainerStyle={landscape ? styles.filmstripContentColumn : styles.filmstripContent}
       >
         {layout.filmstrip.map((tile) => (
           // `cover` pour une caméra en vignette : elle est trop petite pour
           // qu'on y cherche un cadrage, elle doit d'abord être pleine. Un écran
           // y échappe : voir le commentaire sur `objectFit` dans `VideoTile`.
-          <VideoTile key={tile.key} tile={tile} fitWhenCamera="cover" size={styles.thumbnailTile} />
+          <VideoTile
+            key={tile.key}
+            tile={tile}
+            fitWhenCamera="cover"
+            size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
+          />
         ))}
       </ScrollView>
-    </>
+    </View>
   );
 }
