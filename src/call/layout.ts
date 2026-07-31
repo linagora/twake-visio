@@ -29,6 +29,13 @@ export type ParticipantView = {
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.
   readonly camera: CameraTrack | null;
+  // Horodatage ISO 8601 posé par le serveur meet, `null` quand la main est
+  // baissée. Le contrat backend distingue la chaîne vide (baissée) de
+  // l'absence de clé (jamais levée) ; les deux se lisent `null` ici. Un champ
+  // nommé, jamais la carte d'attributs entière : ce type est « ce dont la
+  // sélection a besoin, et rien de plus ». Lu par `readParticipant`
+  // (`src/call/participants.ts`) via `readHandRaisedAt` (`src/call/hands.ts`).
+  readonly handRaisedAt: string | null;
 };
 
 // Il y a toujours un participant local — une séance sans soi n'existe pas —

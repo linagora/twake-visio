@@ -18,6 +18,7 @@ const view = (identity: string, name: string, isLocal = false): ParticipantView 
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,
+    handRaisedAt: null,
   }) as ParticipantView;
 
 // `getAllByTestId` rend un tableau ; `noUncheckedIndexedAccess` refuse d'y

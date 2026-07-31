@@ -17,6 +17,7 @@ type PersonOptions = {
   readonly lastSpokeAt?: Date;
   readonly joinedAt?: Date;
   readonly publications?: Partial<Record<Track.Source, FakePublication>>;
+  readonly attributes?: Record<string, string>;
 };
 
 function person(identity: string, options: PersonOptions = {}): Participant {
@@ -27,6 +28,10 @@ function person(identity: string, options: PersonOptions = {}): Participant {
     isSpeaking: options.isSpeaking ?? false,
     lastSpokeAt: options.lastSpokeAt,
     joinedAt: options.joinedAt,
+    // `Participant.attributes` est un getter qui rend toujours un objet ; le
+    // double, lui, peut l'omettre — et c'est justement ce que la projection
+    // doit tolérer.
+    attributes: options.attributes,
     getTrackPublication: (source: Track.Source) => options.publications?.[source],
   } as unknown as Participant;
 }
@@ -186,6 +191,40 @@ describe('readRoomView', () => {
     expect(readRoomView(room).remotes[0]?.camera).toBeNull();
   });
 
+  it("projette l'horodatage de main levée de chaque participant", () => {
+    // Deux distants, deux horodatages distincts : avec un seul, une valeur
+    // codée en dur passerait.
+    const { room } = fakeRoom(
+      person('me', { isLocal: true, attributes: { handRaisedAt: '2026-07-30T10:00:03Z' } }),
+      [
+        person('bob', { attributes: { handRaisedAt: '2026-07-30T10:00:01Z' } }),
+        person('cid', { attributes: { handRaisedAt: '2026-07-30T10:00:02Z' } }),
+      ],
+    );
+
+    const view = readRoomView(room);
+
+    expect(view.local.handRaisedAt).toBe('2026-07-30T10:00:03Z');
+    expect(view.remotes.map((p) => p.handRaisedAt)).toEqual([
+      '2026-07-30T10:00:01Z',
+      '2026-07-30T10:00:02Z',
+    ]);
+  });
+
+  it('lit une main baissée et un double sans attributs comme null', () => {
+    // Le contrat backend écrit la chaîne vide pour une main baissée ; et tous
+    // les doubles de `Participant` du dépôt sont écrits à la main, donc
+    // incomplets. Les deux doivent donner `null`, jamais une exception.
+    const { room } = fakeRoom(person('me', { isLocal: true, attributes: { handRaisedAt: '' } }), [
+      person('bob'),
+    ]);
+
+    const view = readRoomView(room);
+
+    expect(view.local.handRaisedAt).toBeNull();
+    expect(view.remotes[0]?.handRaisedAt).toBeNull();
+  });
+
   it('lit aussi la caméra du participant local', () => {
     const { room } = fakeRoom(
       person('me', { isLocal: true, publications: { [Track.Source.Camera]: camera() } }),
@@ -221,6 +260,7 @@ describe('createRoomViewStore', () => {
         'localTrackUnpublished',
         'participantConnected',
         'participantDisconnected',
+        'participantAttributesChanged',
         'participantNameChanged',
         'reconnected',
         'trackMuted',
@@ -246,6 +286,24 @@ describe('createRoomViewStore', () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).not.toBe(before);
     expect(store.getSnapshot().remotes.map((p) => p.identity)).toEqual(['bob']);
+  });
+
+  it('relit la vue sur un changement d’attributs', () => {
+    // Sans cet événement dans la liste, une main levée par quelqu'un d'autre
+    // n'arriverait jamais à l'écran : le backend meet ne pousse rien, c'est le
+    // serveur LiveKit qui diffuse l'attribut.
+    const { room, remotes, emit } = fakeRoom(ME);
+    remotes.set('bob', person('bob'));
+    const store = createRoomViewStore(room);
+    const listener = jest.fn();
+    store.subscribe(listener);
+    expect(store.getSnapshot().remotes[0]?.handRaisedAt).toBeNull();
+
+    remotes.set('bob', person('bob', { attributes: { handRaisedAt: '2026-07-30T10:00:01Z' } }));
+    emit('participantAttributesChanged');
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot().remotes[0]?.handRaisedAt).toBe('2026-07-30T10:00:01Z');
   });
 
   it('relit à l’abonnement ce qui a changé depuis le rendu', () => {

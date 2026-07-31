@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
 
+import { toggleHand } from 'src/api/hand';
 import {
   muteParticipant,
   removeParticipant,
@@ -22,6 +23,7 @@ import {
 } from 'src/call/audioRoute';
 import { createCallSession } from 'src/call/connection';
 import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
+import { handPosition, isHandRaised, raisedHands } from 'src/call/hands';
 import type { ParticipantView } from 'src/call/layout';
 import {
   listCameras,
@@ -51,6 +53,7 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { HandBanner } from 'src/screens/room/handBanner';
 import { MoreMenu } from 'src/screens/room/moreMenu';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
@@ -67,6 +70,7 @@ type MessageKey =
   | 'call.ended'
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
+  | 'call.handFailed'
   | RecordingMessageKey;
 
 // La même distinction grossière sert deux appelants : l'accès initial au
@@ -210,6 +214,11 @@ export function CallScreen(): React.ReactElement {
   const [access, setAccess] = useState<RoomAccess | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
+  // Une requête en vol, jamais un état désiré : l'affichage suit l'attribut,
+  // et lui seul. Partagé par la commande du menu et par le bandeau, qui
+  // portent sur le même état — deux requêtes concurrentes en sens opposé
+  // produiraient un résultat qui dépend de leur ordre d'arrivée au serveur.
+  const [handBusy, setHandBusy] = useState(false);
 
   // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
   // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
@@ -231,6 +240,13 @@ export function CallScreen(): React.ReactElement {
     () => [roomView.local, ...roomView.remotes],
     [roomView],
   );
+
+  // La file est dérivée de la même vue, sans second magasin : le store est
+  // déjà invalidé par `ParticipantAttributesChanged`, et `readRoomView`
+  // reconstruit la vue entière.
+  const hands = useMemo(() => raisedHands(roomView), [roomView]);
+  const handRaised = isHandRaised(roomView.local);
+  const handRank = handPosition(hands, roomView.local.identity);
 
   // Une troisième lecture de la Room, indépendante des deux autres :
   // `getSnapshot()` lit `room.metadata` directement, sans attendre aucun
@@ -469,6 +485,39 @@ export function CallScreen(): React.ReactElement {
       .finally(() => router.replace('/home'));
   };
 
+  // L'état du bouton suit l'attribut, jamais l'appui : c'est le seul affichage
+  // qui ne peut pas mentir. Le `200` HTTP ne change rien à l'écran — le
+  // backend écrit un attribut, et c'est le serveur LiveKit qui le diffuse,
+  // deux sauts plus loin.
+  //
+  // `result.ok` d'abord, un `.catch()` séparé pour l'exception inattendue :
+  // l'échec ordinaire de `toggleHand` est une *valeur* résolue, jamais un
+  // rejet — un `.catch()` seul ne verrait jamais passer un 403.
+  //
+  // La garde porte sur `handBusy` par *valeur* : `disabled` est interdit sur
+  // cet écran, Paper le teste avant toute couleur explicite.
+  const handleToggleHand = (): void => {
+    if (account === null || access === null || handBusy) return;
+    setHandBusy(true);
+    toggleHand(
+      account.instance.serverUrl,
+      // `RoomViewSet.get_object()` tente l'UUID puis retombe sur le slug : les
+      // deux formes résolvent le même objet, et le repli supprime purement et
+      // simplement le cas `room.id === null`.
+      access.room.id ?? access.room.slug,
+      access.token,
+      !handRaised,
+    )
+      .then((result) => {
+        setHandBusy(false);
+        setNotice(result.ok ? null : 'call.handFailed');
+      })
+      .catch(() => {
+        setHandBusy(false);
+        setNotice('call.handFailed');
+      });
+  };
+
   const handleToggleParticipants = (): void => {
     setParticipantsOpen((open) => !open);
   };
@@ -606,6 +655,13 @@ export function CallScreen(): React.ReactElement {
           au repos, donc toujours monté, jamais enveloppé d'une condition. */}
       <RecordingIndicator state={recordingState} />
 
+      {/* Une main levée oubliée serait invisible pour qui l'a levée : ce
+          bandeau la dit, et la baisse en un seul appui. Ne rend rien au repos,
+          donc toujours monté, jamais enveloppé d'une condition. La bande
+          empile ses lignes : l'indicateur d'enregistrement et celui-ci
+          peuvent être vrais en même temps. */}
+      <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
+
       {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
           deux se disputeraient la même vidéo, qui est la raison d'être de cet
           écran. La barre de contrôle, elle, reste en place dans les deux cas —
@@ -675,16 +731,20 @@ export function CallScreen(): React.ReactElement {
         {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
             demanderait 409. Le partage, seule commande de la barre qu'on
             n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
-            porte aussi l'enregistrement. Sept cibles avant, sept après — et la
-            commande d'enregistrement n'est jamais adjacente au bouton
-            quitter. */}
+            porte aussi l'enregistrement et la main levée. Sept cibles avant,
+            sept après — et la commande d'enregistrement n'est jamais
+            adjacente au bouton quitter. */}
         <MoreMenu
           recording={recordingState}
           canRecord={canRecord}
           recordingBusy={recordingBusy}
+          handRaised={handRaised}
+          handBusy={handBusy}
+          hands={hands}
           onShare={handleShare}
           onStartRecording={handleStartRecording}
           onStopRecording={handleStopRecording}
+          onToggleHand={handleToggleHand}
         />
         <IconButton
           testID="participants-toggle"
