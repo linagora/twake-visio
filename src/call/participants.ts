@@ -138,9 +138,12 @@ export function readRoomView(room: Room): RoomView {
   // vue — qui n'existe pas encore. `present` doit rester indifférent à
   // `isMuted` : le construire depuis `view.screen` (sensible à la coupure)
   // purgerait une simple pause, exactement le bogue que `screenSid` évite
-  // ci-dessus. Purger avant de lire évite aussi qu'une entrée périmée d'une
-  // lecture précédente soit consultée avant d'avoir eu la moindre chance
-  // d'être purgée par celle-ci.
+  // ci-dessus. L'ordre entre la purge et la lecture n'a, lui, aucun effet
+  // observable : les deux boucles interrogent la même publication du même
+  // participant dans le même passage synchrone, donc tout sid que
+  // `readParticipant` consulte appartient déjà à `present` et n'est jamais
+  // purgé, quel que soit l'ordre — vérifié en déplaçant l'appel après la
+  // construction de la vue, sans qu'aucun test ne rougisse.
   const present = new Set<string>();
   for (const participant of [room.localParticipant, ...remoteParticipants]) {
     const sid = screenSid(participant);
