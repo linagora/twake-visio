@@ -1104,6 +1104,12 @@ describe('CallScreen, choix de la caméra', () => {
 
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
+    // Le pendant du test précédent, et pour exactement la même raison : ce
+    // test-ci lit `mock.lastCall` deux fois, donc un partage local fantôme le
+    // ferait passer pour la mauvaise raison tout autant que son voisin. Deux
+    // tests adjacents portant la même vulnérabilité, une seule garde corrigée,
+    // c'est l'autre qui redeviendrait le trou.
+    expect(screen.queryByTestId('tile-me:screen')).toBeNull();
     expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
 
     await settleMenus();
