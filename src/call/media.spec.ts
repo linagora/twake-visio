@@ -74,8 +74,13 @@ describe('listCameras', () => {
     // vide — ce qui est toujours le cas sur mobile pour l'audio — et allume
     // donc le micro pour rien. Le piège ne se paie pas sous Jest : il se paie
     // sur appareil, par une pastille d'enregistrement qui s'allume seule.
+    //
+    // Deux caméras, jamais une seule : avec une seule, `listCameras` pourrait
+    // être réduite à `readCameras(...).slice(0, 1)` sans qu'aucun test ne
+    // rougisse — mesuré par mutation.
     jest.mocked(mediaDevices.enumerateDevices).mockResolvedValue([
       { kind: 'videoinput', deviceId: '0', facing: 'front', label: 'camera-2-id' },
+      { kind: 'videoinput', deviceId: '1', facing: 'environment', label: 'camera-1-id' },
       { kind: 'audioinput', deviceId: 'audio-1', label: 'Audio' },
     ]);
 
@@ -83,6 +88,7 @@ describe('listCameras', () => {
 
     expect(cameras).toEqual([
       { deviceId: '0', facing: 'user', nameKey: 'call.cameraFront', ordinal: null },
+      { deviceId: '1', facing: 'environment', nameKey: 'call.cameraBack', ordinal: null },
     ]);
     expect(mockGetLocalDevices).not.toHaveBeenCalled();
   });
