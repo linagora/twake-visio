@@ -1259,6 +1259,25 @@ describe('CallScreen, sortie audio', () => {
     expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
   });
 
+  // Miroir exact du test caméra « n'affiche rien quand l'énumération échoue »
+  // (`CallScreen, choix de la caméra`) : sans lui, un `setNotice` ajouté par
+  // erreur dans le `.catch()` de `handleOpenAudioOutput` passerait inaperçu.
+  it("n'affiche rien quand l'énumération échoue, et ouvre un menu vide", async () => {
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockRejectedValue(new Error('énumération refusée'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalled());
+    expect(screen.queryByTestId('call-notice')).toBeNull();
+    expect(screen.getByTestId('audio-output-btn')).toBeTruthy();
+    expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
+    expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
+  });
+
   it("vide la liste plutôt que de garder celle d'avant quand une réouverture échoue", async () => {
     // Même défaut, même correction que côté caméra : `handleOpenAudioOutput`
     // ne remettait pas `outputs` à zéro dans son `.catch()`.
