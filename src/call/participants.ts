@@ -59,6 +59,14 @@ function readCamera(participant: Participant): VideoTrackRef | null {
 // `TrackSubscribed` manquerait tout partage déjà en cours à la jonction —
 // exactement le piège que ce dépôt a payé deux fois, avec `RoomMetadataChanged`
 // puis avec `ParticipantAttributesChanged`. On lit, on n'attend pas.
+//
+// Un module, donc une seule table pour toute la séance : `call.tsx` construit
+// deux magasins sur la même Room (`useCallLayout`, et un second pour le
+// panneau de modération et la file des mains levées), et les deux finissent
+// par lire et purger cette même mémoire. Inoffensif aujourd'hui — les deux
+// lisent le même instantané de la Room et s'accordent donc sur ce qu'ils y
+// trouvent — mais une raison de plus pour ne jamais la faire dépendre de
+// l'ordre des lectures.
 const screenSince = new Map<string, number>();
 
 function readScreen(participant: Participant): VideoTrackRef | null {
@@ -67,6 +75,21 @@ function readScreen(participant: Participant): VideoTrackRef | null {
   if (publication.track === undefined) return null;
   if (publication.isMuted) return null;
   return { participant, publication, source: Track.Source.ScreenShare };
+}
+
+// Le trackSid d'un partage publié, coupé ou non — distinct de `readScreen`,
+// qui rend `null` sur `isMuted`. LiveKit ne réattribue pas de trackSid à une
+// coupure : la publication survit, seul `isMuted` bascule. Une coupure n'est
+// donc pas une fin, et la mémoire ci-dessous doit lui survivre : sans cette
+// distinction, une personne qui coupe puis reprend son partage regagnerait un
+// instant plus récent que sa vraie première apparition, et volerait la
+// priorité de « plus récent » à quelqu'un qui partage sans interruption
+// depuis plus longtemps qu'elle.
+function screenSid(participant: Participant): string | null {
+  const publication = participant.getTrackPublication(Track.Source.ScreenShare);
+  if (publication === undefined) return null;
+  if (publication.track === undefined) return null;
+  return publication.trackSid;
 }
 
 // Rend l'instant de première vue, en l'enregistrant si la piste est inconnue.
@@ -80,8 +103,9 @@ function sinceFor(track: VideoTrackRef | null): number | null {
   return now;
 }
 
-// Purge les pistes disparues. Sans elle, un partage arrêté puis relancé
-// reprendrait son ancien instant et perdrait sa priorité de « plus récent ».
+// Purge les pistes dont la publication a réellement disparu. Sans elle, un
+// partage arrêté puis relancé sur un trackSid un jour réutilisé reprendrait
+// son ancien instant et perdrait sa priorité de « plus récent ».
 function forgetAbsent(present: ReadonlySet<string>): void {
   for (const sid of [...screenSince.keys()]) {
     if (!present.has(sid)) screenSince.delete(sid);
@@ -108,18 +132,26 @@ function readParticipant(participant: Participant): ParticipantView {
 // Traduit l'état de la Room en valeurs simples. C'est la seule frontière avec
 // le SDK : au-delà, `src/call/layout` décide sans rien connaître de LiveKit.
 export function readRoomView(room: Room): RoomView {
-  const local = readParticipant(room.localParticipant);
-  const remotes = Array.from(room.remoteParticipants.values()).map((participant) =>
-    readParticipant(participant),
-  );
+  const remoteParticipants = Array.from(room.remoteParticipants.values());
 
+  // Purger avant de lire, à partir des participants bruts plutôt que de la
+  // vue — qui n'existe pas encore. `present` doit rester indifférent à
+  // `isMuted` : le construire depuis `view.screen` (sensible à la coupure)
+  // purgerait une simple pause, exactement le bogue que `screenSid` évite
+  // ci-dessus. Purger avant de lire évite aussi qu'une entrée périmée d'une
+  // lecture précédente soit consultée avant d'avoir eu la moindre chance
+  // d'être purgée par celle-ci.
   const present = new Set<string>();
-  for (const view of [local, ...remotes]) {
-    if (view.screen !== null) present.add(view.screen.publication.trackSid);
+  for (const participant of [room.localParticipant, ...remoteParticipants]) {
+    const sid = screenSid(participant);
+    if (sid !== null) present.add(sid);
   }
   forgetAbsent(present);
 
-  return { local, remotes };
+  return {
+    local: readParticipant(room.localParticipant),
+    remotes: remoteParticipants.map((participant) => readParticipant(participant)),
+  };
 }
 
 // Le contrat de `useSyncExternalStore` : `getSnapshot()` doit rendre la *même*

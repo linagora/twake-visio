@@ -342,6 +342,36 @@ describe('lecture du partage d’écran', () => {
     expect(debut).toBe(1_000);
     expect(relance).toBe(2_000);
   });
+
+  // I-3 : une coupure (isMuted) n'est pas un arrêt. LiveKit ne réattribue pas
+  // de trackSid à une pause — seul `isMuted` bascule sur la même publication
+  // — donc l'instant d'origine doit survivre à la coupure. Sans ce test, une
+  // personne qui partage en continu depuis t=1000 perdrait sa priorité face à
+  // quelqu'un qui a commencé après elle, seulement parce qu'elle a coupé puis
+  // repris son partage.
+  it('garde l’instant d’origine d’un partage à travers une coupure, sans lui voler sa priorité', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(9_999);
+    const sharing = (isMuted: boolean): Participant =>
+      person('u-alice', {
+        publications: {
+          [Track.Source.ScreenShare]: camera({
+            trackSid: 'scr-pause',
+            source: Track.Source.ScreenShare,
+            isMuted,
+          }),
+        },
+      });
+
+    const before = readRoomView(fakeRoom(ME, [sharing(false)]).room).remotes[0]?.screenSince;
+    readRoomView(fakeRoom(ME, [sharing(true)]).room); // coupe : la publication reste
+    const after = readRoomView(fakeRoom(ME, [sharing(false)]).room).remotes[0]?.screenSince;
+
+    now.mockRestore();
+    expect(before).toBe(1_000);
+    // Le second horodatage bouchonné (9_999) ne doit jamais être consommé :
+    // le reprendre prouverait qu'une coupure a été confondue avec un arrêt.
+    expect(after).toBe(1_000);
+  });
 });
 
 describe('createRoomViewStore', () => {
