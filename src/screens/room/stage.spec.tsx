@@ -164,4 +164,19 @@ describe('cadrage par source', () => {
     expect(propsFor('cam-1')?.objectFit).toBe('contain');
     expect(propsFor('cam-2')?.objectFit).toBe('cover');
   });
+
+  // Le cas réel qui suit `selectLayout` : quand quelqu'un partage, sa PROPRE
+  // caméra reste dans la bande à côté de son écran sur la scène (le même
+  // `identity`, deux `source`). Le cadrage se décide TUILE PAR TUILE, jamais
+  // depuis ce qui occupe la scène : une implémentation qui lirait
+  // `layout.stage.source` pour toute la bande grossirait à tort cette caméra
+  // dès que la scène montre un écran.
+  it('garde la caméra en cover dans la bande même quand la scène montre un écran', async () => {
+    const scene = tile('alice:screen', { source: 'screen', track: fakeCamera('scr-3') });
+    const vignette = tile('alice:camera', { source: 'camera', track: fakeCamera('cam-3') });
+
+    await render(<CallStage layout={layout(scene, [vignette])} />);
+
+    expect(propsFor('cam-3')?.objectFit).toBe('cover');
+  });
 });
