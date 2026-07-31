@@ -181,7 +181,6 @@ beforeEach(() => {
   jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
   jest.spyOn(media, 'setMicrophoneEnabled').mockResolvedValue();
   jest.spyOn(media, 'setCameraEnabled').mockResolvedValue();
-  jest.spyOn(media, 'switchCamera').mockResolvedValue('environment');
 });
 
 describe('CallScreen', () => {
@@ -206,11 +205,21 @@ describe('CallScreen', () => {
     await waitFor(() => {
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
       expect(screen.getByTestId('camera-toggle')).toBeTruthy();
-      expect(screen.getByTestId('switch-camera')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
       expect(screen.getByTestId('active-speaker')).toBeTruthy();
       expect(screen.getByTestId('filmstrip')).toBeTruthy();
     });
+  });
+
+  it("n'expose plus la bascule binaire de caméra", async () => {
+    // Sa fonction est un sous-ensemble strict du menu caméra, sa bascule
+    // ignore trois caméras sur cinq sur un iPhone Pro, et sans ce retrait la
+    // rangée porterait huit cibles — ce qui ne tient sur aucun téléphone
+    // supporté.
+    await render(<CallScreen />);
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    expect(screen.queryByTestId('switch-camera')).toBeNull();
   });
 
   it('pose sa propre vignette sur la scène tant qu’on est seul', async () => {
@@ -221,21 +230,6 @@ describe('CallScreen', () => {
 
     await waitFor(() => expect(screen.getByTestId('tile-me')).toBeTruthy());
     expect(screen.getByTestId('tile-placeholder-me')).toBeTruthy();
-  });
-
-  it('porte la face courante de la caméra jusqu’au miroir de sa propre image', async () => {
-    // La face vit dans l'état de l'écran, le miroir se décide dans la
-    // sélection : si l'écran ne lui passe pas la face courante, sa propre image
-    // reste retournée après le passage en caméra arrière, et tout ce qu'elle
-    // filme devient illisible. Rien d'autre ne relie ces deux bouts.
-    mockCameraPublication = { trackSid: 'ts-me', source: 'camera', isMuted: false, track: {} };
-    await render(<CallScreen />);
-    await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
-    expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
-
-    await fireEvent.press(screen.getByTestId('switch-camera'));
-
-    await waitFor(() => expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(false));
   });
 
   it("suit les transitions publiées après l'abonnement", async () => {
@@ -302,22 +296,6 @@ describe('CallScreen', () => {
     // l'effet de connexion de `micOn`, ce qui déclenchait son nettoyage — donc
     // une coupure de séance — à chaque appui.
     expect(mockDisconnect).not.toHaveBeenCalled();
-  });
-
-  it('repart de la face renvoyée par le module média', async () => {
-    // Le SDK n'expose pas la face courante : si l'écran ne conserve pas celle
-    // qu'on lui rend, le second appui redemande la même et la caméra ne tourne
-    // plus jamais.
-    await render(<CallScreen />);
-    await waitFor(() => expect(screen.getByTestId('switch-camera')).toBeTruthy());
-
-    await fireEvent.press(screen.getByTestId('switch-camera'));
-    await waitFor(() => expect(media.switchCamera).toHaveBeenCalledWith(mockRoom, 'user'));
-
-    await fireEvent.press(screen.getByTestId('switch-camera'));
-    await waitFor(() =>
-      expect(media.switchCamera).toHaveBeenLastCalledWith(mockRoom, 'environment'),
-    );
   });
 
   it('quitte en fermant la session avant de naviguer', async () => {

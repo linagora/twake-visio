@@ -35,7 +35,6 @@
   "call.permissionsDenied": "Per partecipare serve l'accesso a fotocamera e microfono",
   "call.reconnecting": "Riconnessione…",
   "call.ended": "La riunione è terminata",
-  "call.switchCamera": "Cambia fotocamera",
   "call.cameraFront": "Fotocamera anteriore",
   "call.cameraBack": "Fotocamera posteriore",
   "call.cameraUnknown": "Fotocamera",

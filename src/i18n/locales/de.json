@@ -35,7 +35,6 @@
   "call.permissionsDenied": "Für die Teilnahme sind Kamera- und Mikrofonzugriff erforderlich",
   "call.reconnecting": "Verbindung wird wiederhergestellt…",
   "call.ended": "Die Besprechung ist beendet",
-  "call.switchCamera": "Kamera wechseln",
   "call.cameraFront": "Frontkamera",
   "call.cameraBack": "Rückkamera",
   "call.cameraUnknown": "Kamera",

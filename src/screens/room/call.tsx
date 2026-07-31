@@ -15,18 +15,14 @@ import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { createCallSession } from 'src/call/connection';
 import type { ParticipantView } from 'src/call/layout';
-import {
-  setCameraEnabled,
-  setMicrophoneEnabled,
-  switchCamera,
-  type FacingMode,
-} from 'src/call/media';
+import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
+import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
@@ -91,9 +87,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: tokens.spacing.md,
-    padding: tokens.spacing.md,
+    // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
+    // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
+    gap: tokens.spacing.sm,
+    padding: tokens.spacing.xs,
   },
+  // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
+  // le web obtient avec `gap: '1px'`.
+  cameraGroup: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -135,7 +136,9 @@ export function CallScreen(): React.ReactElement {
   const [micOn, setMicOn] = useState(mic !== '0');
   const [cameraOn, setCameraOn] = useState(camera !== '0');
   // Le SDK n'expose pas la face courante de la caméra : c'est l'écran qui la
-  // conserve, et il repart de celle que `switchCamera` lui rend.
+  // conserve, pour le miroir de sa propre image dans `useCallLayout`. Rien ne
+  // la fait encore évoluer ici — la Task 7 la mettra à jour depuis la
+  // sélection du menu caméra.
   const [facing, setFacing] = useState<FacingMode>('user');
 
   // La Room est prête et son identité stable dès le premier rendu — la session
@@ -289,15 +292,6 @@ export function CallScreen(): React.ReactElement {
     const next = !cameraOn;
     setCameraOn(next);
     setCameraEnabled(session.getRoom(), next).catch(() => setCameraOn(!next));
-  };
-
-  const handleSwitchCamera = (): void => {
-    // `switchCamera` rend la face obtenue — la même qu'avant s'il n'y a pas de
-    // piste caméra. Repartir d'elle est la seule façon de ne pas redemander la
-    // même face au coup suivant.
-    switchCamera(session.getRoom(), facing)
-      .then(setFacing)
-      .catch(() => undefined);
   };
 
   // Le lien porte sur l'instance du compte, jamais sur une constante : une
@@ -455,35 +449,39 @@ export function CallScreen(): React.ReactElement {
         <IconButton
           testID="mic-toggle"
           icon={micOn ? 'microphone' : 'microphone-off'}
-          iconColor={tokens.color.textDark}
+          iconColor={BAR_ICON_COLOR}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleMic}
           accessibilityLabel={t('call.muted')}
         />
-        <IconButton
-          testID="camera-toggle"
-          icon={cameraOn ? 'video' : 'video-off'}
-          iconColor={tokens.color.textDark}
-          onPress={handleToggleCamera}
-          accessibilityLabel={t('prejoin.cameraOff')}
-        />
-        <IconButton
-          testID="switch-camera"
-          icon="camera-flip"
-          iconColor={tokens.color.textDark}
-          onPress={handleSwitchCamera}
-          accessibilityLabel={t('call.switchCamera')}
-        />
+        {/* La paire caméra : la bascule et, en Task 7, le chevron qui lui colle. */}
+        <View style={styles.cameraGroup}>
+          <IconButton
+            testID="camera-toggle"
+            icon={cameraOn ? 'video' : 'video-off'}
+            iconColor={BAR_ICON_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleToggleCamera}
+            accessibilityLabel={t('prejoin.cameraOff')}
+          />
+        </View>
         <IconButton
           testID="share-btn"
           icon="share-variant"
-          iconColor={tokens.color.textDark}
+          iconColor={BAR_ICON_COLOR}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
           onPress={handleShare}
           accessibilityLabel={t('call.share')}
         />
         <IconButton
           testID="participants-toggle"
           icon="account-multiple"
-          iconColor={tokens.color.textDark}
+          iconColor={BAR_ICON_COLOR}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleParticipants}
           accessibilityLabel={t('participants.title')}
         />
@@ -493,6 +491,8 @@ export function CallScreen(): React.ReactElement {
           // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
           // seuil WCAG AA, et la scène est sombre dans les deux schémas.
           iconColor={tokens.color.dangerDark}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
           onPress={handleLeave}
           accessibilityLabel={t('call.leave')}
         />

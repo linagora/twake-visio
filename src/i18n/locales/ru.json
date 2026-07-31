@@ -35,7 +35,6 @@
   "call.permissionsDenied": "Для подключения нужен доступ к камере и микрофону",
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",
-  "call.switchCamera": "Переключить камеру",
   "call.cameraFront": "Фронтальная камера",
   "call.cameraBack": "Основная камера",
   "call.cameraUnknown": "Камера",
