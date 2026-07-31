@@ -29,6 +29,12 @@ export type ParticipantView = {
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.
   readonly camera: CameraTrack | null;
+  // Posé à `null` pour l'instant : `readParticipant`
+  // (`src/call/participants.ts`) ne lit pas encore l'attribut LiveKit. La
+  // tâche 3 le fera lire réellement, via `readHandRaisedAt`
+  // (`src/call/hands.ts`) sur `participant.attributes`, et ajoutera l'écoute
+  // de `RoomEvent.ParticipantAttributesChanged`.
+  readonly handRaisedAt: string | null;
 };
 
 // Il y a toujours un participant local — une séance sans soi n'existe pas —

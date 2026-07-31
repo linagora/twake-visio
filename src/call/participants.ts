@@ -54,6 +54,10 @@ function readParticipant(participant: Participant): ParticipantView {
     lastSpokeAt: participant.lastSpokeAt?.getTime() ?? null,
     joinedAt: participant.joinedAt?.getTime() ?? null,
     camera: readCamera(participant),
+    // Constante pour l'instant : la tâche 3 la remplacera par une lecture
+    // réelle de `participant.attributes` via `readHandRaisedAt`
+    // (`src/call/hands.ts`).
+    handRaisedAt: null,
   };
 }
 

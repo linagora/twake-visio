@@ -20,6 +20,7 @@ function person(identity: string, overrides: Partial<ParticipantView> = {}): Par
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,
+    handRaisedAt: null,
     ...overrides,
   };
 }
