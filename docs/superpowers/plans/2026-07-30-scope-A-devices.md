@@ -112,7 +112,7 @@ que relire la constante (§7.4).
   éléments distincts et viser le second** : avec un seul, « transmet ce qu'on lui donne » et
   « renvoie toujours la même valeur en dur » sont indiscernables.
 
-### La couleur : la règle que ce périmètre impose, et qu'aucun test n'attrape
+### La couleur : la règle que ce périmètre impose, et ce qu'un test en garde
 
 `src/screens/room/call.tsx:87` force `tokens.color.backgroundDark` **dans les deux schémas**,
 alors que le thème Paper suit le schéma système (`src/ui/theme.ts`). Un composant posé sur cet

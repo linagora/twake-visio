@@ -874,11 +874,12 @@ quoi une dérivation qui rendrait toujours la même phase passerait inaperçue.
 5. **Que LiveKit pousse effectivement `RoomMetadataChanged` à un participant absent au
    moment du changement.** Notre conception ne s'y fie pas — elle lit — et l'abonnement à
    `Reconnected` est une assurance, pas une preuve.
-6. **Le contraste.** Jest ne rend aucun pixel : le bogue à 1,08:1 du périmètre B passait
-   tous les tests. Les ratios de §4.5 sont calculés, pas testés. Seule une capture sur
-   appareil, ou un contrôle de contraste calculé, l'attraperait — et la seule règle qui
-   protège vraiment est celle de §4.5 : aucun composant `react-native-paper` sur cet écran
-   sans couleur de texte explicite.
+6. **Le contraste perçu.** Jest ne rend aucun pixel : les ratios de §4.5 sont calculés,
+   pas mesurés, et seule une lecture sur appareil en schéma clair dirait s'ils tiennent.
+   Mais la **cause** du bogue à 1,08:1 du périmètre B, elle, est gardable : une égalité
+   stricte `toHaveStyle({ color: … })` échoue dès que la couleur explicite est retirée,
+   quel que soit le repli qui la remplace. Voir la section de contraste d'`AGENTS.md`,
+   qui borne aussi les deux surfaces hors de portée.
 7. **Qu'un enregistrement bloqué en `initiated` produise un 409 permanent** (§2.4.3) :
    nous ne savons pas le provoquer.
 
