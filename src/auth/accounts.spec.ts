@@ -185,6 +185,22 @@ describe('mémorisation entre deux démarrages', () => {
     reloaded.resetAccountsForTest();
   });
 
+  // Trouvé par mutation : les autres cas appellent `setActiveAccount` juste
+  // après `addAccount`, et comme il persiste lui aussi, retirer l'écriture
+  // d'`addAccount` les laissait tous verts. Celui-ci n'active rien
+  // explicitement — `addAccount` s'en charge quand aucun compte ne l'est — donc
+  // il n'exerce que son écriture à elle.
+  it('mémorise un compte ajouté, sans activation explicite', () => {
+    addAccount(ACCOUNT);
+
+    jest.resetModules();
+    const reloaded = reload();
+
+    expect(reloaded.listAccounts()).toHaveLength(1);
+    expect(reloaded.getActiveAccount()?.id).toBe(ACCOUNT.id);
+    reloaded.resetAccountsForTest();
+  });
+
   it('oublie un compte retiré, plutôt que de le ressusciter au redémarrage', () => {
     addAccount(ACCOUNT);
     removeAccount(ACCOUNT.id);
