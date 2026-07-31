@@ -352,8 +352,8 @@ describe('CallScreen', () => {
     // affiche vraiment, personne ici ne peut le vérifier.
     await render(withPaper(<CallScreen />));
 
-    await waitFor(() => expect(screen.getByTestId('tile-me')).toBeTruthy());
-    expect(screen.getByTestId('tile-placeholder-me')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('tile-me:camera')).toBeTruthy());
+    expect(screen.getByTestId('tile-placeholder-me:camera')).toBeTruthy();
   });
 
   it("suit les transitions publiées après l'abonnement", async () => {

@@ -60,14 +60,19 @@ export type RoomView = {
   readonly remotes: readonly ParticipantView[];
 };
 
+export type TileSource = 'camera' | 'screen';
+
 export type Tile = {
-  // Clé React. C'est l'identité LiveKit, unique dans un salon : deux vignettes
-  // qui partagent une clé échangent leur vidéo au moindre changement de liste.
+  // `${identity}:${source}`, et non l'identité seule : depuis le partage
+  // d'écran, une même personne produit deux tuiles. Deux vignettes qui
+  // partageraient une clé échangeraient leur vidéo au moindre changement de
+  // liste.
   readonly key: string;
+  readonly source: TileSource;
   // Nettoyé, éventuellement vide. La coquille n'a donc qu'un seul cas d'absence
   // à traiter, et aucune règle de nom ne lui incombe.
   readonly name: string;
-  readonly camera: VideoTrackRef | null;
+  readonly track: VideoTrackRef | null;
   readonly isLocal: boolean;
   readonly isSpeaking: boolean;
   readonly mirror: boolean;
@@ -128,17 +133,24 @@ function pickStage(view: RoomView): ParticipantView {
   return stage ?? view.local;
 }
 
-function toTile(participant: ParticipantView, facing: FacingMode): Tile {
+// Exportée pour ses seuls tests : `selectLayout` n'appelle encore cette fonction
+// qu'avec `'camera'` (voir plus bas), donc la branche `'screen'` n'est
+// observable de l'extérieur qu'en l'appelant directement — une tâche à venir
+// fera choisir `'screen'` à `selectLayout` pour un présentateur.
+export function toTile(participant: ParticipantView, source: TileSource, facing: FacingMode): Tile {
   return {
-    key: participant.identity,
+    key: `${participant.identity}:${source}`,
+    source,
     name: participant.name.trim(),
-    camera: participant.camera,
+    track: source === 'screen' ? participant.screen : participant.camera,
     isLocal: participant.isLocal,
     isSpeaking: participant.isSpeaking,
     // Le miroir ne concerne que sa propre image, et seulement en caméra
     // frontale : c'est le reflet auquel on s'attend en se regardant. Retourner
     // un distant, ou la caméra arrière, rendrait tout texte filmé illisible.
-    mirror: participant.isLocal && facing === 'user',
+    // Un écran n'est jamais en miroir : le retourner rendrait illisible tout
+    // texte affiché dessus, ce qui est précisément ce qu'on partage.
+    mirror: source === 'camera' && participant.isLocal && facing === 'user',
   };
 }
 
@@ -153,7 +165,7 @@ export function selectLayout(view: RoomView, facing: FacingMode): CallLayout {
     // Personne n'apparaît deux fois : la scène retire de la bande celui qu'elle
     // montre. Quand on est seul, la bande devient vide — et c'est juste.
     .filter((participant) => participant.identity !== stage.identity)
-    .map((participant) => toTile(participant, facing));
+    .map((participant) => toTile(participant, 'camera', facing));
 
-  return { stage: toTile(stage, facing), filmstrip };
+  return { stage: toTile(stage, 'camera', facing), filmstrip };
 }

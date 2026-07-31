@@ -22,8 +22,9 @@ function fakeCamera(sid: string): VideoTrackRef {
 function tile(key: string, overrides: Partial<Tile> = {}): Tile {
   return {
     key,
+    source: 'camera',
     name: key,
-    camera: fakeCamera(`ts-${key}`),
+    track: fakeCamera(`ts-${key}`),
     isLocal: false,
     isSpeaking: false,
     mirror: false,
@@ -68,7 +69,7 @@ describe('CallStage', () => {
   it('transmet à VideoTrack la piste que la sélection a choisie', async () => {
     const camera = fakeCamera('ts-choisie');
 
-    await render(<CallStage layout={layout(tile('ada', { camera }))} />);
+    await render(<CallStage layout={layout(tile('ada', { track: camera }))} />);
 
     expect(jest.mocked(VideoTrack).mock.calls[0]?.[0].trackRef).toBe(camera);
   });
@@ -97,7 +98,7 @@ describe('CallStage', () => {
   });
 
   it('pose un carton nommé, et aucune vidéo, quand il n’y a pas de piste', async () => {
-    await render(<CallStage layout={layout(tile('ada', { camera: null }))} />);
+    await render(<CallStage layout={layout(tile('ada', { track: null }))} />);
 
     expect(screen.getByTestId('tile-placeholder-ada')).toHaveTextContent('ada');
     expect(VideoTrack).not.toHaveBeenCalled();
@@ -106,7 +107,7 @@ describe('CallStage', () => {
   it('nomme une personne sans nom par une chaîne traduite', async () => {
     // Jamais d'identité brute ni de vide à l'écran : les deux se lisent comme
     // un défaut d'affichage.
-    await render(<CallStage layout={layout(tile('ada', { camera: null, name: '' }))} />);
+    await render(<CallStage layout={layout(tile('ada', { track: null, name: '' }))} />);
 
     expect(screen.getByTestId('tile-placeholder-ada')).toHaveTextContent('call.unnamedParticipant');
   });
@@ -115,7 +116,7 @@ describe('CallStage', () => {
     // Une piste vidéo ne dit rien à un lecteur d'écran : le nom est tout ce
     // qu'il reste, et il doit être là avec ou sans image.
     await render(
-      <CallStage layout={layout(tile('ada'), [tile('bob', { camera: null, name: 'Bob' })])} />,
+      <CallStage layout={layout(tile('ada'), [tile('bob', { track: null, name: 'Bob' })])} />,
     );
 
     expect(screen.getByTestId('tile-ada')).toHaveProp('accessibilityLabel', 'ada');

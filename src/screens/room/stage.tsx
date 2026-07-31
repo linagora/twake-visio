@@ -68,7 +68,7 @@ function VideoTile({ tile, objectFit, size }: VideoTileProps): React.ReactElemen
       accessibilityLabel={label}
       style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
     >
-      {tile.camera === null ? (
+      {tile.track === null ? (
         // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
         // d'une panne, et faire disparaître la vignette sortirait la personne de
         // la liste des présents alors qu'elle est bien là.
@@ -79,7 +79,7 @@ function VideoTile({ tile, objectFit, size }: VideoTileProps): React.ReactElemen
         </View>
       ) : (
         <VideoTrack
-          trackRef={tile.camera}
+          trackRef={tile.track}
           style={styles.video}
           objectFit={objectFit}
           mirror={tile.mirror}

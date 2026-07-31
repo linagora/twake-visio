@@ -1,5 +1,6 @@
 import {
   selectLayout,
+  toTile,
   type VideoTrackRef,
   type ParticipantView,
   type RoomView,
@@ -39,7 +40,7 @@ describe('selectLayout — la scène', () => {
     // et croit que la séance est cassée.
     const layout = selectLayout(view(ME, []), 'user');
 
-    expect(layout.stage.key).toBe('me');
+    expect(layout.stage.key).toBe('me:camera');
     expect(layout.stage.isLocal).toBe(true);
   });
 
@@ -48,7 +49,7 @@ describe('selectLayout — la scène', () => {
     // téléphone. La grande surface va à l’autre.
     const layout = selectLayout(view(ME, [person('ada')]), 'user');
 
-    expect(layout.stage.key).toBe('ada');
+    expect(layout.stage.key).toBe('ada:camera');
   });
 
   it('donne la scène à la personne qui parle', () => {
@@ -57,7 +58,7 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('bob');
+    expect(layout.stage.key).toBe('bob:camera');
   });
 
   it('fait passer celui qui parle devant un locuteur plus récent mais silencieux', () => {
@@ -72,7 +73,7 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('ada');
+    expect(layout.stage.key).toBe('ada:camera');
   });
 
   it('garde le dernier locuteur quand plus personne ne parle', () => {
@@ -82,7 +83,7 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('bob');
+    expect(layout.stage.key).toBe('bob:camera');
   });
 
   it('départage deux locuteurs simultanés par le plus récent', () => {
@@ -94,7 +95,7 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('bob');
+    expect(layout.stage.key).toBe('bob:camera');
   });
 
   it('retombe sur l’ordre d’arrivée quand personne n’a jamais parlé', () => {
@@ -103,7 +104,7 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('zoe');
+    expect(layout.stage.key).toBe('zoe:camera');
   });
 
   it('reste déterministe quand même l’heure d’arrivée manque', () => {
@@ -111,7 +112,7 @@ describe('selectLayout — la scène', () => {
     // vignettes dépendrait de celui de la Map du SDK et changerait tout seul.
     const layout = selectLayout(view(ME, [person('zoe'), person('ada')]), 'user');
 
-    expect(layout.stage.key).toBe('ada');
+    expect(layout.stage.key).toBe('ada:camera');
   });
 
   it('ne cède pas la scène parce que la caméra du locuteur est coupée', () => {
@@ -126,8 +127,8 @@ describe('selectLayout — la scène', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('ada');
-    expect(layout.stage.camera).toBeNull();
+    expect(layout.stage.key).toBe('ada:camera');
+    expect(layout.stage.track).toBeNull();
   });
 });
 
@@ -152,7 +153,7 @@ describe('selectLayout — la bande de vignettes', () => {
     // bougent revient à ne jamais savoir si l’on est cadré.
     const layout = selectLayout(view(ME, [person('ada'), person('bob')]), 'user');
 
-    expect(layout.filmstrip[0]?.key).toBe('me');
+    expect(layout.filmstrip[0]?.key).toBe('me:camera');
     expect(layout.filmstrip[0]?.isLocal).toBe(true);
   });
 
@@ -168,8 +169,12 @@ describe('selectLayout — la bande de vignettes', () => {
       'user',
     );
 
-    expect(layout.stage.key).toBe('cid');
-    expect(layout.filmstrip.map((tile) => tile.key)).toEqual(['me', 'ada', 'bob']);
+    expect(layout.stage.key).toBe('cid:camera');
+    expect(layout.filmstrip.map((tile) => tile.key)).toEqual([
+      'me:camera',
+      'ada:camera',
+      'bob:camera',
+    ]);
   });
 
   it('range les distants par ordre d’arrivée', () => {
@@ -182,7 +187,11 @@ describe('selectLayout — la bande de vignettes', () => {
       'user',
     );
 
-    expect(layout.filmstrip.map((tile) => tile.key)).toEqual(['me', 'ada', 'zoe']);
+    expect(layout.filmstrip.map((tile) => tile.key)).toEqual([
+      'me:camera',
+      'ada:camera',
+      'zoe:camera',
+    ]);
   });
 
   it('garde la vignette de qui a coupé sa caméra', () => {
@@ -193,8 +202,8 @@ describe('selectLayout — la bande de vignettes', () => {
       'user',
     );
 
-    expect(layout.filmstrip.map((tile) => tile.key)).toEqual(['me', 'bob']);
-    expect(layout.filmstrip[1]?.camera).toBeNull();
+    expect(layout.filmstrip.map((tile) => tile.key)).toEqual(['me:camera', 'bob:camera']);
+    expect(layout.filmstrip[1]?.track).toBeNull();
   });
 });
 
@@ -204,7 +213,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
 
     const layout = selectLayout(view(ME, [person('ada', { camera })]), 'user');
 
-    expect(layout.stage.camera).toBe(camera);
+    expect(layout.stage.track).toBe(camera);
   });
 
   it('met sa propre image en miroir en caméra frontale', () => {
@@ -257,7 +266,29 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     );
 
     const keys = [layout.stage.key, ...layout.filmstrip.map((tile) => tile.key)];
-    expect(keys).toEqual(['ada', 'me', 'bob']);
+    expect(keys).toEqual(['ada:camera', 'me:camera', 'bob:camera']);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  // Le commentaire d'origine disait vrai — « deux vignettes qui partagent une clé
+  // échangent leur vidéo au moindre changement de liste » — mais son hypothèse ne
+  // tient plus : une personne qui partage produit DEUX tuiles.
+  //
+  // Testé sur `toTile` directement, et non sur `selectLayout` comme le reste de
+  // ce fichier : `selectLayout` n'invoque encore `toTile` qu'avec la source
+  // 'camera' — une tâche à venir lui fera choisir 'screen' pour un présentateur.
+  // Le format de la clé, lui, n'a pas à attendre cette tâche pour être correct.
+  it('donne deux clés différentes au visage et à l’écran d’une même personne', () => {
+    const alice = person('u-alice', {
+      camera: fakeCamera('cam-1'),
+      screen: fakeCamera('scr-1'),
+      screenSince: 1000,
+    });
+
+    const keys = [toTile(alice, 'camera', 'user').key, toTile(alice, 'screen', 'user').key];
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain('u-alice:screen');
+    expect(keys).toContain('u-alice:camera');
   });
 });
