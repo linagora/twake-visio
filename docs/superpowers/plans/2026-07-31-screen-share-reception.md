@@ -287,7 +287,7 @@ Chaque erreur nomme un littéral de `ParticipantView` auquel il manque `screen` 
 - [ ] **Step 6 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 629 tests verts (625 + 4), typecheck propre.
+Expected: 629 tests verts (625 + 4), typecheck propre. **La ronde de correction de cette tâche a porté le total à 632** — les comptes ci-dessous en tiennent compte.
 
 - [ ] **Step 7 : commit**
 
@@ -329,6 +329,16 @@ Dans `src/call/layout.spec.ts` :
 // Le commentaire d'origine disait vrai — « deux vignettes qui partagent une clé
 // échangent leur vidéo au moindre changement de liste » — mais son hypothèse ne
 // tient plus : une personne qui partage produit DEUX tuiles.
+// CORRIGÉ APRÈS EXÉCUTION : la première rédaction interrogeait `selectLayout` et
+// attendait une clé `:screen`, ce que le Step 3 de cette même tâche rend
+// impossible — il n'y appelle `toTile` qu'avec `'camera'`, les écrans étant le
+// travail de la tâche 4. Les deux instructions se contredisaient, et le test ne
+// pouvait passer qu'en volant son périmètre à la tâche suivante.
+//
+// `toTile` est donc exportée et éprouvée directement. Ce n'est pas un
+// contournement : `source` est une vraie entrée de cette fonction, et le
+// livrable de cette tâche EST son contrat — format de clé, choix de piste,
+// règle de miroir.
 it('donne deux clés différentes au visage et à l’écran d’une même personne', () => {
   const alice = person('u-alice', {
     camera: fakeCamera('cam-1'),
@@ -336,12 +346,10 @@ it('donne deux clés différentes au visage et à l’écran d’une même perso
     screenSince: 1000,
   });
 
-  const layout = selectLayout(view(ME, [alice]), 'user');
-  const keys = [layout.stage, ...layout.filmstrip].map((tile) => tile.key);
-
-  expect(new Set(keys).size).toBe(keys.length);
-  expect(keys).toContain('u-alice:screen');
-  expect(keys).toContain('u-alice:camera');
+  expect(toTile(alice, 'camera', 'user').key).toBe('u-alice:camera');
+  expect(toTile(alice, 'screen', 'user').key).toBe('u-alice:screen');
+  // La source elle-même, sans quoi la figer à 'camera' laisse la suite au vert.
+  expect(toTile(alice, 'screen', 'user').source).toBe('screen');
 });
 ```
 
@@ -397,7 +405,7 @@ Corriger `src/screens/room/stage.tsx` (`tile.camera` → `tile.track`) et les sp
 - [ ] **Step 5 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 630 tests verts (629 + 1).
+Expected: 634 tests verts (632 + 2).
 
 - [ ] **Step 6 : commit**
 
@@ -549,7 +557,7 @@ Vérifier en relisant : la bande retirait auparavant la personne à la scène ; 
 - [ ] **Step 4 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 635 tests verts (630 + 5).
+Expected: 639 tests verts (634 + 5).
 
 - [ ] **Step 5 : commit**
 
@@ -662,7 +670,7 @@ Les deux appels deviennent `fitWhenCamera="contain"` pour la scène et
 - [ ] **Step 4 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 637 tests verts (635 + 2).
+Expected: 641 tests verts (639 + 2).
 
 - [ ] **Step 5 : commit**
 
@@ -786,7 +794,7 @@ Le fragment `<>` devient un `View` : sans conteneur, on ne peut pas passer la di
 - [ ] **Step 4 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 639 tests verts (637 + 2).
+Expected: 643 tests verts (641 + 2).
 
 - [ ] **Step 5 : commit**
 
