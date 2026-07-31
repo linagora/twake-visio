@@ -317,6 +317,31 @@ describe('lecture du partage d’écran', () => {
 
     expect(readRoomView(fakeRoom(ME, [arrete]).room).remotes[0]?.screenSince).toBeNull();
   });
+
+  // Le test ci-dessus ne fait jamais réapparaître le sid `scr-1` : il ne peut
+  // donc pas prouver que la piste est purgée de la table, seulement que
+  // `sinceFor(null)` rend `null` — vrai même sans purge. La purge n'est
+  // observable que si le MÊME trackSid revient après une absence : sans elle,
+  // la reprise retomberait sur l'instant de son ancienne vie plutôt que sur
+  // un instant frais.
+  it('donne un instant frais à un trackSid qui réapparaît après une interruption', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+    const partage = person('u-alice', {
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+    });
+    const arrete = person('u-alice');
+    const repris = person('u-alice', {
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+    });
+
+    const debut = readRoomView(fakeRoom(ME, [partage]).room).remotes[0]?.screenSince;
+    readRoomView(fakeRoom(ME, [arrete]).room);
+    const relance = readRoomView(fakeRoom(ME, [repris]).room).remotes[0]?.screenSince;
+
+    now.mockRestore();
+    expect(debut).toBe(1_000);
+    expect(relance).toBe(2_000);
+  });
 });
 
 describe('createRoomViewStore', () => {
