@@ -244,7 +244,7 @@ describe('lecture du partage d’écran', () => {
     const alice = person('u-alice', {
       publications: {
         [Track.Source.Camera]: camera({ trackSid: 'cam-1' }),
-        [Track.Source.ScreenShare]: screenPub('scr-1'),
+        [Track.Source.ScreenShare]: screenPub('scr-distinct'),
       },
     });
 
@@ -252,7 +252,7 @@ describe('lecture du partage d’écran', () => {
 
     const seen = view.remotes[0];
     expect(seen?.camera?.publication.trackSid).toBe('cam-1');
-    expect(seen?.screen?.publication.trackSid).toBe('scr-1');
+    expect(seen?.screen?.publication.trackSid).toBe('scr-distinct');
   });
 
   // Les deux sid sont distincts par construction : une implémentation qui
@@ -275,7 +275,7 @@ describe('lecture du partage d’écran', () => {
   // manquerait. Deux lectures successives doivent donc rendre le même instant.
   it('retient le même instant à travers deux lectures', () => {
     const alice = person('u-alice', {
-      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-memo') },
     });
     const { room } = fakeRoom(ME, [alice]);
 
@@ -308,7 +308,7 @@ describe('lecture du partage d’écran', () => {
 
   it('oublie un partage terminé, pour qu’un nouveau soit vu comme nouveau', () => {
     const partage = person('u-alice', {
-      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-ended') },
     });
     const arrete = person('u-alice');
 
@@ -318,8 +318,8 @@ describe('lecture du partage d’écran', () => {
     expect(readRoomView(fakeRoom(ME, [arrete]).room).remotes[0]?.screenSince).toBeNull();
   });
 
-  // Le test ci-dessus ne fait jamais réapparaître le sid `scr-1` : il ne peut
-  // donc pas prouver que la piste est purgée de la table, seulement que
+  // Le test ci-dessus ne fait jamais réapparaître son sid : il ne peut donc
+  // pas prouver que la piste est purgée de la table, seulement que
   // `sinceFor(null)` rend `null` — vrai même sans purge. La purge n'est
   // observable que si le MÊME trackSid revient après une absence : sans elle,
   // la reprise retomberait sur l'instant de son ancienne vie plutôt que sur
@@ -327,11 +327,11 @@ describe('lecture du partage d’écran', () => {
   it('donne un instant frais à un trackSid qui réapparaît après une interruption', () => {
     const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
     const partage = person('u-alice', {
-      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-reappear') },
     });
     const arrete = person('u-alice');
     const repris = person('u-alice', {
-      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-reappear') },
     });
 
     const debut = readRoomView(fakeRoom(ME, [partage]).room).remotes[0]?.screenSince;
