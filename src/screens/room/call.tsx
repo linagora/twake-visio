@@ -13,8 +13,14 @@ import {
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
+import {
+  audioRouteControl,
+  listAudioOutputs,
+  openSystemRoutePicker,
+  selectAudioOutput,
+} from 'src/call/audioRoute';
 import { createCallSession } from 'src/call/connection';
-import type { CameraChoice } from 'src/call/devices';
+import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
 import type { ParticipantView } from 'src/call/layout';
 import {
   listCameras,
@@ -30,6 +36,7 @@ import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
+import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
 import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
@@ -158,6 +165,13 @@ export function CallScreen(): React.ReactElement {
   const [cameras, setCameras] = useState<readonly CameraChoice[]>([]);
   const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
 
+  const [outputs, setOutputs] = useState<readonly AudioOutputKind[]>([]);
+  // Ce que *nous* avons demandé pendant cette séance, jamais l'état du système :
+  // aucune API ne dit d'où sort le son, sur aucune des deux plateformes. Rien
+  // n'est persisté entre deux séances — un choix manuel désarme la bascule
+  // automatique côté Android, et le persister la désarmerait pour toujours.
+  const [chosenOutput, setChosenOutput] = useState<AudioOutputKind | null>(null);
+
   // La Room est prête et son identité stable dès le premier rendu — la session
   // la construit dans son constructeur. Le crochet doit être appelé ici, avant
   // les sorties anticipées ci-dessous : il n'y a pas de rendu où l'écran aurait
@@ -207,6 +221,11 @@ export function CallScreen(): React.ReactElement {
   // lieu de garder l'absence — ce qui fabriquait des routes de la forme
   // `/api/v1.0/rooms//mute-participant/`.
   const roomId = access?.room.id ?? null;
+
+  // Une valeur, pas une lecture de `Platform` par le composant : c'est ce qui
+  // permet à une spec de rendre les deux branches sans bouchonner la
+  // plateforme.
+  const routeControl = audioRouteControl();
 
   // Les trois gardes réunies : un salon public n'a pas de salle d'attente,
   // sans privilège le serveur refuserait la requête, et sans identifiant de
@@ -349,6 +368,36 @@ export function CallScreen(): React.ReactElement {
         setNotice(null);
       })
       .catch(() => setNotice('call.deviceSwitchFailed'));
+  };
+
+  // La liste est relue à chaque ouverture du menu, et à ce moment seulement.
+  // Sur Android, entre deux ouvertures, un casque branché ou débranché ne
+  // produit aucun changement à l'écran — et rien ne le permettrait : la
+  // plateforme n'émet aucun événement, et aucune API ne dit d'où sort le son.
+  // La liste est juste dès la réouverture, et le son, lui, a bien suivi.
+  const handleOpenAudioOutput = (): void => {
+    listAudioOutputs()
+      .then(setOutputs)
+      .catch(() => undefined);
+  };
+
+  // Posé immédiatement, pas dans un `.then()` : la promesse native est résolue
+  // avant que le travail ne soit posté sur son handler, et un identifiant
+  // inconnu est un no-op silencieux. Attendre n'apprendrait rien de plus.
+  // L'état enregistre ce qui a été *demandé*, et le menu l'affiche comme tel —
+  // jamais comme un état constaté.
+  const handleSelectAudioOutput = (kind: AudioOutputKind): void => {
+    setChosenOutput(kind);
+    // Aucune branche d'échec, parce qu'il n'en existe aucune : afficher un
+    // succès serait du bruit, afficher un échec serait une invention.
+    selectAudioOutput(kind).catch(() => undefined);
+  };
+
+  // Rien ne dit si le sélecteur de la plateforme est apparu : la méthode native
+  // n'a pas de resolver, et elle simule un clic sur une vue jamais insérée dans
+  // la hiérarchie. Il n'y a donc rien à lire, et rien à afficher.
+  const handleOpenSystemRoutePicker = (): void => {
+    openSystemRoutePicker().catch(() => undefined);
   };
 
   // Le lien porte sur l'instance du compte, jamais sur une constante : une
@@ -530,6 +579,14 @@ export function CallScreen(): React.ReactElement {
             onSelect={handleSelectCamera}
           />
         </View>
+        <AudioOutputControl
+          mode={routeControl}
+          outputs={outputs}
+          chosen={chosenOutput}
+          onOpen={handleOpenAudioOutput}
+          onSelect={handleSelectAudioOutput}
+          onSystemPicker={handleOpenSystemRoutePicker}
+        />
         <IconButton
           testID="share-btn"
           icon="share-variant"

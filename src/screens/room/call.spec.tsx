@@ -8,6 +8,7 @@ import * as participants from 'src/api/participants';
 import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
+import * as audioRoute from 'src/call/audioRoute';
 import type { CameraChoice } from 'src/call/devices';
 import * as media from 'src/call/media';
 import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
@@ -229,6 +230,13 @@ beforeEach(() => {
   jest.spyOn(media, 'listCameras').mockResolvedValue([]);
   jest.spyOn(media, 'readActiveCameraId').mockReturnValue(null);
   jest.spyOn(media, 'selectCamera').mockResolvedValue(true);
+
+  // 'menu' par défaut : c'est la branche qui a quelque chose à montrer. Les
+  // tests du mode 'system' la surchargent.
+  jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('menu');
+  jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue([]);
+  jest.spyOn(audioRoute, 'selectAudioOutput').mockResolvedValue();
+  jest.spyOn(audioRoute, 'openSystemRoutePicker').mockResolvedValue();
 });
 
 describe('CallScreen', () => {
@@ -1098,5 +1106,127 @@ describe('CallScreen, choix de la caméra', () => {
     await waitFor(() => expect(media.listCameras).toHaveBeenCalled());
     expect(screen.queryByTestId('call-notice')).toBeNull();
     expect(screen.getByTestId('camera-menu-btn')).toBeTruthy();
+  });
+});
+
+describe('CallScreen, sortie audio', () => {
+  it("relit la liste à l'ouverture du menu, jamais avant", async () => {
+    // Aucun sondage, aucun écouteur : rafraîchir la liste ne dirait jamais
+    // d'où sort le son, seulement ce qui est disponible.
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(1));
+  });
+
+  it('demande la catégorie pressée, jamais la première de la liste', async () => {
+    // Deux catégories, jamais une seule, et la seconde visée.
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
+
+    await waitFor(() => expect(audioRoute.selectAudioOutput).toHaveBeenCalledWith('speaker'));
+    expect(audioRoute.selectAudioOutput).not.toHaveBeenCalledWith('bluetooth');
+  });
+
+  it('coche ce qui a été demandé à la réouverture, et prévient du désarmement', async () => {
+    // La coche marque notre propre choix, jamais l'état du système. Et la
+    // ligne d'explication est la seule occasion d'apprendre que la bascule
+    // automatique vient d'être désarmée pour le reste de la séance.
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() =>
+      expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
+    );
+    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-check-speaker')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
+    expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputManualUntilEnd');
+  });
+
+  it("n'affiche aucun message quand une sortie est choisie", async () => {
+    // Il n'existe aucun canal d'échec : afficher un succès serait du bruit,
+    // afficher un échec serait une invention.
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
+
+    await waitFor(() => expect(audioRoute.selectAudioOutput).toHaveBeenCalled());
+    expect(screen.queryByTestId('call-notice')).toBeNull();
+  });
+
+  it('ouvre le sélecteur de la plateforme sur iOS, sans rien lire', async () => {
+    // `getAudioOutputs()` y est une constante à deux entrées qui ne sont pas
+    // des catégories : il n'y a rien à peupler et rien à relire.
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('system');
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.openSystemRoutePicker).toHaveBeenCalledTimes(1));
+    expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('audio-output-note')).toBeNull();
+  });
+
+  it("n'ouvre pas le sélecteur système en mode menu", async () => {
+    // L'autre borne du mode : sans elle, un écran qui appellerait les deux
+    // rappels passerait le test précédent.
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalled());
+    expect(audioRoute.openSystemRoutePicker).not.toHaveBeenCalled();
+  });
+
+  it('ouvre un menu sur sa seule explication quand la liste est vide', async () => {
+    // Rien n'a échoué : pas de message. Vérifie aussi qu'aucune option ne
+    // s'affiche : sans cette dernière assertion, un `outputs` câblé sur une
+    // constante non vide (au lieu de l'état rempli par `listAudioOutputs`)
+    // passerait ce test aussi bien qu'un câblage correct — mesuré par
+    // mutation, seul ce test pouvait le distinguer.
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue([]);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
+    expect(screen.queryByTestId('call-notice')).toBeNull();
+    expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
+    expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
   });
 });
