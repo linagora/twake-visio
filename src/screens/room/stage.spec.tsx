@@ -311,6 +311,48 @@ describe('la scène reçoit la place libérée en paysage', () => {
   });
 });
 
+// Aucun test ci-dessus n'observe la DIMENSION fixe que la bande et sa vignette
+// échangent en paysage — seulement l'AXE (`horizontal`, `flexDirection`). Or
+// c'est précisément l'échange largeur ↔ hauteur de `filmstripColumn` et
+// `thumbnailTileColumn` qui rend sa hauteur à la scène, le travail annoncé par
+// le titre du commit `8842d97` : une implémentation qui basculerait l'axe sans
+// jamais libérer 96 dp de hauteur passerait tous les blocs précédents.
+describe('la bande et sa vignette échangent une dimension fixe, pas seulement un axe', () => {
+  it('fixe la hauteur de la bande et la largeur de la vignette, en portrait', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 400,
+      height: 800,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp(
+      'style',
+      expect.objectContaining({ height: 96 }),
+    );
+    expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ width: 128 });
+  });
+
+  it('fixe la largeur de la bande et la hauteur de la vignette, en paysage', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 800,
+      height: 400,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp(
+      'style',
+      expect.objectContaining({ width: 96 }),
+    );
+    expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ height: 96 });
+  });
+});
+
 // Garde contre la fuite que `jest.restoreAllMocks()`, dans le `beforeEach`
 // ci-dessus, referme : sans lui, ce test — qui ne pose lui-même AUCUNE
 // dimension — hérite du dernier `800×400` posé par le test paysage
