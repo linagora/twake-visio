@@ -16,6 +16,7 @@
   "home.noneMatching": "Keine Besprechung passt",
   "home.join": "Beitreten",
   "home.create": "Neue Besprechung",
+  "home.signOut": "Abmelden",
   "room.name": "Name der Besprechung",
   "room.accessPublic": "Jeder mit dem Link kann ohne Genehmigung beitreten",
   "room.accessTrusted": "Nur authentifizierte Personen treten direkt bei",

@@ -5,10 +5,14 @@ import * as rooms from 'src/api/rooms';
 import type { Room } from 'src/call/types';
 import { forgetRoomTitle, rememberRoomTitle } from 'src/rooms/titles';
 import * as accounts from 'src/auth/accounts';
+import * as login from 'src/auth/login';
 import { filterRooms, HomeScreen } from './home';
 
 const mockPush = jest.fn();
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
+const mockReplace = jest.fn();
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+}));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -155,5 +159,53 @@ describe('filterRooms', () => {
     // Trier sur place muterait l'état React et le rendu suivant partirait d'un
     // ordre déjà changé, sans que personne ne l'ait demandé.
     expect(rooms.map((r) => r.slug)).toEqual(['b', 'a']);
+  });
+});
+
+describe('compte actif et déconnexion', () => {
+  // L'hôte, et pas seulement l'adresse : sur deux instances d'une même
+  // organisation la personne porte souvent la MÊME adresse — mesuré, un annuaire
+  // de développement dont le `mail` est celui de production. Un écran qui
+  // n'afficherait que l'adresse ne dirait pas où l'on est.
+  //
+  // Les deux valeurs sont volontairement distinctes du fixture par défaut : une
+  // implémentation qui figerait l'une ou l'autre passerait un test qui les
+  // reprendrait telles quelles.
+  it("nomme l'instance, pas seulement l'adresse", async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue({
+      ...ACCOUNT,
+      email: 'grace@exemple.org',
+      instance: { ...ACCOUNT.instance, serverUrl: 'https://meet.autre-instance.test' },
+    });
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByTestId('account-email')).toHaveTextContent('grace@exemple.org');
+    expect(screen.getByTestId('account-instance')).toHaveTextContent('meet.autre-instance.test');
+  });
+
+  it('déconnecte et ramène à l’accueil sans laisser l’écran dans la pile', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+    const out = jest.spyOn(login, 'signOut').mockResolvedValue();
+
+    await render(<HomeScreen />);
+    await fireEvent.press(screen.getByTestId('sign-out-btn'));
+
+    await waitFor(() => expect(out).toHaveBeenCalled());
+    // `replace`, jamais `push` : un retour arrière rendrait l'accueil d'un
+    // compte qui n'existe plus.
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/welcome'));
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('ne montre rien plutôt qu’un bandeau vide quand aucun compte n’est actif', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+
+    await render(<HomeScreen />);
+
+    expect(screen.queryByTestId('sign-out-btn')).toBeNull();
+    expect(screen.queryByTestId('account-instance')).toBeNull();
   });
 });

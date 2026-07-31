@@ -6,6 +6,7 @@ import { Button, List, Text, TextInput } from 'react-native-paper';
 
 import { fetchMyRooms } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
+import { signOut } from 'src/auth/login';
 import { findRoomTitle } from 'src/rooms/titles';
 import type { Room } from 'src/call/types';
 import { tokens } from 'src/ui/tokens';
@@ -15,7 +16,21 @@ const styles = StyleSheet.create({
   joinRow: { flexDirection: 'row', gap: tokens.spacing.sm, alignItems: 'center' },
   joinInput: { flex: 1 },
   code: { fontVariant: ['tabular-nums'] },
+  accountRow: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  accountIdentity: { flex: 1 },
 });
+
+// L'hôte, pas l'URL entière : c'est lui qui distingue deux instances, et une
+// même personne porte souvent la MÊME adresse sur les deux — mesuré, un compte
+// de développement dont le `mail` de l'annuaire est celui de production. Afficher
+// l'adresse seule ne dirait donc pas où l'on est.
+export function instanceLabel(serverUrl: string): string {
+  try {
+    return new URL(serverUrl).host;
+  } catch {
+    return serverUrl;
+  }
+}
 
 // Un salon sans nom se voit attribuer son slug comme nom par `toRoom` : la seule
 // façon de les distinguer est l'égalité des deux. Un salon réellement nommé
@@ -65,6 +80,8 @@ export function HomeScreen(): React.ReactElement {
   const [rooms, setRooms] = useState<readonly Room[]>([]);
   const [code, setCode] = useState('');
   const [query, setQuery] = useState('');
+  // Lu une fois : la déconnexion quitte l'écran, elle ne le rafraîchit pas.
+  const [account] = useState(() => getActiveAccount());
 
   useEffect(() => {
     const account = getActiveAccount();
@@ -86,8 +103,31 @@ export function HomeScreen(): React.ReactElement {
     router.push('/room/create');
   };
 
+  // `replace` et non `push` : l'accueil d'un compte qui n'existe plus ne doit
+  // pas rester dans la pile, où un retour arrière le rendrait avec un compte
+  // actif nul et une liste de salons appartenant à personne.
+  const handleSignOut = (): void => {
+    void signOut().then(() => router.replace('/welcome'));
+  };
+
   return (
     <View style={styles.root}>
+      {account === null ? null : (
+        <View style={styles.accountRow}>
+          <View style={styles.accountIdentity}>
+            <Text testID="account-email" numberOfLines={1}>
+              {account.email}
+            </Text>
+            <Text testID="account-instance" variant="bodySmall" numberOfLines={1}>
+              {instanceLabel(account.instance.serverUrl)}
+            </Text>
+          </View>
+          <Button mode="text" testID="sign-out-btn" onPress={handleSignOut}>
+            {t('home.signOut')}
+          </Button>
+        </View>
+      )}
+
       <View style={styles.joinRow}>
         <TextInput
           testID="join-code-input"

@@ -16,6 +16,7 @@
   "home.noneMatching": "Không có cuộc họp nào khớp",
   "home.join": "Tham gia",
   "home.create": "Cuộc họp mới",
+  "home.signOut": "Đăng xuất",
   "room.name": "Tên cuộc họp",
   "room.accessPublic": "Bất kỳ ai có liên kết đều có thể vào mà không cần phê duyệt",
   "room.accessTrusted": "Chỉ những người đã xác thực mới có thể vào trực tiếp",

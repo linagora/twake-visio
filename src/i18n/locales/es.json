@@ -16,6 +16,7 @@
   "home.noneMatching": "Ninguna reunión coincide",
   "home.join": "Unirse",
   "home.create": "Nueva reunión",
+  "home.signOut": "Cerrar sesión",
   "room.name": "Nombre de la reunión",
   "room.accessPublic": "Cualquier persona con el enlace puede entrar sin aprobación",
   "room.accessTrusted": "Solo las personas autenticadas entran directamente",

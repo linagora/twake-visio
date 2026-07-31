@@ -16,6 +16,7 @@
   "home.noneMatching": "No meeting matches",
   "home.join": "Join",
   "home.create": "New meeting",
+  "home.signOut": "Sign out",
   "room.name": "Meeting name",
   "room.accessPublic": "Anyone with the link can enter without approval",
   "room.accessTrusted": "Only authenticated people enter directly",

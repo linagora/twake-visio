@@ -16,6 +16,7 @@
   "home.noneMatching": "Aucune réunion ne correspond",
   "home.join": "Rejoindre",
   "home.create": "Nouvelle réunion",
+  "home.signOut": "Se déconnecter",
   "room.name": "Nom de la réunion",
   "room.accessPublic": "Toute personne disposant du lien peut entrer sans validation",
   "room.accessTrusted": "Seules les personnes authentifiées entrent directement",
