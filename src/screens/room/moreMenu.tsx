@@ -28,8 +28,9 @@ export type MoreMenuProps = {
 
 // La rangée de commandes est pleine : sept cibles de 44 dp tiennent sur 357 dp,
 // une huitième en demanderait 409 sur un écran qui en fait 360. Ce menu prend
-// donc la place du bouton de partage et porte les deux commandes rares — celle
-// qu'on n'utilise qu'au début d'une réunion, et celle que ce périmètre ajoute.
+// donc la place du bouton de partage et porte trois commandes : le partage
+// lui-même, l'enregistrement — qu'on ne démarre qu'au début d'une réunion — et
+// la main levée, avec sa file en lecture seule sous elle.
 //
 // Effet de bord voulu : la commande d'enregistrement n'est plus dans la barre,
 // donc jamais adjacente au combiné raccroché. Deux rouges voisins pendant un

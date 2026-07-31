@@ -4,6 +4,7 @@ import React from 'react';
 import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
+import * as hand from 'src/api/hand';
 import * as participants from 'src/api/participants';
 import * as recordingApi from 'src/api/recording';
 import * as rooms from 'src/api/rooms';
@@ -85,13 +86,19 @@ const UNKNOWN_CAMERA: CameraChoice = {
 
 // Un participant distant minimal, du même contrat que `readParticipant` dans
 // `src/call/participants` attend d'un `Participant` LiveKit — même convention
-// que le `person()` de `useCallLayout.spec.ts`.
-function remoteParticipant(identity: string, name: string): unknown {
+// que le `person()` de `useCallLayout.spec.ts`. `attributes` par défaut à `{}` :
+// la plupart des tests de ce fichier ne portent pas sur la main levée.
+function remoteParticipant(
+  identity: string,
+  name: string,
+  attributes: Record<string, string> = {},
+): unknown {
   return {
     identity,
     name,
     isLocal: false,
     isSpeaking: false,
+    attributes,
     getTrackPublication: () => undefined,
   };
 }
@@ -124,18 +131,33 @@ let mockCameraPublication: unknown;
 let mockRoomMetadata: string | undefined;
 let mockRoomIsRecording = false;
 
+// Les attributs du participant local, posés par le test qui en a besoin. Un
+// accesseur, pas un champ figé : `readRoomView` les relit à chaque
+// invalidation, et c'est ce qui permet de simuler l'attribut arrivant du
+// serveur LiveKit **après** l'appui.
+let mockLocalAttributes: Record<string, string> = {};
+
+// Les gestionnaires attachés par les magasins, rangés par nom d'événement.
+// L'ancien double rendait `on`/`off` inertes : aucun test ne pouvait alors
+// distinguer une vue relue d'une vue figée au montage. `emitRoom` est la seule
+// façon de faire arriver un changement d'attributs comme le fait le serveur.
+const mockRoomHandlers = new Map<string, (() => void)[]>();
+
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
   readonly metadata: string | undefined;
   readonly isRecording: boolean;
-  on: () => unknown;
-  off: () => unknown;
+  on: (event: string, handler: () => void) => unknown;
+  off: (event: string, handler: () => void) => unknown;
 } = {
   localParticipant: {
     identity: 'me',
     isLocal: true,
     isSpeaking: false,
+    get attributes(): Record<string, string> {
+      return mockLocalAttributes;
+    },
     getTrackPublication: () => mockCameraPublication,
   },
   remoteParticipants: new Map<string, unknown>(),
@@ -145,9 +167,26 @@ const mockRoom: {
   get isRecording(): boolean {
     return mockRoomIsRecording;
   },
-  on: () => mockRoom,
-  off: () => mockRoom,
+  on(event: string, handler: () => void): unknown {
+    mockRoomHandlers.set(event, [...(mockRoomHandlers.get(event) ?? []), handler]);
+    return mockRoom;
+  },
+  off(event: string, handler: () => void): unknown {
+    const attached = mockRoomHandlers.get(event) ?? [];
+    const index = attached.indexOf(handler);
+    if (index !== -1) attached.splice(index, 1);
+    if (attached.length === 0) mockRoomHandlers.delete(event);
+    return mockRoom;
+  },
 };
+
+// Fait arriver un événement de Room comme le ferait le SDK, dans un `act` :
+// les magasins invalident, React relit, l'écran se réaffiche.
+async function emitRoom(event: string): Promise<void> {
+  await act(async () => {
+    for (const handler of Array.from(mockRoomHandlers.get(event) ?? [])) handler();
+  });
+}
 
 // L'état que `getState()` rend. Le test le pose avant le montage, puis publie
 // les transitions suivantes par `publish()` — exactement les deux voies qu'offre
@@ -159,8 +198,15 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace }),
   useLocalSearchParams: () => ({ slug: 'reunion', camera: '1', mic: '1' }),
 }));
+// Interpolation rendue visible : sans elle, `t` rend la seule clé et un nombre
+// codé en dur dans une coquille serait indiscernable du nombre calculé par
+// l'écran. Vérifié : aucune des assertions existantes de ce fichier n'observe
+// une clé interpolée.
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) =>
+      values === undefined ? key : `${key}|${JSON.stringify(values)}`,
+  }),
 }));
 // `Snackbar` de `react-native-paper` lit `useSafeAreaInsets()`, qui lève sans
 // `<SafeAreaProvider>` ancestor — présent en production (`app/_layout.tsx`),
@@ -239,6 +285,8 @@ beforeEach(() => {
   // Un test de modération peut peupler la Room de participants distants ;
   // sans ce nettoyage, ils survivraient au test suivant.
   mockRoom.remoteParticipants.clear();
+  mockRoomHandlers.clear();
+  mockLocalAttributes = {};
   mockRoomMetadata = undefined;
   mockRoomIsRecording = false;
   jest.mocked(VideoTrack).mockClear();
@@ -1543,5 +1591,237 @@ describe('CallScreen, commande d’enregistrement', () => {
     await fireEvent.press(screen.getByTestId('recording-toggle'));
 
     await waitFor(() => expect(screen.queryByTestId('call-notice')).toBeNull());
+  });
+});
+
+describe('CallScreen, main levée', () => {
+  // Un accès dont l'identifiant de salon ET le jeton diffèrent de ceux de
+  // `GRANTED` : c'est la seule façon de distinguer une valeur transmise d'une
+  // constante qui coïnciderait avec le fixture par défaut.
+  const HAND_ACCESS: ApiResult<RoomAccess> = {
+    ok: true,
+    value: {
+      room: { id: 'r-7', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
+      livekitUrl: 'wss://livekit.linagora.com',
+      token: 'jwt-de-salle',
+      isAdministrable: false,
+    },
+  };
+
+  async function openMenu(): Promise<void> {
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+  }
+
+  it('lève la main du salon et du jeton que le serveur a rendus', async () => {
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith('https://meet.linagora.com', 'r-7', 'jwt-de-salle', true),
+    );
+  });
+
+  it("retombe sur le slug quand le salon n'a pas d'identifiant", async () => {
+    // `Room.id` est `string | null`, et `RoomViewSet.get_object()` accepte les
+    // deux formes : le repli supprime le cas nul au lieu de fabriquer
+    // `/api/v1.0/rooms//toggle-hand/`.
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: null, slug: 'salon-sans-uuid', name: 'R', accessLevel: 'public' },
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'jwt-de-salle',
+        isAdministrable: false,
+      },
+    });
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() => expect(toggle.mock.calls[0]?.[1]).toBe('salon-sans-uuid'));
+  });
+
+  it("n'affiche rien de plus au succès HTTP : c'est l'attribut qui décide", async () => {
+    // Le `200` ne prouve pas que quiconque a vu quoi que ce soit. Le backend
+    // écrit un attribut, et c'est le serveur LiveKit qui le diffuse — deux
+    // sauts plus loin.
+    jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() => expect(hand.toggleHand).toHaveBeenCalled());
+    expect(screen.queryByTestId('hand-banner')).toBeNull();
+
+    // … puis l'attribut arrive, et lui seul fait apparaître le bandeau.
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+    await emitRoom('participantAttributesChanged');
+
+    expect(screen.getByTestId('hand-banner')).toBeTruthy();
+  });
+
+  it('baisse la main depuis le bandeau, en un seul appui', async () => {
+    // Lever est un acte qu'on prépare, baisser un acte qu'on subit : deux
+    // appuis pour lever, un pour baisser, sans ouvrir aucun menu.
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('hand-banner')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-lower'));
+
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith(
+        'https://meet.linagora.com',
+        'r-7',
+        'jwt-de-salle',
+        false,
+      ),
+    );
+  });
+
+  it('ignore un second appui tant que la requête est en vol', async () => {
+    // `HandControl` retire sa commande pendant l'appel ; le bandeau, lui,
+    // garde la sienne — sans quoi baisser la main deviendrait impossible au
+    // moment précis où on veut la baisser. La garde est donc portée par la
+    // valeur `handBusy`, jamais par un `disabled`. Deux requêtes concurrentes
+    // en sens opposé produiraient un résultat qui dépend de leur ordre
+    // d'arrivée au serveur.
+    let settle: (value: ApiResult<void>) => void = () => undefined;
+    const toggle = jest.spyOn(hand, 'toggleHand').mockReturnValue(
+      new Promise<ApiResult<void>>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('hand-lower')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-lower'));
+    await fireEvent.press(screen.getByTestId('hand-lower'));
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle({ ok: true, value: undefined });
+    });
+  });
+
+  it('montre sa position dans la file, celle du serveur et pas la première', async () => {
+    // Deux mains levées avant la sienne : avec une seule, une position codée
+    // en dur à 1 passerait.
+    mockRoom.remoteParticipants.set(
+      'u-ada',
+      remoteParticipant('u-ada', 'Ada', { handRaisedAt: '2026-07-30T10:00:01Z' }),
+    );
+    mockRoom.remoteParticipants.set(
+      'u-bob',
+      remoteParticipant('u-bob', 'Bob', { handRaisedAt: '2026-07-30T10:00:02Z' }),
+    );
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:03Z' };
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() => expect(screen.getByTestId('hand-banner-position')).toBeTruthy());
+    // Troisième, pas première : un `position={1}` codé en dur dans la coquille
+    // passerait sans les deux mains levées avant la sienne.
+    expect(screen.getByTestId('hand-banner-position')).toHaveTextContent(
+      'call.handPosition|{"position":3}',
+    );
+  });
+
+  it('montre la file entière dans le menu, dans son ordre', async () => {
+    mockRoom.remoteParticipants.set(
+      'u-bob',
+      remoteParticipant('u-bob', 'Bob', { handRaisedAt: '2026-07-30T10:00:02Z' }),
+    );
+    mockRoom.remoteParticipants.set(
+      'u-ada',
+      remoteParticipant('u-ada', 'Ada', { handRaisedAt: '2026-07-30T10:00:01Z' }),
+    );
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+
+    expect(screen.getByTestId('hand-queue-row-u-ada')).toBeTruthy();
+    expect(screen.getByTestId('hand-queue-row-u-bob')).toBeTruthy();
+    // Ada a levé la main une seconde avant Bob : c'est l'horodatage du serveur
+    // qui ordonne, pas l'ordre d'insertion dans la Map du SDK.
+    const rows = screen.getAllByTestId(/^hand-queue-row-/);
+    expect(nth(rows, 0).props.testID).toBe('hand-queue-row-u-ada');
+  });
+
+  it("dit l'échec sans bouger l'état affiché", async () => {
+    // L'échec ordinaire de `toggleHand` est une *valeur* résolue, jamais un
+    // rejet : un `.catch()` seul ne verrait pas passer un 403.
+    jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('call.handFailed'),
+    );
+    expect(screen.queryByTestId('hand-banner')).toBeNull();
+  });
+
+  it('ne confond pas un 401 de salle avec une session expirée', async () => {
+    // `error.unauthorized` s'affiche « Session expired » : un 401 de
+    // `toggle-hand` ne dit rien de la session OIDC, qui est valide.
+    jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('call.handFailed'),
+    );
+    expect(screen.getByTestId('call-notice')).not.toHaveTextContent('error.unauthorized');
+  });
+
+  it('porte aussi un rejet inattendu jusqu’à la barre', async () => {
+    jest.spyOn(hand, 'toggleHand').mockRejectedValue(new Error('boom'));
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('call.handFailed'),
+    );
+  });
+
+  it('efface le message quand un essai suivant réussit', async () => {
+    const toggle = jest
+      .spyOn(hand, 'toggleHand')
+      .mockResolvedValue({ ok: false, error: { kind: 'network' } });
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('call.handFailed'),
+    );
+
+    toggle.mockResolvedValue({ ok: true, value: undefined });
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() => expect(screen.getByTestId('call-notice')).toHaveTextContent(''));
   });
 });
