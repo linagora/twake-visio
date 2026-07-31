@@ -48,8 +48,10 @@ contraste, du noir sur du noir, un bandeau d'admission dont on ne pouvait pas li
 de la personne qui frappait. Le précédent correct est `stage.tsx:45`.
 
 Cela vaut pour `Text`, pour le `titleStyle` d'un `List.Item` — sa prop `style` ne colore
-pas le titre —, pour le `textColor` d'un `Button` en mode `text` ou `outlined`, et pour
-l'`iconColor` d'un `IconButton`.
+pas le titre —, pour le `textColor` d'un `Button` en mode `text` ou `outlined`, pour
+l'`iconColor` d'un `IconButton`, pour le `contentStyle` d'un `Menu` — qui porte le fond de
+la feuille, sinon calculé depuis l'élévation du thème — et pour le `titleStyle` d'un
+`Menu.Item`, sa prop `style` ne colorant pas plus le titre que celle d'un `List.Item`.
 
 **Et pour le `rippleColor` de tout `IconButton` ou `Menu.Item`.** Sans lui, Paper calcule
 l'ondulation depuis `theme.colors.onSurface` — le même quasi-noir en schéma clair, sur le
