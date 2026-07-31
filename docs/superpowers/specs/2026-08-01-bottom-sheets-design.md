@@ -519,12 +519,21 @@ Même assertion, même token, même raison. C'est **la seule** modification d'as
   `menu-surface`. Trois assertions
   `toHaveStyle({ backgroundColor: tokens.color.surfaceDark })`, et elles comptent d'autant plus
   que la `Surface` d'un `Modal` est transparente par défaut (`Modal.tsx:243-246`, D2).
-- **La garde de titre sur chaque ligne.** Aujourd'hui seul `share-btn-title` est gardé
-  (`moreMenu.spec.tsx:108`). `SheetRow` rend le suffixe `-title` pour **toutes** les lignes :
-  `camera-option-*-title`, `audio-output-option-*-title`, `recording-toggle-title`,
-  `hand-toggle-title`. Dont la variante d'alerte :
-  `expect(screen.getByTestId('recording-toggle-title')).toHaveStyle({ color: tokens.color.dangerDark })`
-  quand la phase n'est pas `idle` (`recordingControl.tsx:46`) — jamais gardée jusqu'ici.
+- **La garde de titre sur chaque ligne.** `SheetRow` rend le suffixe `-title` pour **toutes**
+  les lignes : `camera-option-*-title`, `audio-output-option-*-title`, `hand-toggle-title`,
+  là où seul `share-btn-title` était gardé jusqu'ici (`moreMenu.spec.tsx:108`).
+
+  > **Corrigé avant implémentation : `recording-toggle-title` fait exception, et cette
+  > rédaction se trompait à son sujet.** Elle affirmait que la variante d'alerte n'avait
+  > « jamais été gardée jusqu'ici ». C'est faux, et vérifié :
+  > `recordingControl.spec.tsx:60-61` garde le côté clair (`textDark`, phase `idle`),
+  > `:84-86` le côté alerte (`dangerDark`, phase `recording`), et `:106-108` **boucle sur
+  > les trois autres phases** avec ce motif écrit : « sans cette boucle, un `titleStyle`
+  > codé en dur sur `state.phase === 'starting'` afficherait la bonne couleur au test
+  > précédent tout en repassant en clair ici ». C'est-à-dire exactement la discipline —
+  > faire varier la valeur sur laquelle le code branche — que le lot précédent a dû
+  > apprendre à ses dépens, appliquée ici avant qu'elle soit écrite nulle part. **Ne pas
+  > réécrire ces trois tests.**
 - **La couleur de la note.** `audio-output-note` n'est gardé que par son texte
   (`audioOutputControl.spec.tsx:198, 215-218`) ; sa couleur ne l'est pas, alors qu'elle l'est
   déjà (`controlBar.ts:31-35`). Une assertion à ajouter, indépendamment de cette conversion.
