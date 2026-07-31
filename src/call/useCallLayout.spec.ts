@@ -66,7 +66,7 @@ describe('useCallLayout', () => {
 
     const { result } = await renderHook(() => useCallLayout(room, 'user'));
 
-    expect(result.current.stage.key).toBe('me');
+    expect(result.current.stage.key).toBe('me:camera');
     expect(result.current.filmstrip).toEqual([]);
   });
 
@@ -79,8 +79,8 @@ describe('useCallLayout', () => {
       emit('participantConnected');
     });
 
-    expect(result.current.stage.key).toBe('bob');
-    expect(result.current.filmstrip.map((tile) => tile.key)).toEqual(['me']);
+    expect(result.current.stage.key).toBe('bob:camera');
+    expect(result.current.filmstrip.map((tile) => tile.key)).toEqual(['me:camera']);
   });
 
   it('refait la sélection quand la caméra change de face', async () => {

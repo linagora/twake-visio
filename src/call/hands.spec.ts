@@ -14,6 +14,8 @@ function person(
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,
+    screen: null,
+    screenSince: null,
     handRaisedAt,
   };
 }

@@ -235,10 +235,98 @@ depuis l'historique.
 Un document qu'aucune branche ne porte ne suit pas les worktrees, ne survit pas à un clone,
 et disparaît sans bruit à la première fusion qui le supprime.
 
+### Le code de test qu'un plan prescrit doit avoir été EXÉCUTÉ, pas seulement relu
+
+Le plan du partage d'écran s'est révélé faux **sept fois** en six tâches. Cinq de ces
+erreurs ont la même cause : **du code de test cité sans avoir été ouvert ni exécuté** —
+noms d'aides inventés, forme de retour d'une aide mal lue, relevé de constructeurs faux,
+commentaire d'ordre d'insertion recopié à l'envers, et un `jest.spyOn` qui n'atteignait pas
+le composant.
+
+Un extrait qui jette un `TypeError`, qui espionne le mauvais objet ou qui appelle une aide
+avec la mauvaise forme est **indiscernable par lecture** d'un extrait qui marche. Et le
+pire des cinq — le `spyOn` — produisait une suite **à moitié verte**, donc _plus_
+convaincante qu'une suite rouge.
+
+> **Avant d'écrire un extrait de test dans un plan : `npx jest <fichier>` sur une copie
+> jetable, contre HEAD. Il doit échouer, et échouer de la bonne façon.** Quelques secondes
+> par tâche.
+
+### Un plan versionné se corrige à la FIN, une fois, contre le code livré
+
+Les deux dernières erreurs du même plan — une contradiction entre son Step 1 et son Step 3,
+et cinq comptes de tests périmés — viennent d'un plan **jamais relu comme un tout**. La
+correction faite **au milieu** du lot en donne la preuve involontaire : elle a été périmée
+deux tâches plus loin par une décision de la tâche 4, et il a fallu la refaire.
+
+Et un errata placé en tête de document **n'atteint personne** : `scripts/task-brief PLAN N`
+n'extrait que le texte d'une seule tâche. La correction qui compte est celle qu'on pose
+**dans la tâche**, à l'endroit du code fautif.
+
 ## Tests
 
 `*.spec.ts` / `*.spec.tsx`, colocated. No snapshots. Bar: `npm test`,
 `npm run typecheck`, `npm run lint` green.
+
+### Un test par conditionnelle, dont la fixture rend la condition vraie ET fausse
+
+Le lot du partage d'écran a produit **huit trous de couverture**, tous invisibles à la
+lecture et tous trouvés par mutation. Ce ne sont pas huit erreurs : c'est **une erreur
+répétée huit fois**, et elle a toujours la même forme.
+
+> **Le test assertait un RÉSULTAT sans jamais faire varier la valeur sur laquelle le code
+> BRANCHE.**
+
+`sinceFor` sans horloge qui avance, `forgetAbsent` sans sid qui revienne, `mirror` et
+`Tile.source` sans fixture jamais `'screen'`, le départage à égalité avec deux instants
+toujours distincts, le cadrage avec des fixtures homogènes, et trois des cinq bascules de
+`landscape`. Chaque fois, la même chose : l'implémentation aurait pu être une constante.
+
+C'est détectable **à l'écriture**, pas seulement par mutation : **compter les
+conditionnelles, exiger un test par conditionnelle dont la fixture rend la condition vraie
+_et_ fausse, et dont l'assertion observe la valeur que cette condition sélectionne.**
+`stage.tsx` fait dépendre **cinq** endroits de `landscape` ; le plan proposait **une**
+mutation et deux tests. Le compte était faisable avant d'écrire la tâche.
+
+### Muter la branche, jamais le prédicat qui l'alimente
+
+C'est ce qui distingue une mutation qui prouve d'une mutation qui rassure. Figer
+`landscape` rougit dès qu'**une seule** des cinq branches est observée — d'où la fausse
+assurance : trois branches sur cinq n'étaient gardées par rien et la mutation passait
+quand même au rouge. Muter `styles.filmstripColumn → styles.filmstrip` ne rougissait
+**rien**, et c'est cette mutation-là qui disait la vérité.
+
+Une mutation en amont du branchement teste la **somme** des gardes. Une mutation sur la
+branche teste **cette** garde. Seule la seconde localise un trou.
+
+### Espionner un export de module : `import * as X` ne suffit pas, et c'est indétectable
+
+`jest.spyOn(RN, 'useWindowDimensions')` posé sur `import * as RN from 'react-native'`
+**n'atteint pas le composant**. Le `_interopRequireWildcard` de Babel copie les
+**descripteurs d'accesseur** du module dans un objet de namespace distinct : avant tout
+espion, les deux objets exposent donc la même fonction — `raw.fn === ns.fn` rend `true`,
+et rien n'a l'air anormal. La divergence naît **au moment du `spyOn`** : la propriété étant
+`configurable`, jest la redéfinit **sur la copie seule**, et l'objet brut que lit l'import
+nommé du composant garde son getter d'origine. L'espion est réel, il fonctionne, et il est
+posé sur un objet que le composant ne touche jamais.
+
+**Le piège ne rend pas la suite verte. Il rend définitivement vertes les assertions qui
+tombent sur la valeur par défaut.** Mesuré : sur six tests d'orientation écrits ainsi, les
+trois qui attendaient le paysage échouaient bruyamment, et les trois qui attendaient le
+portrait passaient **à vide** — ils auraient passé contre une implémentation nulle, la prop
+valant déjà `true`. Un copier-coller se fait donc attraper, mais par le mauvais test, et la
+moitié de la suite reste du poids mort à jamais.
+
+La forme qui marche est `const RN: typeof import('react-native') = require('react-native');`
+— précédents : `src/auth/accounts.spec.ts:162-165` et `src/screens/room/stage.spec.tsx`. Elle
+demande un `eslint-disable-next-line @typescript-eslint/no-require-imports`, ciblé sur la
+seule ligne, avec son motif écrit au-dessus.
+
+**Et un fichier qui espionne un objet de module partagé doit appeler `jest.restoreAllMocks()`
+dans son `beforeEach`.** Dix-huit fichiers de spec le font déjà ; celui qui l'oublie laisse
+son dernier bouchon fuir vers les tests suivants, qui lisent alors une dimension qu'ils n'ont
+pas posée. Inoffensif tant que personne n'ajoute un test de disposition à la suite — et
+invisible le jour où quelqu'un le fait.
 
 **`@testing-library/react-native` 14 is asynchronous.** `render`, `fireEvent` and its
 `.press` / `.changeText` shorthands, `renderHook` and `cleanup` all return promises

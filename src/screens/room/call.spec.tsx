@@ -1,5 +1,6 @@
 import { VideoTrack } from '@livekit/react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Track } from 'livekit-client';
 import React from 'react';
 import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
@@ -158,7 +159,14 @@ const mockRoom: {
     get attributes(): Record<string, string> {
       return mockLocalAttributes;
     },
-    getTrackPublication: () => mockCameraPublication,
+    // Doit distinguer la source : une réponse indifférente au paramètre
+    // fabriquerait un faux partage d'écran local dès qu'un test pose
+    // `mockCameraPublication`, puisque `src/call/participants.ts` lit aussi
+    // `Track.Source.ScreenShare`. C'est exactement ce qui rendait
+    // `tile-me:screen` réel et faisait passer deux tests ci-dessous pour la
+    // mauvaise raison, avant ce correctif.
+    getTrackPublication: (source: Track.Source) =>
+      source === Track.Source.Camera ? mockCameraPublication : undefined,
   },
   remoteParticipants: new Map<string, unknown>(),
   get metadata(): string | undefined {
@@ -352,8 +360,8 @@ describe('CallScreen', () => {
     // affiche vraiment, personne ici ne peut le vérifier.
     await render(withPaper(<CallScreen />));
 
-    await waitFor(() => expect(screen.getByTestId('tile-me')).toBeTruthy());
-    expect(screen.getByTestId('tile-placeholder-me')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('tile-me:camera')).toBeTruthy());
+    expect(screen.getByTestId('tile-placeholder-me:camera')).toBeTruthy();
   });
 
   it("suit les transitions publiées après l'abonnement", async () => {
@@ -1069,6 +1077,14 @@ describe('CallScreen, choix de la caméra', () => {
 
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
+    // Un double aveugle à `Track.Source` (voir le commentaire sur
+    // `mockRoom.localParticipant.getTrackPublication` plus haut) rendrait
+    // `mockCameraPublication` aussi pour `Track.Source.ScreenShare`,
+    // fabriquant un partage d'écran local fantôme. `tile-me:screen`
+    // apparaîtrait dans la bande et déplacerait `mock.lastCall` de la scène
+    // vers cette vignette fantôme, faisant passer les deux assertions de
+    // miroir ci-dessous pour la mauvaise raison.
+    expect(screen.queryByTestId('tile-me:screen')).toBeNull();
     expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
 
     await settleMenus();
@@ -1088,6 +1104,12 @@ describe('CallScreen, choix de la caméra', () => {
 
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
+    // Le pendant du test précédent, et pour exactement la même raison : ce
+    // test-ci lit `mock.lastCall` deux fois, donc un partage local fantôme le
+    // ferait passer pour la mauvaise raison tout autant que son voisin. Deux
+    // tests adjacents portant la même vulnérabilité, une seule garde corrigée,
+    // c'est l'autre qui redeviendrait le trou.
+    expect(screen.queryByTestId('tile-me:screen')).toBeNull();
     expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
 
     await settleMenus();
