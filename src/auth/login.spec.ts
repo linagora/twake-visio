@@ -47,6 +47,37 @@ describe('signIn', () => {
     expect(result.ok).toBe(true);
   });
 
+  // Le défaut mesuré n'était pas dans buildAuthorizeUrl mais ici : signIn ne
+  // tirait aucun nonce. LemonLDAP::NG authentifiait la personne, refusait
+  // d'émettre le code (« Nonce required »), et redirigeait vers `redirect_uri`
+  // en portant une erreur — l'écran restait sur une route inconnue.
+  //
+  // La seconde assertion est celle qui compte : elle interdit de recycler le
+  // state en nonce. Une seule valeur volée désarmerait sinon les deux
+  // protections d'un coup.
+  it('envoie un nonce imprévisible, distinct du state', async () => {
+    let authorizeUrl = '';
+    jest.spyOn(webBrowser, 'openAuthSessionAsync').mockImplementation(async (url) => {
+      authorizeUrl = url;
+      const state = new URL(url).searchParams.get('state');
+      return { type: 'success', url: `twakevisio://callback?code=abc&state=${state}` } as never;
+    });
+    jest.spyOn(oidc, 'exchangeCode').mockResolvedValue({
+      ok: true,
+      value: { accessToken: 'at', refreshToken: 'rt', idToken: null, expiresAt: Date.now() + 1000 },
+    });
+    jest.spyOn(users, 'fetchMe').mockResolvedValue({
+      ok: true,
+      value: { id: 'u-1', email: 'ada@linagora.com', displayName: 'Ada' },
+    });
+
+    await signIn('https://meet.linagora.com');
+
+    const params = new URL(authorizeUrl).searchParams;
+    expect(params.get('nonce')).toMatch(/^[0-9a-f]{32}$/);
+    expect(params.get('nonce')).not.toBe(params.get('state'));
+  });
+
   it('rejette une réponse dont le state ne correspond pas', async () => {
     jest.spyOn(webBrowser, 'openAuthSessionAsync').mockResolvedValue({
       type: 'success',

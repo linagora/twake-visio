@@ -20,7 +20,10 @@ export type LoginError =
 
 export type LoginResult = { ok: true; value: Account } | { ok: false; error: LoginError };
 
-function makeState(): string {
+// Seize octets tirés du générateur de la plateforme, rendus en hexadécimal.
+// Sert au `state` comme au `nonce`, qui ont la même exigence — être
+// imprévisible — mais jamais la même valeur : voir `buildAuthorizeUrl`.
+function randomHex(): string {
   return Array.from(getRandomBytes(16))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -31,8 +34,9 @@ export async function signIn(serverUrl: string, loginHint?: string): Promise<Log
   if (!instance.ok) return { ok: false, error: instance.error };
 
   const pkce = await createPkcePair();
-  const state = makeState();
-  const authorizeUrl = buildAuthorizeUrl(instance.value, pkce, state, loginHint);
+  const state = randomHex();
+  const nonce = randomHex();
+  const authorizeUrl = buildAuthorizeUrl(instance.value, pkce, state, nonce, loginHint);
 
   // Navigateur système, jamais une WebView : RFC 8252.
   const session = await openAuthSessionAsync(authorizeUrl, OIDC_REDIRECT_URI);
