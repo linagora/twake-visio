@@ -50,7 +50,7 @@ Prises avec le partenaire, chacune dans le sens recommandé.
 | Qui gagne la scène quand quelqu'un partage ? | **L'écran, tant qu'il dure.** Les visages passent tous dans la bande, y compris celui qui parle. |
 | Deux partages simultanés ? | **Le plus récent prend la scène**, les autres restent dans la bande. |
 | Que voit-on du présentateur ? | **Son visage ET son écran.** Une personne peut occuper deux tuiles. |
-| Cadrage | **Par source** : `contain` pour un écran, `cover` pour une caméra. |
+| Cadrage | **Par source** : `contain` pour un écran. La caméra reste en `contain` — voir la correction ci-dessous. |
 | Paysage | **La scène prend toute la surface**, la bande passe sur le côté. |
 
 ## Architecture
@@ -145,8 +145,19 @@ La coquille dérive désormais son cadrage de `tile.source` :
 
 - **écran → `contain`.** On ne rogne jamais une diapositive : un texte coupé est
   un texte perdu.
-- **caméra → `cover`.** Remplit la surface et cadre le visage, ce qu'on attend
-  d'une vignette de visioconférence.
+- **caméra → `contain`, inchangé.** La décision initiale disait `cover` ; elle
+  était fausse, et le code portait déjà le contre-argument (`stage.tsx:110`) :
+  « `cover` remplirait un écran de téléphone en portrait avec une image de caméra
+  en paysage, donc en coupant les deux tiers du visage. » Vérifié en chiffres sur
+  l'écran de couverture d'un Pixel 10 Pro Fold — 1080×2364 — : une source 16:9 en
+  `cover` est agrandie à 4203 px de large puis rognée à 1080, soit **26 % de
+  l'image visible**.
+
+  Aucune des deux valeurs n'est bonne pour une caméra : l'une gaspille, l'autre
+  coupe. **Les bandes noires ne sont donc pas un défaut de cadrage mais de mise
+  en page** — une scène portrait qui montre une source paysage. La réponse est la
+  grille, et elle est hors de ce lot. On garde `contain`, qui au moins ne ment
+  pas sur ce qui est filmé.
 
 Les vignettes de la bande restent en `cover`, sauf un écran, qui y passe aussi en
 `contain` — une miniature de diapositive rognée n'est pas reconnaissable.
