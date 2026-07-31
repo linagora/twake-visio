@@ -59,7 +59,7 @@
   "waiting.refuse": "Rifiuta",
   "waiting.others": "altri {{count}} in attesa",
   "recording.start": "Registra la riunione",
-  "recording.stop": "Interrompi la registrazione",
+  "recording.stop": "Termina la registrazione",
   "recording.starting": "Avvio della registrazione…",
   "recording.active": "Registrazione in corso",
   "recording.transcriptActive": "Trascrizione in corso",
