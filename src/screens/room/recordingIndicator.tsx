@@ -14,7 +14,7 @@ const styles = StyleSheet.create({
   root: { alignItems: 'center', paddingVertical: tokens.spacing.sm },
   // `call.tsx` force un fond sombre dans les deux schémas alors que le thème
   // Paper suit le schéma système : sans cette couleur explicite, le libellé
-  // retombe sur `theme.colors.onSurface` — 1,08:1, invisible. 16,66:1 avec.
+  // retombe sur `theme.colors.onSurface` — 1,08:1, invisible. 16,65:1 avec.
   text: { color: tokens.color.textDark },
 });
 

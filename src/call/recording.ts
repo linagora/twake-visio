@@ -22,7 +22,16 @@ export type RoomRecordingSignal = {
   readonly isRecording: boolean;
 };
 
-const IDLE: RecordingState = { phase: 'idle', mode: null };
+// Un littéral frais à chaque appel, jamais un objet partagé : `readonly`
+// bloque la mutation au typage, pas à l'exécution, et un appelant qui
+// contournerait le typage empoisonnerait tous les repos suivants s'il
+// recevait toujours la même référence. Le coût est nul : `getSnapshot()`
+// (`src/call/recordingStore.ts`) mémorise déjà sa propre valeur entre deux
+// appels tant que rien n'a changé, ce qui suffit à la stabilité
+// référentielle qu'exige `useSyncExternalStore`.
+function makeIdleState(): RecordingState {
+  return { phase: 'idle', mode: null };
+}
 
 // `metadata` est une chaîne libre, partagée avec d'autres fonctionnalités et
 // écrite par un serveur que nous ne contrôlons pas : tout ce qui n'est pas un
@@ -50,12 +59,12 @@ function readMode(raw: unknown): RecordingMode | null {
 // contradictoires, ce qui, sur un signal de consentement, est une valeur en soi.
 export function deriveRecordingState(signal: RoomRecordingSignal): RecordingState {
   const metadata = readMetadata(signal.metadata);
-  if (metadata === null) return IDLE;
+  if (metadata === null) return makeIdleState();
 
   // `egress_ended` supprime les deux clés : l'absence de mode est l'état de
   // repos.
   const rawMode = metadata['recording_mode'];
-  if (typeof rawMode !== 'string') return IDLE;
+  if (typeof rawMode !== 'string') return makeIdleState();
   const mode = readMode(rawMode);
 
   const status = metadata['recording_status'];
