@@ -81,6 +81,23 @@ la cause qu'on garde, pas le symptôme. Précédents : `participantsPanel.spec.t
 plus du dépôt), `waitingBanner.spec.tsx`, `cameraMenu.spec.tsx`,
 `recordingIndicator.spec.tsx`, `recordingControl.spec.tsx`.
 
+**Deux paquets déclarent ces matchers sous les mêmes noms, et ce n'est pas celui qu'on
+croit qui reste en place.** `jest.setup.ts` importe `@testing-library/jest-native/extend-expect`,
+chargé par `setupFilesAfterEnv` — donc avant le module de test. Chaque spec importe ensuite
+`@testing-library/react-native`, dont `dist/index.js:6` fait lui-même
+`require('./matchers/extend-expect')` : un second `expect.extend`, plus tardif, qui
+remplace le premier pour tout nom commun. Sur les douze matchers de `jest-native`
+(`extend-expect.js`), dix sont ainsi repris par RNTL 14 — `toHaveStyle`,
+`toHaveTextContent`, `toBeVisible`, `toBeDisabled`, `toBeEnabled`, `toHaveProp`,
+`toContainElement`, `toBeOnTheScreen`, `toBeEmptyElement`, `toHaveAccessibilityValue` — ;
+seuls `toHaveAccessibilityState` et `toBeEmpty` restent ceux de `jest-native`, absents du
+paquet qui charge en second. Ce n'est pas cosmétique : toute la doctrine ci-dessus tient
+sur `toHaveStyle`, et `toHaveTextContent` en hérite la même rigueur dès qu'on lui passe une
+chaîne — RNTL compare la chaîne **entière** (`matches()`, `dist/matches.js:8-19`,
+`exact = true` par défaut → `normalizedText === normalizedMatcher`), quand `jest-native`
+(`dist/utils.js:114-119`) aurait cherché une sous-chaîne par `includes()`. Seule une
+**regex** cherche un fragment sous RNTL 14.
+
 **Elle vaut aussi pour la surface**, pas seulement pour le texte posé dessus : un `Menu`
 expose son `Surface` sous le `testID` `` `${testID}-surface` `` (`Menu.tsx:680`), donc
 `toHaveStyle({ backgroundColor: tokens.color.surfaceDark })` s'y applique. Précédent :
@@ -97,6 +114,17 @@ d'un `IconButton` à icône-chaîne (`icon="dots-vertical"`, le cas par défaut)
 `accessibilityElementsHidden`. Aucun des sept `IconButton` de la barre ne garde son
 `iconColor`, `leave-btn` compris ; n'en fabrique pas un. Passer `icon` en fonction rendrait
 la garde possible, mais c'est un changement d'architecture, pas une correction de test.
+
+**`Button` fait un autre choix que `IconButton` pour son propre contenu — un composant
+différent, pas une exception à la borne qui précède.** `Button.tsx:405` (react-native-paper
+5.15.3) pose ``testID={`${testID}-text`}`` sur son `Text` interne, donc
+`toHaveStyle({ color: … })` s'y applique bien — `textColor` compris, pour ses variantes
+`text` et `outlined`. Précédents : `participantsPanel.spec.tsx:230-249` (les trois boutons
+de modération) et `handBanner.spec.tsx:72`. L'absence de ce fait a produit une affirmation
+fausse dans un plan d'implémentation, rattrapée seulement parce qu'un implémenteur a refusé
+de la croire et l'a vérifiée à la source. `` `${testID}-text` `` reste une convention
+**interne** à Paper, pas un contrat d'API : une montée de version peut la renommer sans
+préavis, et le rouge de la suite serait alors le seul signal.
 
 **Et jamais pour `rippleColor`** — ne la cherche pas là non plus, elle est hors de portée
 pour une autre raison. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
