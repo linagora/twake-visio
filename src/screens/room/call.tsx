@@ -38,7 +38,12 @@ import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
 import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
-import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
+import {
+  BAR_HIT_SLOP,
+  BAR_ICON_COLOR,
+  BAR_RIPPLE_COLOR,
+  barStyles,
+} from 'src/screens/room/controlBar';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
@@ -556,6 +561,7 @@ export function CallScreen(): React.ReactElement {
           testID="mic-toggle"
           icon={micOn ? 'microphone' : 'microphone-off'}
           iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
           style={barStyles.button}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleMic}
@@ -567,6 +573,7 @@ export function CallScreen(): React.ReactElement {
             testID="camera-toggle"
             icon={cameraOn ? 'video' : 'video-off'}
             iconColor={BAR_ICON_COLOR}
+            rippleColor={BAR_RIPPLE_COLOR}
             style={barStyles.button}
             hitSlop={BAR_HIT_SLOP}
             onPress={handleToggleCamera}
@@ -591,6 +598,7 @@ export function CallScreen(): React.ReactElement {
           testID="share-btn"
           icon="share-variant"
           iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
           style={barStyles.button}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleShare}
@@ -600,6 +608,7 @@ export function CallScreen(): React.ReactElement {
           testID="participants-toggle"
           icon="account-multiple"
           iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
           style={barStyles.button}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleParticipants}
@@ -611,6 +620,7 @@ export function CallScreen(): React.ReactElement {
           // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
           // seuil WCAG AA, et la scène est sombre dans les deux schémas.
           iconColor={tokens.color.dangerDark}
+          rippleColor={BAR_RIPPLE_COLOR}
           style={barStyles.button}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleLeave}

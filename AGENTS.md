@@ -51,6 +51,14 @@ Cela vaut pour `Text`, pour le `titleStyle` d'un `List.Item` — sa prop `style`
 pas le titre —, pour le `textColor` d'un `Button` en mode `text` ou `outlined`, et pour
 l'`iconColor` d'un `IconButton`.
 
+**Et pour le `rippleColor` de tout `IconButton` ou `Menu.Item`.** Sans lui, Paper calcule
+l'ondulation depuis `theme.colors.onSurface` — le même quasi-noir en schéma clair, sur le
+même fond forcé sombre. Le périmètre A a livré ce défaut avec tous ses tests au vert :
+**1,13:1**, invisible. Ce n'est pas de l'illisibilité, c'est une affordance perdue — aucun
+retour visuel à l'appui. Voir `controlBar.ts` → `BAR_RIPPLE_COLOR`, et son commentaire pour
+le détail : une couleur fournie ici est utilisée telle quelle par Paper (`IconButton/utils.ts`,
+`Menu/utils.ts`), sans l'alpha qu'il applique à sa valeur par défaut.
+
 **Et jamais de bouton `disabled` sur cet écran.** `IconButton/utils.ts:88-93` teste
 `disabled` **avant** `customIconColor` et rend `theme.colors.onSurfaceDisabled`, un
 quasi-noir en thème clair : aucune couleur explicite ne peut le rattraper. Masquer une

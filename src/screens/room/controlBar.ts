@@ -45,6 +45,21 @@ export const barStyles = StyleSheet.create({
 // Ce qui n'est pas actionnable n'est pas rendu.
 export const BAR_ICON_COLOR = tokens.color.textDark;
 
+// Sans lui, Paper calcule l'ondulation depuis `theme.colors.onSurface` à 12 %
+// d'opacité (`TouchableRipple/utils.ts:38-40`) — `textLight`, le schéma clair
+// par défaut de la plupart des appareils, sur un fond que `call.tsx` force
+// sombre dans les deux schémas : 1,13:1, invisible. Ce n'est pas de
+// l'illisibilité, c'est une affordance perdue : aucun retour à l'appui,
+// « raccrocher » compris.
+//
+// Vérifié dans les deux sources (`IconButton/utils.ts` et `Menu/utils.ts`,
+// mêmes fonctions `getRippleColor`) : une couleur fournie ici est utilisée
+// telle quelle, sans l'alpha que Paper applique à sa valeur par défaut — le
+// retour anticipé sur une couleur explicite saute ce calcul. L'ondulation est
+// donc pleine, pas translucide : un compromis assumé plutôt qu'un défaut, sur
+// un fond assez sombre pour qu'un rendu à 12 % y reste douteux.
+export const BAR_RIPPLE_COLOR = tokens.color.textDark;
+
 // Le `hitSlop` de 10 dp que Paper pose par défaut est plus large que les écarts
 // retenus : deux zones tactiles voisines se recouvriraient, et le recouvrement
 // irait au frère rendu en dernier. Généreux là où rien ne gêne, exact là où ça

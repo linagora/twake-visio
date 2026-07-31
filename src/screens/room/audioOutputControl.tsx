@@ -6,7 +6,12 @@ import { IconButton, Menu, Text } from 'react-native-paper';
 
 import type { AudioRouteControl } from 'src/call/audioRoute';
 import { audioOutputNameKey, type AudioOutputKind } from 'src/call/devices';
-import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
+import {
+  BAR_HIT_SLOP,
+  BAR_ICON_COLOR,
+  BAR_RIPPLE_COLOR,
+  barStyles,
+} from 'src/screens/room/controlBar';
 
 export type AudioOutputControlProps = {
   readonly mode: AudioRouteControl;
@@ -40,6 +45,7 @@ export function AudioOutputControl({
       testID="audio-output-btn"
       icon="volume-high"
       iconColor={BAR_ICON_COLOR}
+      rippleColor={BAR_RIPPLE_COLOR}
       style={barStyles.button}
       hitSlop={BAR_HIT_SLOP}
       onPress={onPress}
@@ -82,6 +88,7 @@ export function AudioOutputControl({
           key={kind}
           testID={`audio-output-option-${kind}`}
           titleStyle={barStyles.menuTitle}
+          rippleColor={BAR_RIPPLE_COLOR}
           // Un `leadingIcon` fonction ne reçoit jamais la couleur que Paper
           // calcule pour un `leadingIcon` chaîne : `Icon.tsx` (react-native-
           // paper) l'appelle avec `{ color, size, direction, testID }`, mais

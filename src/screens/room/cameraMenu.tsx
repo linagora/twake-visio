@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { IconButton, Menu } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
-import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
+import {
+  BAR_HIT_SLOP,
+  BAR_ICON_COLOR,
+  BAR_RIPPLE_COLOR,
+  barStyles,
+} from 'src/screens/room/controlBar';
 
 export type CameraMenuProps = {
   readonly cameras: readonly CameraChoice[];
@@ -40,6 +45,7 @@ export function CameraMenu({
           testID="camera-menu-btn"
           icon="chevron-up"
           iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
           style={barStyles.button}
           hitSlop={BAR_HIT_SLOP}
           onPress={() => {
@@ -58,6 +64,7 @@ export function CameraMenu({
           key={camera.deviceId}
           testID={`camera-option-${camera.deviceId}`}
           titleStyle={barStyles.menuTitle}
+          rippleColor={BAR_RIPPLE_COLOR}
           leadingIcon={
             camera.deviceId === activeDeviceId
               ? () => (
