@@ -142,8 +142,9 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
   // rangée et une bande en colonne, sans rien connaître des tuiles qu'elle
   // contient. Il ne suffira plus le jour où la refonte de la grille comparera
   // le rapport de la fenêtre à celui des tuiles plutôt qu'à 1 — l'écran interne
-  // de ce même pliable donne un rapport de 0,965, où ce prédicat binaire
-  // retourne toute la disposition sur 3,5 % de géométrie.
+  // de ce même pliable donne 2076÷2152 ≈ 0,965 (calculé ici, pas cité d'une
+  // fiche produit), où ce prédicat binaire retourne toute la disposition sur
+  // 3,5 % de géométrie.
   const landscape = width > height;
 
   return (
