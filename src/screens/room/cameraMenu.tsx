@@ -1,4 +1,3 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, Menu } from 'react-native-paper';
@@ -10,6 +9,7 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { MenuCheck } from 'src/screens/room/menuCheck';
 
 export type CameraMenuProps = {
   readonly cameras: readonly CameraChoice[];
@@ -67,14 +67,7 @@ export function CameraMenu({
           rippleColor={BAR_RIPPLE_COLOR}
           leadingIcon={
             camera.deviceId === activeDeviceId
-              ? () => (
-                  <MaterialCommunityIcons
-                    testID={`camera-check-${camera.deviceId}`}
-                    name="check"
-                    size={24}
-                    style={barStyles.check}
-                  />
-                )
+              ? () => <MenuCheck testID={`camera-check-${camera.deviceId}`} />
               : undefined
           }
           // Composé par i18next, jamais en JavaScript : une chaîne assemblée

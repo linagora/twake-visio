@@ -1,4 +1,3 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -12,6 +11,7 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { MenuCheck } from 'src/screens/room/menuCheck';
 
 export type AudioOutputControlProps = {
   readonly mode: AudioRouteControl;
@@ -89,25 +89,12 @@ export function AudioOutputControl({
           testID={`audio-output-option-${kind}`}
           titleStyle={barStyles.menuTitle}
           rippleColor={BAR_RIPPLE_COLOR}
-          // Un `leadingIcon` fonction ne reçoit jamais la couleur que Paper
-          // calcule pour un `leadingIcon` chaîne : `Icon.tsx` (react-native-
-          // paper) l'appelle avec `{ color, size, direction, testID }`, mais
-          // rien n'oblige la fonction à lire cet argument, et un `View` sans
-          // fond ni contenu resterait de toute façon invisible quelle que soit
-          // la couleur reçue — même panne que `cameraMenu.tsx` avant sa
-          // correction (commit 607f6f5). La coche est donc un vrai glyphe,
-          // rendu directement, couleur explicite.
+          // La coche : voir le commentaire de `barStyles.check`
+          // (`controlBar.ts`) pour pourquoi c'est `MenuCheck`, un glyphe rendu
+          // directement, plutôt qu'un `leadingIcon` chaîne résolu par
+          // `Menu.Item`.
           leadingIcon={
-            kind === chosen
-              ? () => (
-                  <MaterialCommunityIcons
-                    testID={`audio-output-check-${kind}`}
-                    name="check"
-                    size={24}
-                    style={barStyles.check}
-                  />
-                )
-              : undefined
+            kind === chosen ? () => <MenuCheck testID={`audio-output-check-${kind}`} /> : undefined
           }
           title={t(audioOutputNameKey(kind))}
           onPress={() => {

@@ -29,7 +29,8 @@ export const barStyles = StyleSheet.create({
     paddingVertical: tokens.spacing.sm,
   },
   // La coche du menu : un glyphe `MaterialCommunityIcons` rendu directement
-  // par `cameraMenu.tsx`, jamais par la résolution habituelle d'un
+  // par `MenuCheck` (`menuCheck.tsx`), partagé par `cameraMenu.tsx` et
+  // `audioOutputControl.tsx`, jamais par la résolution habituelle d'un
   // `Menu.Item`. Pour un `leadingIcon` fonction, `Icon.tsx` (react-native-paper)
   // appelle `s({ color, size, direction, testID })`, mais rien n'oblige la
   // fonction à lire cet argument — la nôtre ne le faisait pas, et un `View`
