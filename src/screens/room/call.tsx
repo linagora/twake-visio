@@ -32,6 +32,7 @@ import {
 } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
+import { createRecordingStore } from 'src/call/recordingStore';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
@@ -45,6 +46,7 @@ import {
   barStyles,
 } from 'src/screens/room/controlBar';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
+import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
 import { tokens } from 'src/ui/tokens';
@@ -220,6 +222,15 @@ export function CallScreen(): React.ReactElement {
     () => [roomView.local, ...roomView.remotes],
     [roomView],
   );
+
+  // Une troisième lecture de la Room, indépendante des deux autres :
+  // `getSnapshot()` lit `room.metadata` directement, sans attendre aucun
+  // événement — le SDK n'émet pas `RoomMetadataChanged` à la jonction, et un
+  // indicateur qui l'attendrait resterait éteint toute la séance pour qui
+  // rejoint une réunion déjà enregistrée. Déclaré ici, avec les autres Hooks,
+  // avant les sorties anticipées.
+  const recordingStore = useMemo(() => createRecordingStore(session.getRoom()), [session]);
+  const recordingState = useSyncExternalStore(recordingStore.subscribe, recordingStore.getSnapshot);
 
   // `Room.id` est `string | null` depuis le premier commit d'API : distinct
   // d'`access?.room.id`, dont les usages plus bas l'écrasaient en `''` — au
@@ -533,6 +544,10 @@ export function CallScreen(): React.ReactElement {
         remaining={Math.max(waiting.length - 1, 0)}
         onAnswer={handleAnswerEntry}
       />
+
+      {/* Vu de tout le monde, y compris de qui n'a aucun bouton : ne rend rien
+          au repos, donc toujours monté, jamais enveloppé d'une condition. */}
+      <RecordingIndicator state={recordingState} />
 
       {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
           deux se disputeraient la même vidéo, qui est la raison d'être de cet

@@ -114,9 +114,20 @@ let mockCameraPublication: unknown;
 // lit : un participant local, une carte de distants, et une émission
 // d'événements à laquelle s'abonner. Un objet vide passait tant que personne ne
 // lisait la Room ; il ferait maintenant tomber l'écran au premier rendu.
+//
+// `mockRoomMetadata`/`mockRoomIsRecording` sont les deux membres que
+// `createRecordingStore` lit directement (`src/call/recordingStore.ts`,
+// `getSnapshot`) : des accesseurs, pas des champs figés, pour qu'un test
+// puisse poser leur valeur avant le montage et simuler ce que voit qui
+// rejoint une réunion déjà en cours d'enregistrement.
+let mockRoomMetadata: string | undefined;
+let mockRoomIsRecording = false;
+
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
+  readonly metadata: string | undefined;
+  readonly isRecording: boolean;
   on: () => unknown;
   off: () => unknown;
 } = {
@@ -127,6 +138,12 @@ const mockRoom: {
     getTrackPublication: () => mockCameraPublication,
   },
   remoteParticipants: new Map<string, unknown>(),
+  get metadata(): string | undefined {
+    return mockRoomMetadata;
+  },
+  get isRecording(): boolean {
+    return mockRoomIsRecording;
+  },
   on: () => mockRoom,
   off: () => mockRoom,
 };
@@ -221,6 +238,8 @@ beforeEach(() => {
   // Un test de modération peut peupler la Room de participants distants ;
   // sans ce nettoyage, ils survivraient au test suivant.
   mockRoom.remoteParticipants.clear();
+  mockRoomMetadata = undefined;
+  mockRoomIsRecording = false;
   jest.mocked(VideoTrack).mockClear();
 
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
@@ -1298,5 +1317,49 @@ describe('CallScreen, sortie audio', () => {
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
     expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
+  });
+});
+
+const STARTED_METADATA = JSON.stringify({
+  recording_mode: 'screen_recording',
+  recording_status: 'started',
+});
+
+describe('CallScreen, indicateur d’enregistrement', () => {
+  it('montre l’indicateur à qui rejoint une réunion déjà enregistrée', async () => {
+    // Le SDK n'émet PAS `RoomMetadataChanged` à la jonction : un indicateur
+    // bâti sur l'abonnement seul resterait éteint toute la séance.
+    mockRoomMetadata = STARTED_METADATA;
+    mockRoomIsRecording = true;
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.active'),
+    );
+  });
+
+  it('n’affiche rien quand aucun enregistrement ne tourne', async () => {
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    expect(screen.queryByTestId('recording-indicator')).toBe(null);
+  });
+
+  it('montre l’indicateur à qui n’a pas le droit d’enregistrer', async () => {
+    // Ce qu'on peut faire et ce qu'on doit savoir sont deux questions
+    // différentes. Une seconde phase et un second mode, pour qu'un libellé en
+    // dur ne passe pas.
+    mockRoomMetadata = JSON.stringify({
+      recording_mode: 'transcript',
+      recording_status: 'saving',
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.saving'),
+    );
   });
 });
