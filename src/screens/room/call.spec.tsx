@@ -1472,12 +1472,22 @@ describe('CallScreen, commande d’enregistrement', () => {
   it('arrête l’enregistrement en cours et dit son échec propre', async () => {
     // Le 404 de l'arrêt veut dire « pas encore démarré », jamais « salon
     // introuvable ».
+    // `r-7`, pas `r-1` : un identifiant en dur passerait le test avec le salon
+    // par défaut.
     mockRoomMetadata = STARTED_METADATA;
     mockRoomIsRecording = true;
     const stop = jest
       .spyOn(recordingApi, 'stopRecording')
       .mockResolvedValue({ ok: false, error: { kind: 'not-found' } });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: 'r-7', slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+        livekitUrl: 'wss://lk',
+        token: 'lk',
+        isAdministrable: true,
+      },
+    });
 
     await render(withPaper(<CallScreen />));
     await openMore();
@@ -1486,7 +1496,7 @@ describe('CallScreen, commande d’enregistrement', () => {
     );
     await fireEvent.press(screen.getByTestId('recording-toggle'));
 
-    await waitFor(() => expect(stop).toHaveBeenCalledWith(ACCOUNT, 'r-1'));
+    await waitFor(() => expect(stop).toHaveBeenCalledWith(ACCOUNT, 'r-7'));
     await waitFor(() =>
       expect(screen.getByTestId('call-notice')).toHaveTextContent('recording.errorNotActive'),
     );
