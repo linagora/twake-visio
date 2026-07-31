@@ -74,18 +74,31 @@ describe('readCameras', () => {
     ).toEqual([{ deviceId: '0', facing: 'user', nameKey: 'call.cameraFront', ordinal: null }]);
   });
 
-  it('traduit "front" en user et "unknown" en unknown', () => {
+  it('traduit "front" en user et "unknown" en unknown, et l\'absence de la clé vers unknown itou', () => {
     // Android rend "front"/"environment" ; iOS peut rendre "unknown" pour une
     // caméra externe ou de position non spécifiée. `FacingMode` de `media.ts`
     // ne connaît que deux valeurs : la troisième s'arrête ici.
+    //
+    // La troisième entrée, sans la clé `facing` du tout, éprouve le repli
+    // `'facing' in entry ? readFacing(entry.facing) : 'unknown'` : `facing`
+    // est un champ non standard, absent d'un `MediaDeviceInfo` conforme —
+    // c'est donc le chemin le plus plausible d'une implémentation future, et
+    // aucune fixture ne le prenait avant celle-ci ; une mutation du littéral
+    // `'unknown'` de ce repli ne se voyait nulle part.
     expect(
       readCameras([
         { kind: 'videoinput', deviceId: 'a', facing: 'front' },
         { kind: 'videoinput', deviceId: 'b', facing: 'unknown' },
+        { kind: 'videoinput', deviceId: 'c' },
       ]),
     ).toEqual([
       { deviceId: 'a', facing: 'user', nameKey: 'call.cameraFront', ordinal: null },
-      { deviceId: 'b', facing: 'unknown', nameKey: 'call.cameraUnknown', ordinal: null },
+      // `b` et `c` partagent la même face résolue : deux caméras "unknown",
+      // donc numérotées comme le seraient deux caméras "front" ou
+      // "environment" — la règle de numérotation par face ne fait pas
+      // d'exception pour elle.
+      { deviceId: 'b', facing: 'unknown', nameKey: 'call.cameraUnknown', ordinal: 1 },
+      { deviceId: 'c', facing: 'unknown', nameKey: 'call.cameraUnknown', ordinal: 2 },
     ]);
   });
 
