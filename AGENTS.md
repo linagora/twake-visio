@@ -80,6 +80,16 @@ mais l'assertion étant une égalité stricte, **n'importe quel repli la fait é
 la cause qu'on garde, pas le symptôme. Précédents : `waitingBanner.spec.tsx`,
 `cameraMenu.spec.tsx`, `recordingIndicator.spec.tsx`.
 
+**Cette garde vaut pour le texte et les icônes, jamais pour `rippleColor`** — et ne la
+cherche pas là, elle est hors de portée. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
+donc `TouchableRipple.supported` (`TouchableRipple.native.tsx:130`) est faux et la branche
+empruntée n'expose la couleur que dans une vue d'ondulation **transitoire**, conditionnée
+par `pressed`. `jest.replaceProperty(Platform, 'OS', 'android')` — l'idiome pourtant en
+usage dans `audioRoute.spec.ts` — **ne suffit pas** : cette constante est calculée une fois
+au chargement du module, avant qu'aucun corps de test ne s'exécute. Il faudrait
+`jest.resetModules()` et un ré-import isolé. Aucun des composants de la barre n'a un tel
+test ; n'en fabrique pas un.
+
 ## Instance discovery has a deliberate fallback
 
 `/api/v1.0/config/` is the contract. `resolveOidcFromRedirect()` is a non-contractual
