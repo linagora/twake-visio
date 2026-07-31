@@ -42,6 +42,13 @@ describe('toggleHand', () => {
     );
   });
 
+  it('envoie une requête POST', async () => {
+    await toggleHand('https://meet.linagora.com', 'r-1', 'jwt-1', true);
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+  });
+
   it('porte le jeton LiveKit reçu en argument, et lui seul', async () => {
     await toggleHand('https://meet.linagora.com', 'r-1', 'jwt-de-salle', true);
 
