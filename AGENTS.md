@@ -240,6 +240,35 @@ et disparaît sans bruit à la première fusion qui le supprime.
 `*.spec.ts` / `*.spec.tsx`, colocated. No snapshots. Bar: `npm test`,
 `npm run typecheck`, `npm run lint` green.
 
+### Espionner un export de module : `import * as X` ne suffit pas, et c'est indétectable
+
+`jest.spyOn(RN, 'useWindowDimensions')` posé sur `import * as RN from 'react-native'`
+**n'atteint pas le composant**. Le `_interopRequireWildcard` de Babel copie les
+**descripteurs d'accesseur** du module dans un objet de namespace distinct : avant tout
+espion, les deux objets exposent donc la même fonction — `raw.fn === ns.fn` rend `true`,
+et rien n'a l'air anormal. La divergence naît **au moment du `spyOn`** : la propriété étant
+`configurable`, jest la redéfinit **sur la copie seule**, et l'objet brut que lit l'import
+nommé du composant garde son getter d'origine. L'espion est réel, il fonctionne, et il est
+posé sur un objet que le composant ne touche jamais.
+
+**Le piège ne rend pas la suite verte. Il rend définitivement vertes les assertions qui
+tombent sur la valeur par défaut.** Mesuré : sur six tests d'orientation écrits ainsi, les
+trois qui attendaient le paysage échouaient bruyamment, et les trois qui attendaient le
+portrait passaient **à vide** — ils auraient passé contre une implémentation nulle, la prop
+valant déjà `true`. Un copier-coller se fait donc attraper, mais par le mauvais test, et la
+moitié de la suite reste du poids mort à jamais.
+
+La forme qui marche est `const RN: typeof import('react-native') = require('react-native');`
+— précédents : `src/auth/accounts.spec.ts:162-165` et `src/screens/room/stage.spec.tsx`. Elle
+demande un `eslint-disable-next-line @typescript-eslint/no-require-imports`, ciblé sur la
+seule ligne, avec son motif écrit au-dessus.
+
+**Et un fichier qui espionne un objet de module partagé doit appeler `jest.restoreAllMocks()`
+dans son `beforeEach`.** Dix-huit fichiers de spec le font déjà ; celui qui l'oublie laisse
+son dernier bouchon fuir vers les tests suivants, qui lisent alors une dimension qu'ils n'ont
+pas posée. Inoffensif tant que personne n'ajoute un test de disposition à la suite — et
+invisible le jour où quelqu'un le fait.
+
 **`@testing-library/react-native` 14 is asynchronous.** `render`, `fireEvent` and its
 `.press` / `.changeText` shorthands, `renderHook` and `cleanup` all return promises
 since RNTL moved onto the `test-renderer` package. Every call needs `await`. Forget it
