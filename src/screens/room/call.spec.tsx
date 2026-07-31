@@ -1730,6 +1730,33 @@ describe('CallScreen, main levée', () => {
     });
   });
 
+  it('masque la commande du menu tant que la requête est en vol', async () => {
+    // Complément du test ci-dessus, côté menu cette fois : `HandControl` ne
+    // grise pas `hand-toggle` pendant l'appel, il ne le rend pas — même
+    // convention que `RecordingControl`, puisque Paper teste `disabled` avant
+    // toute couleur explicite sur cette surface sombre (voir `handControl.tsx`).
+    let settle: (value: ApiResult<void>) => void = () => undefined;
+    const toggle = jest.spyOn(hand, 'toggleHand').mockReturnValue(
+      new Promise<ApiResult<void>>((resolve) => {
+        settle = resolve;
+      }),
+    );
+
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    expect(screen.queryByTestId('hand-toggle')).toBeNull();
+
+    await act(async () => {
+      settle({ ok: true, value: undefined });
+    });
+  });
+
   it('montre sa position dans la file, celle du serveur et pas la première', async () => {
     // Deux mains levées avant la sienne : avec une seule, une position codée
     // en dur à 1 passerait.
