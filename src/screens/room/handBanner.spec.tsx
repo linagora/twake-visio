@@ -61,7 +61,16 @@ describe('HandBanner', () => {
     expect(screen.getByTestId('hand-banner-position')).toHaveStyle({
       color: tokens.color.textDark,
     });
-    // `mode="text"` retombe sur `theme.colors.primary` — 2,86:1 sur ce fond.
     expect(screen.getByTestId('hand-lower')).toHaveTextContent('call.lowerHand');
+    // Le `Text` interne d'un `Button` Paper porte un `testID` (`${testID}-text`,
+    // `Button.tsx:405` dans react-native-paper 5.15.3) et sa couleur y est bien
+    // lisible par `toHaveStyle` — vérifié directement (le plan affirmait le
+    // contraire), et déjà le précédent établi par
+    // `participantsPanel.spec.tsx:240-248` pour ce même `mode="text"`. Sans
+    // `textColor` explicite, `mode="text"` retombe sur `theme.colors.primary` —
+    // 2,86:1 sur ce fond.
+    expect(screen.getByTestId('hand-lower-text')).toHaveStyle({
+      color: tokens.color.primaryDark,
+    });
   });
 });
