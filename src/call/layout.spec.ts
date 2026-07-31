@@ -1,6 +1,5 @@
 import {
   selectLayout,
-  toTile,
   type VideoTrackRef,
   type ParticipantView,
   type RoomView,
@@ -274,10 +273,12 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
   // échangent leur vidéo au moindre changement de liste » — mais son hypothèse ne
   // tient plus : une personne qui partage produit DEUX tuiles.
   //
-  // Testé sur `toTile` directement, et non sur `selectLayout` comme le reste de
-  // ce fichier : `selectLayout` n'invoque encore `toTile` qu'avec la source
-  // 'camera' — une tâche à venir lui fera choisir 'screen' pour un présentateur.
-  // Le format de la clé, lui, n'a pas à attendre cette tâche pour être correct.
+  // Passe par `selectLayout`, comme le reste de ce fichier : `pickScreen` lui
+  // fait désormais emprunter la branche `'screen'` de `toTile`, donc plus besoin
+  // de l'appeler directement pour observer le format de la clé. La vérification
+  // porte sur l'ensemble du layout rendu (scène et bande), pas seulement sur les
+  // deux tuiles d'Alice : « montre le présentateur deux fois », plus bas, prouve
+  // déjà ces deux valeurs précises — celui-ci généralise à l'unicité globale.
   it('donne deux clés différentes au visage et à l’écran d’une même personne', () => {
     const alice = person('u-alice', {
       camera: fakeCamera('cam-1'),
@@ -285,21 +286,84 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
       screenSince: 1000,
     });
 
-    const keys = [toTile(alice, 'camera', 'user').key, toTile(alice, 'screen', 'user').key];
+    const layout = selectLayout(view(ME, [alice]), 'user');
 
+    const keys = [layout.stage.key, ...layout.filmstrip.map((tile) => tile.key)];
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain('u-alice:screen');
     expect(keys).toContain('u-alice:camera');
   });
 
-  // Même raison de passer par `toTile` directement que ci-dessus : personne,
-  // dans ce fichier, ne demande encore une tuile 'screen' à `selectLayout`.
+  // Passe désormais par `selectLayout`, pour la même raison que ci-dessus : Alice
+  // seule et en train de partager suffit à lui faire emprunter la branche
+  // `toTile(presenter, 'screen', facing)`.
   it('ne met jamais en miroir son propre écran partagé, même en caméra frontale', () => {
     // Sans la condition `source === 'camera'`, une tuile d'écran locale
     // hériterait du miroir de sa caméra — retournant tout texte affiché dessus,
     // ce qui est précisément ce qu'on partage.
     const me = { ...ME, screen: fakeCamera('scr-me'), screenSince: 1000 };
 
-    expect(toTile(me, 'screen', 'user').mirror).toBe(false);
+    const layout = selectLayout(view(me, []), 'user');
+
+    expect(layout.stage.mirror).toBe(false);
+  });
+});
+
+describe('un écran partagé prend la scène', () => {
+  // Le locuteur est délibérément QUELQU'UN D'AUTRE que le présentateur : si les
+  // deux étaient la même personne, une implémentation qui laisserait la parole
+  // décider passerait par coïncidence.
+  it('passe devant celui qui parle', () => {
+    const alice = person('u-alice', { screen: fakeCamera('scr-1'), screenSince: 1000 });
+    const bob = person('u-bob', { isSpeaking: true, camera: fakeCamera('cam-2') });
+
+    const layout = selectLayout(view(ME, [alice, bob]), 'user');
+
+    expect(layout.stage.source).toBe('screen');
+    expect(layout.stage.key).toBe('u-alice:screen');
+  });
+
+  // L'ordre d'insertion est l'INVERSE de l'ordre attendu : un tri qui rendrait
+  // le premier venu passerait sinon.
+  it('retient le plus récent quand deux personnes partagent', () => {
+    const ancien = person('u-alice', { screen: fakeCamera('scr-1'), screenSince: 1000 });
+    const recent = person('u-bob', { screen: fakeCamera('scr-2'), screenSince: 2000 });
+
+    const layout = selectLayout(view(ME, [recent, ancien]), 'user');
+
+    expect(layout.stage.key).toBe('u-bob:screen');
+  });
+
+  it('rend la scène à la parole quand le partage cesse', () => {
+    const alice = person('u-alice', { screen: null });
+    const bob = person('u-bob', { isSpeaking: true, camera: fakeCamera('cam-2') });
+
+    const layout = selectLayout(view(ME, [alice, bob]), 'user');
+
+    expect(layout.stage.source).toBe('camera');
+    expect(layout.stage.key).toBe('u-bob:camera');
+  });
+
+  it('montre le présentateur deux fois : son écran à la scène, son visage dans la bande', () => {
+    const alice = person('u-alice', {
+      camera: fakeCamera('cam-1'),
+      screen: fakeCamera('scr-1'),
+      screenSince: 1000,
+    });
+
+    const layout = selectLayout(view(ME, [alice]), 'user');
+
+    expect(layout.stage.key).toBe('u-alice:screen');
+    expect(layout.filmstrip.map((t) => t.key)).toContain('u-alice:camera');
+  });
+
+  it('laisse les autres partages dans la bande', () => {
+    const a = person('u-a', { screen: fakeCamera('scr-1'), screenSince: 1000 });
+    const b = person('u-b', { screen: fakeCamera('scr-2'), screenSince: 2000 });
+
+    const layout = selectLayout(view(ME, [a, b]), 'user');
+
+    expect(layout.stage.key).toBe('u-b:screen');
+    expect(layout.filmstrip.map((t) => t.key)).toContain('u-a:screen');
   });
 });

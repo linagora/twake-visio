@@ -133,11 +133,8 @@ function pickStage(view: RoomView): ParticipantView {
   return stage ?? view.local;
 }
 
-// Exportée pour ses seuls tests : `selectLayout` n'appelle encore cette fonction
-// qu'avec `'camera'` (voir plus bas), donc la branche `'screen'` n'est
-// observable de l'extérieur qu'en l'appelant directement — une tâche à venir
-// fera choisir `'screen'` à `selectLayout` pour un présentateur.
-export function toTile(participant: ParticipantView, source: TileSource, facing: FacingMode): Tile {
+// Traduit un participant et une source de piste en tuile prête pour l'affichage.
+function toTile(participant: ParticipantView, source: TileSource, facing: FacingMode): Tile {
   return {
     key: `${participant.identity}:${source}`,
     source,
@@ -154,18 +151,45 @@ export function toTile(participant: ParticipantView, source: TileSource, facing:
   };
 }
 
+// Qui partage, et depuis le plus longtemps ? Rend `null` si personne ne partage.
+//
+// À égalité d'instant — le cas de la jonction, où tous les partages en cours
+// sont découverts dans la même lecture — l'ordre stable départage. Arbitraire,
+// mais déterministe : personne n'a de raison d'attendre l'un plutôt que l'autre,
+// et une scène qui sauterait entre deux écrans serait pire que ce choix.
+function pickScreen(view: RoomView): ParticipantView | null {
+  let best: ParticipantView | null = null;
+  for (const p of [view.local, ...view.remotes]) {
+    if (p.screen === null || p.screenSince === null) continue;
+    if (best === null) {
+      best = p;
+      continue;
+    }
+    const bestSince = best.screenSince ?? 0;
+    if (p.screenSince > bestSince) best = p;
+    else if (p.screenSince === bestSince && compareStable(p, best) < 0) best = p;
+  }
+  return best;
+}
+
 // Fonction pure : mêmes entrées, mêmes vignettes. Tout ce qui décide de ce qui
 // s'affiche est ici ; la coquille de rendu ne fait que poser la liste.
 export function selectLayout(view: RoomView, facing: FacingMode): CallLayout {
-  const stage = pickStage(view);
+  const presenter = pickScreen(view);
+  // Un partage ne se DISPUTE pas la scène avec la parole : il la prend. Présenter,
+  // c'est demander qu'on regarde son écran pendant qu'on parle par-dessus.
+  const stage: Tile =
+    presenter === null
+      ? toTile(pickStage(view), 'camera', facing)
+      : toTile(presenter, 'screen', facing);
 
-  // Sa propre vignette ouvre la bande, à une place fixe. La chercher parmi des
-  // vignettes qui bougent, c'est ne jamais savoir si l'on est cadré.
-  const filmstrip = [view.local, ...[...view.remotes].sort(compareStable)]
-    // Personne n'apparaît deux fois : la scène retire de la bande celui qu'elle
-    // montre. Quand on est seul, la bande devient vide — et c'est juste.
-    .filter((participant) => participant.identity !== stage.identity)
-    .map((participant) => toTile(participant, 'camera', facing));
+  const everyone = [view.local, ...[...view.remotes].sort(compareStable)];
+  // Les visages d'abord, puis les autres écrans : une personne qui partage
+  // apparaît donc deux fois, une fois par piste.
+  const filmstrip = [
+    ...everyone.map((p) => toTile(p, 'camera', facing)),
+    ...everyone.filter((p) => p.screen !== null).map((p) => toTile(p, 'screen', facing)),
+  ].filter((tile) => tile.key !== stage.key);
 
-  return { stage: toTile(stage, 'camera', facing), filmstrip };
+  return { stage, filmstrip };
 }
