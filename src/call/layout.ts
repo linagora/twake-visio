@@ -34,6 +34,16 @@ export type ParticipantView = {
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.
   readonly camera: VideoTrackRef | null;
+  // `null` couvre les mêmes trois cas que `camera` : rien n'est publié, la piste
+  // n'est pas souscrite, ou elle est coupée.
+  readonly screen: VideoTrackRef | null;
+  // Instant de première vue de CETTE piste, en millisecondes, et jamais l'instant
+  // où le partage a réellement commencé : LiveKit n'horodate pas les
+  // publications — vérifié, la seule occurrence de `firstReceivedTime` dans
+  // `livekit-client.esm.mjs` concerne les segments de transcription.
+  //
+  // `null` si et seulement si `screen` est `null`.
+  readonly screenSince: number | null;
   // Horodatage ISO 8601 posé par le serveur meet, `null` quand la main est
   // baissée. Le contrat backend distingue la chaîne vide (baissée) de
   // l'absence de clé (jamais levée) ; les deux se lisent `null` ici. Un champ

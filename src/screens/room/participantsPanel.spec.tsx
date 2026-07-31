@@ -18,6 +18,8 @@ const view = (identity: string, name: string, isLocal = false): ParticipantView 
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,
+    screen: null,
+    screenSince: null,
     handRaisedAt: null,
   }) as ParticipantView;
 

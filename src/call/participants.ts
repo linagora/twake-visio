@@ -52,7 +52,44 @@ function readCamera(participant: Participant): VideoTrackRef | null {
   return { participant, publication, source: Track.Source.Camera };
 }
 
+// La mémoire des partages. LiveKit n'horodate pas les publications : sans elle,
+// « le plus récent gagne » n'a aucun ordre sur lequel s'appuyer.
+//
+// Alimentée à la LECTURE, jamais sur un événement. Une table remplie par
+// `TrackSubscribed` manquerait tout partage déjà en cours à la jonction —
+// exactement le piège que ce dépôt a payé deux fois, avec `RoomMetadataChanged`
+// puis avec `ParticipantAttributesChanged`. On lit, on n'attend pas.
+const screenSince = new Map<string, number>();
+
+function readScreen(participant: Participant): VideoTrackRef | null {
+  const publication = participant.getTrackPublication(Track.Source.ScreenShare);
+  if (publication === undefined) return null;
+  if (publication.track === undefined) return null;
+  if (publication.isMuted) return null;
+  return { participant, publication, source: Track.Source.ScreenShare };
+}
+
+// Rend l'instant de première vue, en l'enregistrant si la piste est inconnue.
+function sinceFor(track: VideoTrackRef | null): number | null {
+  if (track === null) return null;
+  const sid = track.publication.trackSid;
+  const known = screenSince.get(sid);
+  if (known !== undefined) return known;
+  const now = Date.now();
+  screenSince.set(sid, now);
+  return now;
+}
+
+// Purge les pistes disparues. Sans elle, un partage arrêté puis relancé
+// reprendrait son ancien instant et perdrait sa priorité de « plus récent ».
+function forgetAbsent(present: ReadonlySet<string>): void {
+  for (const sid of [...screenSince.keys()]) {
+    if (!present.has(sid)) screenSince.delete(sid);
+  }
+}
+
 function readParticipant(participant: Participant): ParticipantView {
+  const screen = readScreen(participant);
   return {
     identity: participant.identity,
     // Le SDK laisse `name` indéfini tant que le jeton n'en porte pas.
@@ -62,6 +99,8 @@ function readParticipant(participant: Participant): ParticipantView {
     lastSpokeAt: participant.lastSpokeAt?.getTime() ?? null,
     joinedAt: participant.joinedAt?.getTime() ?? null,
     camera: readCamera(participant),
+    screen,
+    screenSince: sinceFor(screen),
     handRaisedAt: readHandRaisedAt(participant.attributes),
   };
 }
@@ -69,12 +108,18 @@ function readParticipant(participant: Participant): ParticipantView {
 // Traduit l'état de la Room en valeurs simples. C'est la seule frontière avec
 // le SDK : au-delà, `src/call/layout` décide sans rien connaître de LiveKit.
 export function readRoomView(room: Room): RoomView {
-  return {
-    local: readParticipant(room.localParticipant),
-    remotes: Array.from(room.remoteParticipants.values()).map((participant) =>
-      readParticipant(participant),
-    ),
-  };
+  const local = readParticipant(room.localParticipant);
+  const remotes = Array.from(room.remoteParticipants.values()).map((participant) =>
+    readParticipant(participant),
+  );
+
+  const present = new Set<string>();
+  for (const view of [local, ...remotes]) {
+    if (view.screen !== null) present.add(view.screen.publication.trackSid);
+  }
+  forgetAbsent(present);
+
+  return { local, remotes };
 }
 
 // Le contrat de `useSyncExternalStore` : `getSnapshot()` doit rendre la *même*

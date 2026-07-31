@@ -235,6 +235,70 @@ describe('readRoomView', () => {
   });
 });
 
+function screenPub(sid: string): FakePublication {
+  return camera({ trackSid: sid, source: Track.Source.ScreenShare });
+}
+
+describe('lecture du partage d’écran', () => {
+  it('rend la piste de partage, distincte de la caméra', () => {
+    const alice = person('u-alice', {
+      publications: {
+        [Track.Source.Camera]: camera({ trackSid: 'cam-1' }),
+        [Track.Source.ScreenShare]: screenPub('scr-1'),
+      },
+    });
+
+    const view = readRoomView(fakeRoom(ME, [alice]).room);
+
+    const seen = view.remotes[0];
+    expect(seen?.camera?.publication.trackSid).toBe('cam-1');
+    expect(seen?.screen?.publication.trackSid).toBe('scr-1');
+  });
+
+  // Les deux sid sont distincts par construction : une implémentation qui
+  // rendrait la caméra dans les deux champs passerait un test qui les
+  // confondrait.
+  it('rend null quand la personne ne partage pas, sans confondre avec sa caméra', () => {
+    const bob = person('u-bob', {
+      publications: { [Track.Source.Camera]: camera({ trackSid: 'cam-2' }) },
+    });
+
+    const view = readRoomView(fakeRoom(ME, [bob]).room);
+
+    expect(view.remotes[0]?.camera).not.toBeNull();
+    expect(view.remotes[0]?.screen).toBeNull();
+    expect(view.remotes[0]?.screenSince).toBeNull();
+  });
+
+  // La mémoire est bâtie sur la LECTURE, pas sur un événement : un partage déjà
+  // en cours à la jonction n'émet rien, et une mémoire événementielle le
+  // manquerait. Deux lectures successives doivent donc rendre le même instant.
+  it('retient le même instant à travers deux lectures', () => {
+    const alice = person('u-alice', {
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+    });
+    const { room } = fakeRoom(ME, [alice]);
+
+    const first = readRoomView(room).remotes[0]?.screenSince;
+    const second = readRoomView(room).remotes[0]?.screenSince;
+
+    expect(first).not.toBeNull();
+    expect(second).toBe(first);
+  });
+
+  it('oublie un partage terminé, pour qu’un nouveau soit vu comme nouveau', () => {
+    const partage = person('u-alice', {
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
+    });
+    const arrete = person('u-alice');
+
+    readRoomView(fakeRoom(ME, [partage]).room);
+    readRoomView(fakeRoom(ME, [arrete]).room);
+
+    expect(readRoomView(fakeRoom(ME, [arrete]).room).remotes[0]?.screenSince).toBeNull();
+  });
+});
+
 describe('createRoomViewStore', () => {
   it('rend la même vue tant que rien ne bouge', () => {
     // `useSyncExternalStore` compare par identité : une vue reconstruite à
