@@ -59,6 +59,7 @@
   "call.handQueue": "Hands raised",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "Could not change your hand",
+  "call.closeSheet": "Close",
   "participants.title": "Participants",
   "participants.mute": "Mute",
   "participants.remove": "Remove",

@@ -59,6 +59,7 @@
   "call.handQueue": "Mani alzate",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "Impossibile cambiare lo stato della tua mano",
+  "call.closeSheet": "Chiudi",
   "participants.title": "Partecipanti",
   "participants.mute": "Disattiva microfono",
   "participants.remove": "Rimuovi",

@@ -59,6 +59,7 @@
   "call.handQueue": "Gehobene Hände",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "Der Handstatus konnte nicht geändert werden",
+  "call.closeSheet": "Schließen",
   "participants.title": "Teilnehmer",
   "participants.mute": "Stummschalten",
   "participants.remove": "Entfernen",

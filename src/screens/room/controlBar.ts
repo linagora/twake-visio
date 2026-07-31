@@ -71,3 +71,55 @@ export const BAR_RIPPLE_COLOR = tokens.color.textDark;
 // irait au frère rendu en dernier. Généreux là où rien ne gêne, exact là où ça
 // compte. `{...rest}` est étalé après le défaut de Paper, donc celui-ci gagne.
 export const BAR_HIT_SLOP = { top: 8, bottom: 8, left: 0, right: 0 };
+
+// Les feuilles inférieures qui remplacent les trois menus de la barre. Un
+// `Modal` de Paper devient une feuille par UNE propriété de style, et rien
+// d'autre : voir `wrapper`.
+export const sheetStyles = StyleSheet.create({
+  // La seule ligne qui fait la feuille. `Modal` pose son enveloppe en
+  // `absoluteFill` avec `justifyContent: 'center'` (`Modal.tsx:238-241`) et
+  // applique la prop `style` APRÈS elle (`Modal.tsx:210-215`) : `flex-end`
+  // gagne donc, et colle la surface au bas de l'écran.
+  wrapper: { justifyContent: 'flex-end' },
+  // `Modal` pose `backgroundColor: 'transparent'` sur sa `Surface`
+  // (`Modal.tsx:243-246`). Ce fond n'est donc pas une précaution de contraste,
+  // c'est une obligation : sans lui la feuille n'a aucun fond. 15,86:1 avec
+  // `textDark`, la même paire que les menus qu'elle remplace.
+  surface: {
+    backgroundColor: tokens.color.surfaceDark,
+    borderTopLeftRadius: tokens.radius.lg,
+    borderTopRightRadius: tokens.radius.lg,
+    paddingVertical: tokens.spacing.sm,
+  },
+  // Le titre de la feuille. Il porte son propre espacement plutôt que celui
+  // d'une ligne : une ligne est pressable et veut une cible haute, un titre ne
+  // l'est pas.
+  title: {
+    color: tokens.color.textDark,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
+  },
+  // La ligne. 16 dp de padding vertical de part et d'autre d'un texte de
+  // ~20 dp donnent ~52 dp de cible — au-dessus des 44 dp que la barre s'impose,
+  // parce qu'ici la place ne manque pas.
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.md,
+  },
+  rowTitle: { color: tokens.color.textDark },
+  // 8,21:1 sur `surfaceDark`. La seule couleur d'alerte de cette barre qui ne
+  // soit pas celle de « quitter » : elle vit dans une feuille, à deux appuis,
+  // donc jamais adjacente au combiné raccroché.
+  rowTitleDanger: { color: tokens.color.dangerDark },
+  // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
+  // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.
+  note: {
+    color: tokens.color.textDark,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
+  },
+  check: { color: tokens.color.textDark },
+});
