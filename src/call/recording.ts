@@ -1,3 +1,7 @@
+import type { ApiError } from 'src/api/types';
+import type { RoomAccess } from 'src/call/types';
+import type { InstanceFeatures } from 'src/instance/types';
+
 export type RecordingMode = 'screen_recording' | 'transcript';
 
 // Le vocabulaire des métadonnées LiveKit, pas celui du modèle `Recording` du
@@ -89,5 +93,79 @@ export function recordingLabelKey(state: RecordingState): RecordingLabelKey | nu
       return 'recording.saving';
     case 'aborted':
       return 'recording.aborted';
+  }
+}
+
+// FRONTIÈRE DE DIVERGENCE `main` / déployé — tout ce qui suit vit ici et nulle
+// part ailleurs.
+//
+//   `main`   : HasPrivilegesOnRoom  → is_administrator_or_owner exigé.
+//   déployé  : HasRecordingPermission → niveau par mode, "authenticated" sur
+//              meet.linagora.com aujourd'hui, donc strictement plus large.
+//
+// `isAdministrable` vaut exactement `is_administrator_or_owner`
+// (src/call/types.ts:14-19). C'est l'intersection des deux contrats : tout
+// appel que cette porte laisse passer est accepté par les deux serveurs.
+//
+// Pour élargir (arbitrage qui appartient au partenaire) : lire
+// `recording_permissions` dans la réponse salon — le champ y est déjà sur le
+// déployé, `src/api/rooms.ts` l'ignore — et le brancher ici. Rien d'autre à
+// toucher.
+//
+// `features.recording` en fait partie : sans lui, l'instance répond 404, et la
+// commande serait un geste voué à échouer.
+export function canStartRecording(features: InstanceFeatures, access: RoomAccess): boolean {
+  return features.recording && access.isAdministrable;
+}
+
+export type RecordingAction = 'start' | 'stop';
+
+export type RecordingMessageKey =
+  | 'recording.errorBusy'
+  | 'recording.errorNotActive'
+  | 'recording.errorUnavailable'
+  | 'recording.errorForbidden'
+  | 'recording.errorStartFailed'
+  | 'recording.errorStopFailed'
+  | 'error.network'
+  | 'error.unauthorized';
+
+function failed(action: RecordingAction): RecordingMessageKey {
+  return action === 'start' ? 'recording.errorStartFailed' : 'recording.errorStopFailed';
+}
+
+// Le module d'API ne retraduit rien : c'est ici, et ici seulement, qu'un
+// `ApiError` devient une phrase. Le `switch` est exhaustif sans `default` :
+// un membre ajouté à `ApiError` casse la compilation plutôt que de tomber
+// silencieusement dans un message générique.
+//
+// Le 400 de ces endpoints n'est pas une `validation` : son corps est
+// `{"detail": "Invalid request."}`, une chaîne et non une liste, ce que
+// `readValidation` exige. Il arrive donc en `{ kind: 'server', status: 400 }`,
+// et signale de toute façon un bogue de l'application, pas une situation
+// d'utilisateur.
+export function recordingErrorMessage(
+  action: RecordingAction,
+  error: ApiError,
+): RecordingMessageKey {
+  switch (error.kind) {
+    case 'network':
+      return 'error.network';
+    case 'unauthorized':
+      return 'error.unauthorized';
+    case 'forbidden':
+      return 'recording.errorForbidden';
+    // Sur `start`, le 404 est ambigu : une instance dont l'enregistrement est
+    // coupé répond 404, pas 403. Le message reste au niveau de cette
+    // ambiguïté — jamais « salon introuvable », qui serait faux une fois sur
+    // deux. Sur `stop`, il veut dire « aucun enregistrement au statut actif ».
+    case 'not-found':
+      return action === 'start' ? 'recording.errorUnavailable' : 'recording.errorNotActive';
+    case 'server':
+      return action === 'start' && error.status === 409 ? 'recording.errorBusy' : failed(action);
+    case 'validation':
+      return failed(action);
+    case 'lobby':
+      return failed(action);
   }
 }

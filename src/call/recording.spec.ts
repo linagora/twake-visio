@@ -1,4 +1,14 @@
-import { deriveRecordingState, recordingLabelKey, type RecordingState } from 'src/call/recording';
+import type { ApiError } from 'src/api/types';
+import type { RoomAccess } from 'src/call/types';
+import type { InstanceFeatures } from 'src/instance/types';
+
+import {
+  canStartRecording,
+  deriveRecordingState,
+  recordingErrorMessage,
+  recordingLabelKey,
+  type RecordingState,
+} from 'src/call/recording';
 
 function meta(fields: Record<string, string>): string {
   return JSON.stringify(fields);
@@ -193,5 +203,88 @@ describe('recordingLabelKey', () => {
 
   it('annonce l’interruption', () => {
     expect(recordingLabelKey(state('aborted', 'screen_recording'))).toBe('recording.aborted');
+  });
+});
+
+const FEATURES = (recording: boolean): InstanceFeatures => ({
+  recording,
+  subtitle: true,
+  telephony: false,
+});
+
+const ACCESS = (isAdministrable: boolean): RoomAccess => ({
+  room: { id: 'r-1', slug: 'reunion', name: 'R', accessLevel: 'trusted' },
+  livekitUrl: 'wss://lk',
+  token: 'lk',
+  isAdministrable,
+});
+
+describe('canStartRecording', () => {
+  it('ouvre la commande à un administrateur sur une instance qui enregistre', () => {
+    expect(canStartRecording(FEATURES(true), ACCESS(true))).toBe(true);
+  });
+
+  it('la ferme sans droit d’administration', () => {
+    expect(canStartRecording(FEATURES(true), ACCESS(false))).toBe(false);
+  });
+
+  it('la ferme quand l’instance n’enregistre pas', () => {
+    // Sans `recording.is_enabled`, l'instance répond 404 : le bouton serait un
+    // geste voué à échouer.
+    expect(canStartRecording(FEATURES(false), ACCESS(true))).toBe(false);
+  });
+
+  it('la ferme quand ni l’un ni l’autre', () => {
+    expect(canStartRecording(FEATURES(false), ACCESS(false))).toBe(false);
+  });
+});
+
+describe('recordingErrorMessage', () => {
+  const server = (status: number): ApiError => ({ kind: 'server', status });
+
+  it('traduit le 409 du démarrage en « déjà en cours »', () => {
+    // `mapStatus` ne traite spécialement que 403 et 404 : le 409 arrive en
+    // `{ kind: 'server', status: 409 }`, donc lisible.
+    expect(recordingErrorMessage('start', server(409))).toBe('recording.errorBusy');
+  });
+
+  it('ne traduit pas le 409 de l’arrêt de la même façon', () => {
+    expect(recordingErrorMessage('stop', server(409))).toBe('recording.errorStopFailed');
+  });
+
+  it('distingue le 404 du démarrage de celui de l’arrêt', () => {
+    // Sur `start` il est ambigu (fonctionnalité coupée ou salon inconnu) ; sur
+    // `stop` il veut dire « aucun enregistrement au statut actif ».
+    expect(recordingErrorMessage('start', { kind: 'not-found' })).toBe(
+      'recording.errorUnavailable',
+    );
+    expect(recordingErrorMessage('stop', { kind: 'not-found' })).toBe('recording.errorNotActive');
+  });
+
+  it('dit le refus de permission dans les deux sens', () => {
+    expect(recordingErrorMessage('start', { kind: 'forbidden' })).toBe('recording.errorForbidden');
+    expect(recordingErrorMessage('stop', { kind: 'forbidden' })).toBe('recording.errorForbidden');
+  });
+
+  it('garde les deux messages généraux du socle', () => {
+    expect(recordingErrorMessage('start', { kind: 'network' })).toBe('error.network');
+    expect(recordingErrorMessage('stop', { kind: 'unauthorized' })).toBe('error.unauthorized');
+  });
+
+  it('retombe sur l’échec de l’action pour les autres statuts serveur', () => {
+    expect(recordingErrorMessage('start', server(502))).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', server(500))).toBe('recording.errorStopFailed');
+    expect(recordingErrorMessage('start', server(400))).toBe('recording.errorStartFailed');
+  });
+
+  it('traite validation et lobby comme un échec d’action', () => {
+    // `lobby` n'est jamais produit par `authedFetch` — seul `fetchRoomAccess`
+    // le fabrique. Il est traité parce que l'union doit l'être exhaustivement.
+    expect(
+      recordingErrorMessage('start', { kind: 'validation', fields: { mode: ['invalide'] } }),
+    ).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', { kind: 'lobby', participantId: 'p-1' })).toBe(
+      'recording.errorStopFailed',
+    );
   });
 });
