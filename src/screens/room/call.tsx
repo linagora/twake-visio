@@ -682,9 +682,20 @@ export function CallScreen(): React.ReactElement {
           recording={recordingState}
           canRecord={canRecord}
           recordingBusy={recordingBusy}
+          // Espace réservé : la tâche 8 remplace ces quatre valeurs par
+          // `raisedHands(roomView)`, `isHandRaised(roomView.local)`, un vrai
+          // `handBusy` et `handleToggleHand`. Sans elles ici, `MoreMenuProps`
+          // ne typecheckerait plus depuis cette seule tâche, et `HandControl`
+          // recevrait `hands` à `undefined` — un premier rendu du menu ouvert
+          // casserait sur `hands.length`. Aucun comportement réel : la main
+          // n'est ni levée, ni en file, ni actionnable pour l'instant.
+          handRaised={false}
+          handBusy={false}
+          hands={[]}
           onShare={handleShare}
           onStartRecording={handleStartRecording}
           onStopRecording={handleStopRecording}
+          onToggleHand={() => undefined}
         />
         <IconButton
           testID="participants-toggle"

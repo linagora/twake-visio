@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
+import type { RaisedHand } from 'src/call/hands';
 import type { RecordingState } from 'src/call/recording';
 import { tokens } from 'src/ui/tokens';
 import { MoreMenu } from './moreMenu';
@@ -34,13 +35,24 @@ const IDLE: RecordingState = { phase: 'idle', mode: null };
 const RECORDING: RecordingState = { phase: 'recording', mode: 'screen_recording' };
 const STARTING: RecordingState = { phase: 'starting', mode: 'screen_recording' };
 
+const ADA: RaisedHand = {
+  identity: 'u-ada',
+  name: 'Ada',
+  raisedAt: Date.parse('2026-07-30T10:00:01Z'),
+  isLocal: false,
+};
+
 type Overrides = {
   recording?: RecordingState;
   canRecord?: boolean;
   recordingBusy?: boolean;
+  handRaised?: boolean;
+  handBusy?: boolean;
+  hands?: readonly RaisedHand[];
   onShare?: () => void;
   onStartRecording?: () => void;
   onStopRecording?: () => void;
+  onToggleHand?: () => void;
 };
 
 function menu(overrides: Overrides = {}): React.ReactElement {
@@ -49,9 +61,13 @@ function menu(overrides: Overrides = {}): React.ReactElement {
       recording={overrides.recording ?? IDLE}
       canRecord={overrides.canRecord ?? true}
       recordingBusy={overrides.recordingBusy ?? false}
+      handRaised={overrides.handRaised ?? false}
+      handBusy={overrides.handBusy ?? false}
+      hands={overrides.hands ?? []}
       onShare={overrides.onShare ?? jest.fn()}
       onStartRecording={overrides.onStartRecording ?? jest.fn()}
       onStopRecording={overrides.onStopRecording ?? jest.fn()}
+      onToggleHand={overrides.onToggleHand ?? jest.fn()}
     />,
   );
 }
@@ -67,6 +83,7 @@ describe('MoreMenu', () => {
 
     expect(screen.queryByTestId('recording-toggle')).toBe(null);
     expect(screen.queryByTestId('share-btn')).toBe(null);
+    expect(screen.queryByTestId('hand-toggle')).toBe(null);
   });
 
   it('offre le partage et le démarrage au repos', async () => {
@@ -188,5 +205,71 @@ describe('MoreMenu', () => {
     await fireEvent.press(screen.getByTestId('share-btn'));
 
     await waitFor(() => expect(screen.queryByTestId('share-btn')).toBe(null));
+  });
+
+  it('lève la main et referme le menu, comme ses deux voisines', async () => {
+    // Rien ne garantit qu'une entrée referme le menu parce que ses voisines le
+    // font : le `setVisible(false)` est écrit une fois par entrée.
+    const onToggleHand = jest.fn();
+    const onShare = jest.fn();
+    await render(menu({ onToggleHand, onShare }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.raiseHand');
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    expect(onToggleHand).toHaveBeenCalledTimes(1);
+    expect(onShare).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('hand-toggle')).toBe(null));
+  });
+
+  it('devient une baisse quand la main est levée', async () => {
+    await render(menu({ handRaised: true }));
+
+    await open();
+
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.lowerHand');
+  });
+
+  it('retire la commande pendant un appel en vol, sans toucher au reste', async () => {
+    await render(menu({ handBusy: true, hands: [ADA] }));
+
+    await open();
+
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    expect(screen.queryByTestId('hand-toggle')).toBe(null);
+    expect(screen.getByTestId('hand-queue')).toBeTruthy();
+  });
+
+  it('montre la file entière, la seconde entrée comprise', async () => {
+    const bob: RaisedHand = {
+      identity: 'u-bob',
+      name: 'Bob',
+      raisedAt: Date.parse('2026-07-30T10:00:02Z'),
+      isLocal: true,
+    };
+    await render(menu({ hands: [ADA, bob] }));
+
+    await open();
+
+    await waitFor(() => expect(screen.getByTestId('hand-queue')).toBeTruthy());
+    expect(screen.getByTestId('hand-queue-title')).toHaveTextContent('call.handQueue');
+    // Deux entrées, et c'est la SECONDE qu'on vise : avec une seule, une liste
+    // tronquée à son premier élément passerait. La numérotation elle-même est
+    // gardée un étage plus bas, dans `handControl.spec.tsx` — le mock de `t`
+    // de CE fichier ne rend pas les valeurs interpolées.
+    expect(screen.getByTestId('hand-queue-row-u-bob')).toBeTruthy();
+    expect(screen.getByTestId('hand-queue-row-u-ada')).toBeTruthy();
+  });
+
+  it('ne montre aucune file quand personne ne lève la main', async () => {
+    await render(menu({ hands: [] }));
+
+    await open();
+
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    expect(screen.queryByTestId('hand-queue')).toBe(null);
   });
 });

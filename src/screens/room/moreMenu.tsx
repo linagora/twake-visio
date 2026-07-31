@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, Menu } from 'react-native-paper';
 
+import type { RaisedHand } from 'src/call/hands';
 import type { RecordingState } from 'src/call/recording';
 import {
   BAR_HIT_SLOP,
@@ -9,15 +10,20 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { HandControl } from 'src/screens/room/handControl';
 import { RecordingControl } from 'src/screens/room/recordingControl';
 
 export type MoreMenuProps = {
   readonly recording: RecordingState;
   readonly canRecord: boolean;
   readonly recordingBusy: boolean;
+  readonly handRaised: boolean;
+  readonly handBusy: boolean;
+  readonly hands: readonly RaisedHand[];
   readonly onShare: () => void;
   readonly onStartRecording: () => void;
   readonly onStopRecording: () => void;
+  readonly onToggleHand: () => void;
 };
 
 // La rangée de commandes est pleine : sept cibles de 44 dp tiennent sur 357 dp,
@@ -36,9 +42,13 @@ export function MoreMenu({
   recording,
   canRecord,
   recordingBusy,
+  handRaised,
+  handBusy,
+  hands,
   onShare,
   onStartRecording,
   onStopRecording,
+  onToggleHand,
 }: MoreMenuProps): React.ReactElement {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
@@ -85,6 +95,15 @@ export function MoreMenu({
         onStop={() => {
           setVisible(false);
           onStopRecording();
+        }}
+      />
+      <HandControl
+        raised={handRaised}
+        busy={handBusy}
+        hands={hands}
+        onToggle={() => {
+          setVisible(false);
+          onToggleHand();
         }}
       />
     </Menu>
