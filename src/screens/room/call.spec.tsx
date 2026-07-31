@@ -1077,6 +1077,14 @@ describe('CallScreen, choix de la caméra', () => {
 
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
+    // Un double aveugle à `Track.Source` (voir le commentaire sur
+    // `mockRoom.localParticipant.getTrackPublication` plus haut) rendrait
+    // `mockCameraPublication` aussi pour `Track.Source.ScreenShare`,
+    // fabriquant un partage d'écran local fantôme. `tile-me:screen`
+    // apparaîtrait dans la bande et déplacerait `mock.lastCall` de la scène
+    // vers cette vignette fantôme, faisant passer les deux assertions de
+    // miroir ci-dessous pour la mauvaise raison.
+    expect(screen.queryByTestId('tile-me:screen')).toBeNull();
     expect(jest.mocked(VideoTrack).mock.lastCall?.[0].mirror).toBe(true);
 
     await settleMenus();
