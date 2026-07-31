@@ -29,11 +29,12 @@ export type ParticipantView = {
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.
   readonly camera: CameraTrack | null;
-  // Posé à `null` pour l'instant : `readParticipant`
-  // (`src/call/participants.ts`) ne lit pas encore l'attribut LiveKit. La
-  // tâche 3 le fera lire réellement, via `readHandRaisedAt`
-  // (`src/call/hands.ts`) sur `participant.attributes`, et ajoutera l'écoute
-  // de `RoomEvent.ParticipantAttributesChanged`.
+  // Horodatage ISO 8601 posé par le serveur meet, `null` quand la main est
+  // baissée. Le contrat backend distingue la chaîne vide (baissée) de
+  // l'absence de clé (jamais levée) ; les deux se lisent `null` ici. Un champ
+  // nommé, jamais la carte d'attributs entière : ce type est « ce dont la
+  // sélection a besoin, et rien de plus ». Lu par `readParticipant`
+  // (`src/call/participants.ts`) via `readHandRaisedAt` (`src/call/hands.ts`).
   readonly handRaisedAt: string | null;
 };
 

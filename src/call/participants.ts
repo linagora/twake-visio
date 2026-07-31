@@ -1,6 +1,7 @@
 import { RoomEvent, Track } from 'livekit-client';
 import type { Participant, Room } from 'livekit-client';
 
+import { readHandRaisedAt } from 'src/call/hands';
 import type { CameraTrack, ParticipantView, RoomView } from 'src/call/layout';
 
 // Tout ce qui peut changer ce qui s'affiche, et rien d'autre. Un événement
@@ -28,6 +29,13 @@ export const ROOM_VIEW_EVENTS = [
   RoomEvent.LocalTrackUnpublished,
   RoomEvent.ActiveSpeakersChanged,
   RoomEvent.Reconnected,
+  // La main levée vit dans un attribut de participant, et le serveur LiveKit
+  // est le seul à la diffuser : sans cet événement, une main levée par
+  // quelqu'un d'autre n'arriverait jamais à l'écran. Sur l'émetteur
+  // participant-scoped l'événement s'appelle `attributesChanged` ; ici, au
+  // niveau `Room`, c'est `participantAttributesChanged`, et le participant
+  // local y est inclus.
+  RoomEvent.ParticipantAttributesChanged,
 ] as const;
 
 // `null` couvre les trois façons de ne pas avoir d'image, indiscernables à
@@ -54,10 +62,7 @@ function readParticipant(participant: Participant): ParticipantView {
     lastSpokeAt: participant.lastSpokeAt?.getTime() ?? null,
     joinedAt: participant.joinedAt?.getTime() ?? null,
     camera: readCamera(participant),
-    // Constante pour l'instant : la tâche 3 la remplacera par une lecture
-    // réelle de `participant.attributes` via `readHandRaisedAt`
-    // (`src/call/hands.ts`).
-    handRaisedAt: null,
+    handRaisedAt: readHandRaisedAt(participant.attributes),
   };
 }
 
