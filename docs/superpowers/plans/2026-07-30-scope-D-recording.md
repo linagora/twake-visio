@@ -150,9 +150,10 @@ endroit à casser pour rien.
 `src/screens/room/call.tsx:109` force `tokens.color.backgroundDark` **dans les deux schémas**,
 alors que le thème Paper suit le schéma système (`src/ui/theme.ts`). Un composant posé sur cet
 écran qui ne dit pas sa couleur retombe sur `theme.colors.onSurface` — `#1A1A1A` en schéma
-clair — soit **1,08:1** sur ce fond. Invisible. Le périmètre B a livré ce défaut avec tous ses
-tests au vert ; le périmètre A a livré sa variante d'ondulation, **1,13:1**, avec tous ses
-tests au vert aussi.
+clair — soit **1,13:1** sur `backgroundDark` (`#0B0B0C`, le fond de l'écran), ou **1,08:1** sur
+`surfaceDark` (`#121212`) pour un composant qui pose sa propre surface par-dessus. Invisible
+dans les deux cas. Le périmètre B a livré son défaut à 1,08:1 avec tous ses tests au vert ; le
+périmètre A a livré sa variante d'ondulation à 1,13:1, avec tous ses tests au vert aussi.
 
 **Tout élément visible ajouté par ce périmètre pose une couleur explicite venue de
 `src/ui/tokens`, et passe par `src/screens/room/controlBar.ts` quand la barre en porte déjà
