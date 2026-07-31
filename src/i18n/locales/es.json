@@ -9,6 +9,7 @@
   "server.unreachable": "Servidor inaccesible",
   "server.notFound": "No se encontró ningún servidor de reuniones para esta dirección. Introduzca la dirección de su servidor a continuación.",
   "server.signInFailed": "El inicio de sesión no se completó",
+  "callback.signingIn": "Iniciando sesión…",
   "home.myRooms": "Mis reuniones",
   "home.filter": "Filtrar",
   "home.unnamed": "Reunión sin nombre",

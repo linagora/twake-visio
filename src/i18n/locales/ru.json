@@ -9,6 +9,7 @@
   "server.unreachable": "Сервер недоступен",
   "server.notFound": "Для этого адреса не найден сервер встреч. Введите адрес вашего сервера ниже.",
   "server.signInFailed": "Вход не был завершён",
+  "callback.signingIn": "Выполняется вход…",
   "home.myRooms": "Мои встречи",
   "home.filter": "Фильтр",
   "home.unnamed": "Встреча без названия",

@@ -9,6 +9,7 @@
   "server.unreachable": "Server unreachable",
   "server.notFound": "No meeting server found for this address. Enter your server address below.",
   "server.signInFailed": "Sign-in did not complete",
+  "callback.signingIn": "Signing you in…",
   "home.myRooms": "My meetings",
   "home.filter": "Filter",
   "home.unnamed": "Unnamed meeting",

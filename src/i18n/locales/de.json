@@ -9,6 +9,7 @@
   "server.unreachable": "Server nicht erreichbar",
   "server.notFound": "Für diese Adresse wurde kein Besprechungsserver gefunden. Geben Sie unten die Adresse Ihres Servers ein.",
   "server.signInFailed": "Die Anmeldung wurde nicht abgeschlossen",
+  "callback.signingIn": "Anmeldung läuft…",
   "home.myRooms": "Meine Besprechungen",
   "home.filter": "Filtern",
   "home.unnamed": "Besprechung ohne Namen",

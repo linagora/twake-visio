@@ -9,6 +9,7 @@
   "server.unreachable": "Server non raggiungibile",
   "server.notFound": "Nessun server per le riunioni trovato per questo indirizzo. Inserisci di seguito l’indirizzo del tuo server.",
   "server.signInFailed": "L'accesso non è stato completato",
+  "callback.signingIn": "Accesso in corso…",
   "home.myRooms": "Le mie riunioni",
   "home.filter": "Filtra",
   "home.unnamed": "Riunione senza nome",
