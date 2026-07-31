@@ -58,6 +58,19 @@ function propsFor(sid: string): Record<string, unknown> | undefined {
 }
 
 beforeEach(() => {
+  // Ce fichier est le seul du dépôt à espionner un objet de module PARTAGÉ
+  // (`RN.useWindowDimensions`, voir plus haut) plutôt qu'un double créé
+  // localement pour ce fichier seul : sans restauration, le mock posé par un
+  // test d'orientation survit aux tests suivants, qui ne posent jamais leur
+  // propre dimension. Preuve : un test sans bouchon placé après un bloc
+  // paysage héritait du dernier `800×400` et lisait `horizontal: false` — pas
+  // un faux-vert uniforme, un faux-vert qui ne tombe QUE sur la valeur par
+  // défaut du côté qui suit. `jest.restoreAllMocks()` ne touche que les
+  // espions posés par `jest.spyOn` ; `VideoTrack` est un `jest.fn()` construit
+  // directement dans `__mocks__/@livekit/react-native.ts`, jamais via
+  // `spyOn`, donc son implémentation survit et seul son historique d'appels a
+  // encore besoin d'un nettoyage explicite.
+  jest.restoreAllMocks();
   jest.mocked(VideoTrack).mockClear();
 });
 
@@ -296,4 +309,16 @@ describe('la scène reçoit la place libérée en paysage', () => {
 
     expect(screen.getByTestId('active-speaker').parent).toHaveStyle({ flexDirection: 'row' });
   });
+});
+
+// Garde contre la fuite que `jest.restoreAllMocks()`, dans le `beforeEach`
+// ci-dessus, referme : sans lui, ce test — qui ne pose lui-même AUCUNE
+// dimension — hérite du dernier `800×400` posé par le test paysage
+// précédent et lit `horizontal: false`. Placé volontairement en dernier, tout
+// de suite après un bloc paysage, pour que l'ordre de déclaration par défaut
+// de Jest le fasse mordre de façon fiable si la fuite revient.
+it('ne pose aucune dimension et voit donc le préréglage portrait du banc de test', async () => {
+  await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+  expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
 });
