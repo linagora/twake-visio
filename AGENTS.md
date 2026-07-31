@@ -67,8 +67,18 @@ quasi-noir en thème clair : aucune couleur explicite ne peut le rattraper. Masq
 commande indisponible, ne pas la griser — le précédent est `participantsPanel.tsx`, qui ne
 rend pas les actions de modération plutôt que de les désactiver.
 
-Aucun test ne peut attraper cette classe de bogue : RNTL ne rend pas les couleurs. Elle ne
-se voit qu'en lisant le thème, le fond et le composant ensemble.
+**Aucun test ne peut prouver qu'un texte est lisible** : RNTL ne rastérise rien, donc un
+contraste perçu ne se mesure qu'en lisant le thème, le fond et le composant ensemble — ou
+sur un appareil.
+
+**Mais un test peut prouver que la couleur explicite n'a pas été retirée**, et celui-là
+vaut d'être écrit : `expect(screen.getByTestId(…)).toHaveStyle({ color: tokens.color.textDark })`.
+Sans `PaperProvider` ancêtre, un `Text` dépouillé de son style retombe sur
+`rgba(28, 27, 31, 1)` — le `neutral10` du thème clair par défaut de Paper. Ce n'est pas la
+valeur qu'afficherait l'application réelle, qui retomberait sur son propre `onSurface` ;
+mais l'assertion étant une égalité stricte, **n'importe quel repli la fait échouer**. C'est
+la cause qu'on garde, pas le symptôme. Précédents : `waitingBanner.spec.tsx`,
+`cameraMenu.spec.tsx`, `recordingIndicator.spec.tsx`.
 
 ## Instance discovery has a deliberate fallback
 
