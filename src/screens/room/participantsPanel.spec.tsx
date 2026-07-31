@@ -9,19 +9,18 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const view = (identity: string, name: string, isLocal = false): ParticipantView =>
-  ({
-    identity,
-    name,
-    isLocal,
-    isSpeaking: false,
-    lastSpokeAt: null,
-    joinedAt: null,
-    camera: null,
-    screen: null,
-    screenSince: null,
-    handRaisedAt: null,
-  }) as ParticipantView;
+const view = (identity: string, name: string, isLocal = false): ParticipantView => ({
+  identity,
+  name,
+  isLocal,
+  isSpeaking: false,
+  lastSpokeAt: null,
+  joinedAt: null,
+  camera: null,
+  screen: null,
+  screenSince: null,
+  handRaisedAt: null,
+});
 
 // `getAllByTestId` rend un tableau ; `noUncheckedIndexedAccess` refuse d'y
 // indexer sans preuve que l'élément existe. Ce garde-fou vaut mieux qu'une
