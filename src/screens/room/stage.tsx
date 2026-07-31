@@ -47,14 +47,15 @@ const styles = StyleSheet.create({
 
 type VideoTileProps = {
   readonly tile: Tile;
-  readonly objectFit: 'cover' | 'contain';
+  // Ce que la PLACE veut, quand la source n'impose rien.
+  readonly fitWhenCamera: 'cover' | 'contain';
   readonly size: StyleProp<ViewStyle>;
 };
 
 // Aucune décision ici : la vignette pose ce qu'on lui donne. Tout ce qui se
 // choisit — qui, dans quel ordre, en miroir ou non — a été décidé par
 // `src/call/layout`, le seul endroit vérifiable.
-function VideoTile({ tile, objectFit, size }: VideoTileProps): React.ReactElement {
+function VideoTile({ tile, fitWhenCamera, size }: VideoTileProps): React.ReactElement {
   const { t } = useTranslation();
   // La sélection nettoie le nom : il n'y a qu'une absence à traiter, et jamais
   // d'identifiant brut à l'écran.
@@ -81,7 +82,10 @@ function VideoTile({ tile, objectFit, size }: VideoTileProps): React.ReactElemen
         <VideoTrack
           trackRef={tile.track}
           style={styles.video}
-          objectFit={objectFit}
+          // Un écran ne se rogne jamais, où qu'il soit posé : un texte coupé est
+          // un texte perdu, et c'est précisément ce qu'on partage. La place ne
+          // décide que pour une caméra.
+          objectFit={tile.source === 'screen' ? 'contain' : fitWhenCamera}
           mirror={tile.mirror}
         />
       )}
@@ -104,10 +108,11 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
   return (
     <>
       <View style={styles.stage} testID="active-speaker">
-        {/* `contain` sur la scène : `cover` remplirait un écran de téléphone en
-            portrait avec une image de caméra en paysage, donc en coupant les
-            deux tiers du visage. */}
-        <VideoTile tile={layout.stage} objectFit="contain" size={styles.stageTile} />
+        {/* `contain` pour une caméra : `cover` agrandirait une source 16:9 sur un
+            écran en portrait jusqu'à n'en montrer que 26 % — mesuré sur
+            1080×2364. Aucune des deux valeurs n'est bonne ; les bandes noires
+            sont un défaut de MISE EN PAGE, que la refonte de la grille traitera. */}
+        <VideoTile tile={layout.stage} fitWhenCamera="contain" size={styles.stageTile} />
       </View>
 
       {/* Une bande de longueur inconnue : au-delà de trois vignettes, les
@@ -120,9 +125,10 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
         contentContainerStyle={styles.filmstripContent}
       >
         {layout.filmstrip.map((tile) => (
-          // `cover` sur les vignettes : elles sont trop petites pour qu'on y
-          // cherche un cadrage, elles doivent d'abord être pleines.
-          <VideoTile key={tile.key} tile={tile} objectFit="cover" size={styles.thumbnailTile} />
+          // `cover` pour une caméra en vignette : elle est trop petite pour
+          // qu'on y cherche un cadrage, elle doit d'abord être pleine. Un écran
+          // y échappe : voir le commentaire sur `objectFit` dans `VideoTile`.
+          <VideoTile key={tile.key} tile={tile} fitWhenCamera="cover" size={styles.thumbnailTile} />
         ))}
       </ScrollView>
     </>
