@@ -13,7 +13,7 @@ const PKCE = { verifier: 'v'.repeat(64), challenge: 'chal', method: 'S256' } as 
 
 describe('buildAuthorizeUrl', () => {
   it('assemble les paramètres du flux Authorization Code + PKCE', () => {
-    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st4te'));
+    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st4te', 'n0nce'));
 
     expect(url.origin + url.pathname).toBe('https://sso.linagora.com/oauth2/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
@@ -24,8 +24,19 @@ describe('buildAuthorizeUrl', () => {
     expect(url.searchParams.get('state')).toBe('st4te');
   });
 
+  // Sans lui, LemonLDAP::NG refuse d'émettre le code APRÈS avoir authentifié la
+  // personne, et redirige vers `redirect_uri` en portant une erreur. Les deux
+  // valeurs sont volontairement distinctes ici : une implémentation qui
+  // recopierait `state` dans `nonce` passerait un test qui les confondrait.
+  it('porte un nonce, distinct du state', () => {
+    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st4te', 'n0nce'));
+
+    expect(url.searchParams.get('nonce')).toBe('n0nce');
+    expect(url.searchParams.get('nonce')).not.toBe(url.searchParams.get('state'));
+  });
+
   it('transmet login_hint quand il est fourni', () => {
-    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st', 'ada@linagora.com'));
+    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st', 'no', 'ada@linagora.com'));
     expect(url.searchParams.get('login_hint')).toBe('ada@linagora.com');
   });
 });

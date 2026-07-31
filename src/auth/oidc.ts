@@ -24,10 +24,30 @@ type RawTokenResponse = {
   expires_in?: number;
 };
 
+// `nonce` n'est pas décoratif et n'est pas optionnel en pratique. OpenID Connect
+// le fait porter par l'`id_token`, et un fournisseur a le droit d'exiger qu'on
+// l'envoie : mesuré sur LemonLDAP::NG, où son absence fait échouer l'émission du
+// code APRÈS une authentification réussie, avec
+// `{"code":"ISSUER_OIDC_LOGIN_FAILED","reason":"Nonce required"}` au journal du
+// portail. Le serveur redirige alors quand même vers `redirect_uri`, mais en
+// portant une erreur au lieu d'un code — l'application recevait donc bien son
+// lien de retour, et échouait ensuite sans rien pouvoir en dire.
+//
+// Il est distinct de `state`, qui lie la réponse à la requête du navigateur.
+// Les deux sont donc tirés séparément : réutiliser l'un pour l'autre ferait
+// d'une seule valeur volée les deux protections à la fois.
+//
+// Il n'est pas encore VÉRIFIÉ au retour, et c'est une dette assumée, pas un
+// oubli : la vérification exige de décoder le corps de l'`id_token`, donc du
+// base64url — or ni React Native ni le runtime Expo n'exposent `atob`. Node
+// l'expose, lui, donc un décodeur qui s'y fierait passerait tous les tests et
+// planterait sur l'appareil. Le correctif est un décodeur écrit à la main, avec
+// ses propres tests ; c'est un changement distinct.
 export function buildAuthorizeUrl(
   config: InstanceConfig,
   pkce: PkcePair,
   state: string,
+  nonce: string,
   loginHint?: string,
 ): string {
   const url = new URL(`${config.issuer}/oauth2/authorize`);
@@ -38,6 +58,7 @@ export function buildAuthorizeUrl(
   url.searchParams.set('code_challenge', pkce.challenge);
   url.searchParams.set('code_challenge_method', pkce.method);
   url.searchParams.set('state', state);
+  url.searchParams.set('nonce', nonce);
   if (loginHint !== undefined) url.searchParams.set('login_hint', loginHint);
   return url.toString();
 }

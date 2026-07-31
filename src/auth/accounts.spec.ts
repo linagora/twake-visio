@@ -147,3 +147,86 @@ describe('registre de comptes', () => {
     expect(getActiveAccount()).toBe(null);
   });
 });
+
+// La mémorisation est la raison d'être du magasin : sans elle, `app/index.tsx`
+// retombe sur `/welcome` à chaque démarrage à froid. Elle ne peut se vérifier
+// qu'en rejouant le chargement du module, puisque l'hydratation n'a lieu qu'à
+// l'import — d'où `jest.resetModules()` et le ré-import.
+describe('mémorisation entre deux démarrages', () => {
+  // `require` et non `import` : la configuration Jest de ce dépôt est en
+  // CommonJS, où un `import()` dynamique lève « A dynamic import callback was
+  // invoked without --experimental-vm-modules ». Et c'est le seul moyen de
+  // rejouer le chargement du module, donc d'exercer l'hydratation — qui n'a lieu
+  // qu'à l'import. Une fonction `hydrateForTest()` exportée serait pire : une
+  // API de test dans du code de production.
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const reload = (): typeof import('src/auth/accounts') => require('src/auth/accounts');
+  const mmkv = (): typeof import('react-native-mmkv') => require('react-native-mmkv');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const ACCOUNT = {
+    id: makeAccountId(CONFIG.issuer, 'u-1'),
+    instance: CONFIG,
+    email: 'ada@linagora.com',
+    displayName: 'Ada',
+  };
+
+  it('retrouve le compte actif après un redémarrage à froid', () => {
+    addAccount(ACCOUNT);
+    setActiveAccount(ACCOUNT.id);
+
+    jest.resetModules();
+    const reloaded = reload();
+
+    expect(reloaded.getActiveAccount()?.id).toBe(ACCOUNT.id);
+    expect(reloaded.getActiveAccount()?.email).toBe('ada@linagora.com');
+    // L'instance suit le compte : sans elle, l'application saurait qui est
+    // connecté mais plus à quel serveur, et tout appel partirait dans le vide.
+    expect(reloaded.getActiveAccount()?.instance.serverUrl).toBe(CONFIG.serverUrl);
+    reloaded.resetAccountsForTest();
+  });
+
+  // Trouvé par mutation : les autres cas appellent `setActiveAccount` juste
+  // après `addAccount`, et comme il persiste lui aussi, retirer l'écriture
+  // d'`addAccount` les laissait tous verts. Celui-ci n'active rien
+  // explicitement — `addAccount` s'en charge quand aucun compte ne l'est — donc
+  // il n'exerce que son écriture à elle.
+  it('mémorise un compte ajouté, sans activation explicite', () => {
+    addAccount(ACCOUNT);
+
+    jest.resetModules();
+    const reloaded = reload();
+
+    expect(reloaded.listAccounts()).toHaveLength(1);
+    expect(reloaded.getActiveAccount()?.id).toBe(ACCOUNT.id);
+    reloaded.resetAccountsForTest();
+  });
+
+  it('oublie un compte retiré, plutôt que de le ressusciter au redémarrage', () => {
+    addAccount(ACCOUNT);
+    removeAccount(ACCOUNT.id);
+
+    jest.resetModules();
+    const reloaded = reload();
+
+    expect(reloaded.listAccounts()).toHaveLength(0);
+    expect(reloaded.getActiveAccount()).toBeNull();
+    reloaded.resetAccountsForTest();
+  });
+
+  // Une entrée corrompue est jetée, jamais rendue à moitié : un compte sans
+  // instance ferait planter chaque écran qui la lit, loin d'ici.
+  it('écarte une entrée malformée au lieu de la rendre', () => {
+    addAccount(ACCOUNT);
+    const { createMMKV } = mmkv();
+    createMMKV({ id: 'accounts' }).set(
+      'accounts',
+      JSON.stringify([{ id: 'x', email: 'e', displayName: 'd' }]),
+    );
+
+    jest.resetModules();
+    const reloaded = reload();
+
+    expect(reloaded.listAccounts()).toHaveLength(0);
+    reloaded.resetAccountsForTest();
+  });
+});
