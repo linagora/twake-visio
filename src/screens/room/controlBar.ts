@@ -21,6 +21,11 @@ export const barStyles = StyleSheet.create({
   // Les deux sont donc forcés : 15,86:1.
   menuContent: { backgroundColor: tokens.color.surfaceDark },
   menuTitle: { color: tokens.color.textDark },
+  // 8,21:1 sur `surfaceDark` (8,62:1 est `dangerDark` sur `backgroundDark` —
+  // le fond de `call.tsx`, pas celui de ce menu). La seule couleur d'alerte de
+  // cette barre qui ne soit pas celle de « quitter » : elle vit dans un menu,
+  // à deux appuis, donc jamais adjacente au combiné raccroché.
+  menuTitleDanger: { color: tokens.color.dangerDark },
   // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
   // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.
   menuNote: {

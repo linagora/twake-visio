@@ -67,8 +67,46 @@ quasi-noir en thème clair : aucune couleur explicite ne peut le rattraper. Masq
 commande indisponible, ne pas la griser — le précédent est `participantsPanel.tsx`, qui ne
 rend pas les actions de modération plutôt que de les désactiver.
 
-Aucun test ne peut attraper cette classe de bogue : RNTL ne rend pas les couleurs. Elle ne
-se voit qu'en lisant le thème, le fond et le composant ensemble.
+**Aucun test ne peut prouver qu'un texte est lisible** : RNTL ne rastérise rien, donc un
+contraste perçu ne se mesure qu'en lisant le thème, le fond et le composant ensemble — ou
+sur un appareil.
+
+**Mais un test peut prouver que la couleur explicite n'a pas été retirée**, et celui-là
+vaut d'être écrit : `expect(screen.getByTestId(…)).toHaveStyle({ color: tokens.color.textDark })`.
+Sans `PaperProvider` ancêtre, un `Text` dépouillé de son style retombe sur
+`rgba(28, 27, 31, 1)` — le `neutral10` du thème clair par défaut de Paper. Ce n'est pas la
+valeur qu'afficherait l'application réelle, qui retomberait sur son propre `onSurface` ;
+mais l'assertion étant une égalité stricte, **n'importe quel repli la fait échouer**. C'est
+la cause qu'on garde, pas le symptôme. Précédents : `participantsPanel.spec.tsx` (cinq, le
+plus du dépôt), `waitingBanner.spec.tsx`, `cameraMenu.spec.tsx`,
+`recordingIndicator.spec.tsx`, `recordingControl.spec.tsx`.
+
+**Elle vaut aussi pour la surface**, pas seulement pour le texte posé dessus : un `Menu`
+expose son `Surface` sous le `testID` `` `${testID}-surface` `` (`Menu.tsx:680`), donc
+`toHaveStyle({ backgroundColor: tokens.color.surfaceDark })` s'y applique. Précédent :
+`moreMenu.spec.tsx`. On force la surface **et** le texte, ou ni l'un ni l'autre — une
+surface forcée sous un texte laissé au thème est le pire des trois cas.
+
+**Cette garde vaut pour le texte. Pour une icône, elle dépend de la façon dont l'icône
+atteint l'écran, pas de sa nature.** Un glyphe rendu directement avec son propre `testID`
+— le précédent est la coche de `menuCheck.tsx`, gardée par `cameraMenu.spec.tsx` et
+`audioOutputControl.spec.tsx` — est un `Text` comme un autre, donc joignable. L'`iconColor`
+d'un `IconButton` à icône-chaîne (`icon="dots-vertical"`, le cas par défaut) ne l'est
+**jamais** : `IconButton.tsx:211` rend `<IconComponent color={iconColor} source={icon} />`
+**sans lui transmettre de `testID`**, et le chemin par défaut pose en plus
+`accessibilityElementsHidden`. Aucun des sept `IconButton` de la barre ne garde son
+`iconColor`, `leave-btn` compris ; n'en fabrique pas un. Passer `icon` en fonction rendrait
+la garde possible, mais c'est un changement d'architecture, pas une correction de test.
+
+**Et jamais pour `rippleColor`** — ne la cherche pas là non plus, elle est hors de portée
+pour une autre raison. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
+donc `TouchableRipple.supported` (`TouchableRipple.native.tsx:130`) est faux et la branche
+empruntée n'expose la couleur que dans une vue d'ondulation **transitoire**, conditionnée
+par `pressed`. `jest.replaceProperty(Platform, 'OS', 'android')` — l'idiome pourtant en
+usage dans `audioRoute.spec.ts` — **ne suffit pas** : cette constante est calculée une fois
+au chargement du module, avant qu'aucun corps de test ne s'exécute. Il faudrait
+`jest.resetModules()` et un ré-import isolé. Aucun des composants de la barre n'a un tel
+test ; n'en fabrique pas un.
 
 ## Instance discovery has a deliberate fallback
 

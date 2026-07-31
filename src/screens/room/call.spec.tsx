@@ -5,6 +5,7 @@ import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
 import * as participants from 'src/api/participants';
+import * as recordingApi from 'src/api/recording';
 import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
@@ -114,9 +115,20 @@ let mockCameraPublication: unknown;
 // lit : un participant local, une carte de distants, et une émission
 // d'événements à laquelle s'abonner. Un objet vide passait tant que personne ne
 // lisait la Room ; il ferait maintenant tomber l'écran au premier rendu.
+//
+// `mockRoomMetadata`/`mockRoomIsRecording` sont les deux membres que
+// `createRecordingStore` lit directement (`src/call/recordingStore.ts`,
+// `getSnapshot`) : des accesseurs, pas des champs figés, pour qu'un test
+// puisse poser leur valeur avant le montage et simuler ce que voit qui
+// rejoint une réunion déjà en cours d'enregistrement.
+let mockRoomMetadata: string | undefined;
+let mockRoomIsRecording = false;
+
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
+  readonly metadata: string | undefined;
+  readonly isRecording: boolean;
   on: () => unknown;
   off: () => unknown;
 } = {
@@ -127,6 +139,12 @@ const mockRoom: {
     getTrackPublication: () => mockCameraPublication,
   },
   remoteParticipants: new Map<string, unknown>(),
+  get metadata(): string | undefined {
+    return mockRoomMetadata;
+  },
+  get isRecording(): boolean {
+    return mockRoomIsRecording;
+  },
   on: () => mockRoom,
   off: () => mockRoom,
 };
@@ -221,6 +239,8 @@ beforeEach(() => {
   // Un test de modération peut peupler la Room de participants distants ;
   // sans ce nettoyage, ils survivraient au test suivant.
   mockRoom.remoteParticipants.clear();
+  mockRoomMetadata = undefined;
+  mockRoomIsRecording = false;
   jest.mocked(VideoTrack).mockClear();
 
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
@@ -429,6 +449,9 @@ describe('CallScreen, partage du lien', () => {
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
 
     await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('share-btn'));
 
@@ -444,6 +467,9 @@ describe('CallScreen, partage du lien', () => {
     jest.spyOn(Share, 'share').mockRejectedValue(new Error('annulé'));
 
     await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('share-btn'));
 
@@ -1298,5 +1324,224 @@ describe('CallScreen, sortie audio', () => {
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
     expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
+  });
+});
+
+const STARTED_METADATA = JSON.stringify({
+  recording_mode: 'screen_recording',
+  recording_status: 'started',
+});
+
+describe('CallScreen, indicateur d’enregistrement', () => {
+  it('montre l’indicateur à qui rejoint une réunion déjà enregistrée', async () => {
+    // Le SDK n'émet PAS `RoomMetadataChanged` à la jonction : un indicateur
+    // bâti sur l'abonnement seul resterait éteint toute la séance.
+    mockRoomMetadata = STARTED_METADATA;
+    mockRoomIsRecording = true;
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.active'),
+    );
+  });
+
+  it('n’affiche rien quand aucun enregistrement ne tourne', async () => {
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    expect(screen.queryByTestId('recording-indicator')).toBe(null);
+  });
+
+  it('montre l’indicateur à qui n’a pas le droit d’enregistrer', async () => {
+    // Ce qu'on peut faire et ce qu'on doit savoir sont deux questions
+    // différentes. Une seconde phase et un second mode, pour qu'un libellé en
+    // dur ne passe pas.
+    mockRoomMetadata = JSON.stringify({
+      recording_mode: 'transcript',
+      recording_status: 'saving',
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.saving'),
+    );
+  });
+});
+
+describe('CallScreen, commande d’enregistrement', () => {
+  async function openMore(): Promise<void> {
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+  }
+
+  it('n’offre pas la commande sans droit d’administration', async () => {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    expect(screen.queryByTestId('recording-toggle')).toBe(null);
+  });
+
+  it('n’offre pas la commande quand l’instance n’enregistre pas', async () => {
+    // `recording.is_enabled` à faux : le serveur répondrait 404, et le geste
+    // serait voué à échouer.
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue({
+      ...ACCOUNT,
+      instance: {
+        ...ACCOUNT.instance,
+        features: { recording: false, subtitle: true, telephony: false },
+      },
+    } as never);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+
+    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    expect(screen.queryByTestId('recording-toggle')).toBe(null);
+  });
+
+  it('démarre l’enregistrement du salon dont le serveur a rendu l’accès', async () => {
+    // `r-9`, pas `r-1` : un identifiant en dur passerait le test avec le salon
+    // par défaut.
+    const start = jest
+      .spyOn(recordingApi, 'startRecording')
+      .mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: 'r-9', slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+        livekitUrl: 'wss://lk',
+        token: 'lk',
+        isAdministrable: true,
+      },
+    });
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() => expect(start).toHaveBeenCalledWith(ACCOUNT, 'r-9'));
+  });
+
+  it('porte l’échec du démarrage jusqu’à la barre, sans le confondre avec un autre', async () => {
+    // L'échec ordinaire de ces fonctions est une VALEUR, pas un rejet : un
+    // `.catch()` seul ne le verrait jamais passer. C'est exactement le test qui
+    // aurait attrapé les deux bogues du périmètre B. Le 409 distingue en outre
+    // l'action : traduit avec `'stop'`, il donnerait « n'a pas pu être arrêté ».
+    jest
+      .spyOn(recordingApi, 'startRecording')
+      .mockResolvedValue({ ok: false, error: { kind: 'server', status: 409 } });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('recording.errorBusy'),
+    );
+  });
+
+  // Chemin distinct du précédent : ici la promesse rejette vraiment (au lieu
+  // de résoudre `{ ok: false }`), et c'est le `.catch()` séparé qui doit agir.
+  // Sans ce test, un `.catch()` vidé de son `setNotice` — exactement le second
+  // bogue du périmètre B — laissait les six autres tests de ce describe verts.
+  it('porte aussi un rejet inattendu du démarrage jusqu’à la barre', async () => {
+    jest.spyOn(recordingApi, 'startRecording').mockRejectedValue(new Error('boom'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network'),
+    );
+  });
+
+  it('arrête l’enregistrement en cours et dit son échec propre', async () => {
+    // Le 404 de l'arrêt veut dire « pas encore démarré », jamais « salon
+    // introuvable ».
+    // `r-7`, pas `r-1` : un identifiant en dur passerait le test avec le salon
+    // par défaut.
+    mockRoomMetadata = STARTED_METADATA;
+    mockRoomIsRecording = true;
+    const stop = jest
+      .spyOn(recordingApi, 'stopRecording')
+      .mockResolvedValue({ ok: false, error: { kind: 'not-found' } });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
+      ok: true,
+      value: {
+        room: { id: 'r-7', slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+        livekitUrl: 'wss://lk',
+        token: 'lk',
+        isAdministrable: true,
+      },
+    });
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop'),
+    );
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() => expect(stop).toHaveBeenCalledWith(ACCOUNT, 'r-7'));
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('recording.errorNotActive'),
+    );
+  });
+
+  // Miroir du test de démarrage ci-dessus, pour le second gestionnaire : les
+  // deux `.catch()` sont écrits séparément dans `call.tsx`, donc un trou dans
+  // l'un des deux ne dit rien de l'autre.
+  it('porte aussi un rejet inattendu de l’arrêt jusqu’à la barre', async () => {
+    mockRoomMetadata = STARTED_METADATA;
+    mockRoomIsRecording = true;
+    jest.spyOn(recordingApi, 'stopRecording').mockRejectedValue(new Error('boom'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() =>
+      expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop'),
+    );
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network'),
+    );
+  });
+
+  it('efface le message quand un essai suivant réussit', async () => {
+    const start = jest
+      .spyOn(recordingApi, 'startRecording')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+
+    await render(withPaper(<CallScreen />));
+    await openMore();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('recording.errorForbidden'),
+    );
+
+    start.mockResolvedValue({ ok: true, value: undefined });
+    await openMore();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() => expect(screen.queryByTestId('call-notice')).toBeNull());
   });
 });
