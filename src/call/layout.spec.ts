@@ -291,4 +291,15 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     expect(keys).toContain('u-alice:screen');
     expect(keys).toContain('u-alice:camera');
   });
+
+  // Même raison de passer par `toTile` directement que ci-dessus : personne,
+  // dans ce fichier, ne demande encore une tuile 'screen' à `selectLayout`.
+  it('ne met jamais en miroir son propre écran partagé, même en caméra frontale', () => {
+    // Sans la condition `source === 'camera'`, une tuile d'écran locale
+    // hériterait du miroir de sa caméra — retournant tout texte affiché dessus,
+    // ce qui est précisément ce qu'on partage.
+    const me = { ...ME, screen: fakeCamera('scr-me'), screenSince: 1000 };
+
+    expect(toTile(me, 'screen', 'user').mirror).toBe(false);
+  });
 });
