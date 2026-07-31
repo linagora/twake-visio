@@ -222,3 +222,78 @@ describe('orientation', () => {
     expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', false);
   });
 });
+
+// Le brief ne prouve que le sens de DÉFILEMENT du ScrollView (`horizontal`),
+// jamais la direction dans laquelle ses propres vignettes s'empilent : une
+// implémentation qui basculerait `horizontal` correctement tout en laissant
+// `filmstripContentColumn` en `flexDirection: 'row'` — le même défaut qui a
+// échappé à la tâche 5 avec des tests homogènes — passe les deux tests
+// ci-dessus sans broncher. Vérifié empiriquement : 0 rouge sous cette
+// mutation avant l'ajout de ce bloc.
+describe('axe de la bande, pas seulement sens de défilement', () => {
+  it('garde les vignettes en rangée dans le contenu défilable, en portrait', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 400,
+      height: 800,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp(
+      'contentContainerStyle',
+      expect.objectContaining({ flexDirection: 'row' }),
+    );
+  });
+
+  it('bascule les vignettes en colonne dans le contenu défilable, en paysage', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 800,
+      height: 400,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('filmstrip')).toHaveProp(
+      'contentContainerStyle',
+      expect.objectContaining({ flexDirection: 'column' }),
+    );
+  });
+});
+
+// Rien dans les tests du brief n'inspecte le conteneur COMMUN à la scène et à
+// la bande : une implémentation qui ferait basculer `filmstrip` en colonne
+// sans jamais mettre `flexDirection: 'row'` sur le conteneur qui les
+// enveloppe tous les deux passe les deux tests d'« orientation » ci-dessus —
+// la bande obéit, seule, à un côté qui ne s'est pas élargi. Vérifié
+// empiriquement : 0 rouge sous cette mutation avant l'ajout de ce bloc.
+describe('la scène reçoit la place libérée en paysage', () => {
+  it('garde la scène et la bande empilées en colonne, en portrait', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 400,
+      height: 800,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('active-speaker').parent).not.toHaveStyle({ flexDirection: 'row' });
+  });
+
+  it('met la scène et la bande côte à côte, pour que la scène garde toute la hauteur, en paysage', async () => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
+      width: 800,
+      height: 400,
+      scale: 1,
+      fontScale: 1,
+    });
+
+    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+
+    expect(screen.getByTestId('active-speaker').parent).toHaveStyle({ flexDirection: 'row' });
+  });
+});
