@@ -253,6 +253,17 @@ function forgetAbsent(present: ReadonlySet<string>): void {
     if (!present.has(sid)) screenSince.delete(sid);
   }
 }
+
+// AJOUTÉ APRÈS EXÉCUTION — voir l'errata sous le Step 4. Le trackSid d'un partage
+// publié, coupé ou non : distinct de `readScreen`, qui rend `null` sur `isMuted`.
+// C'est la seule chose qui alimente `present`, et sa raison d'être est de ne PAS
+// confondre une pause avec une fin.
+function screenSid(participant: Participant): string | null {
+  const publication = participant.getTrackPublication(Track.Source.ScreenShare);
+  if (publication === undefined) return null;
+  if (publication.track === undefined) return null;
+  return publication.trackSid;
+}
 ```
 
 Dans `readParticipant`, ajouter les deux champs :
@@ -268,15 +279,31 @@ Dans `readParticipant`, ajouter les deux champs :
   };
 ```
 
-Dans `readRoomView`, après avoir construit la vue et **avant** de la rendre, purger :
+Dans `readRoomView`, purger — **avant** de lire, et depuis les participants **bruts** :
 
 ```ts
   const present = new Set<string>();
-  for (const view of [local, ...remotes]) {
-    if (view.screen !== null) present.add(view.screen.publication.trackSid);
+  for (const participant of [room.localParticipant, ...remoteParticipants]) {
+    const sid = screenSid(participant);
+    if (sid !== null) present.add(sid);
   }
   forgetAbsent(present);
 ```
+
+> **CORRIGÉ APRÈS EXÉCUTION, ET C'EST LE PLUS SÉRIEUX DES ERRATA DE CE PLAN.** La
+> première rédaction prescrivait de construire `present` depuis `view.screen`, après
+> avoir construit la vue. **C'est un bogue**, trouvé en revue de tâche : `readScreen`
+> rend `null` sur `isMuted`, donc un partage simplement **mis en pause** disparaissait
+> de `present` et voyait son instant purgé — puis, à la reprise, en recevait un plus
+> récent que sa vraie première apparition, volant la priorité de « plus récent » à
+> quelqu'un qui partageait sans interruption depuis plus longtemps.
+>
+> D'où `screenSid`, **délibérément indifférent à `isMuted`**, qui n'existe que pour
+> cet ensemble : LiveKit ne réattribue pas de `trackSid` à une coupure — la
+> publication survit, seul `isMuted` bascule. Une coupure n'est pas une fin.
+>
+> Ne recopie pas la forme d'origine si tu rouvres ce plan pour la refonte de la
+> grille. `src/call/participants.ts:137-149` porte la version livrée et sa raison.
 
 - [ ] **Step 5 : compléter les cinq constructeurs**
 
@@ -339,6 +366,15 @@ Dans `src/call/layout.spec.ts` :
 // contournement : `source` est une vraie entrée de cette fonction, et le
 // livrable de cette tâche EST son contrat — format de clé, choix de piste,
 // règle de miroir.
+//
+// RE-CORRIGÉ APRÈS EXÉCUTION, ET LE FAIT MÉRITE D'ÊTRE VU : cette correction-ci
+// a été écrite AU MILIEU du lot, et la tâche 4 l'a périmée deux tâches plus loin.
+// Elle a DÉ-exporté `toTile` — `src/call/layout.ts:137` n'a pas de `export` — et
+// a re-pointé ces deux tests sur `selectLayout`, qui peut enfin produire des clés
+// `:screen` une fois la tâche 4 livrée. Le code ci-dessous ne compilerait donc
+// plus contre le dépôt d'aujourd'hui : il n'a de sens qu'À CETTE ÉTAPE du plan,
+// où la tâche 4 n'existe pas encore. Si tu rouvres ce plan pour la refonte de la
+// grille, c'est `selectLayout` qu'on interroge, pas `toTile`.
 it('donne deux clés différentes au visage et à l’écran d’une même personne', () => {
   const alice = person('u-alice', {
     camera: fakeCamera('cam-1'),
@@ -670,7 +706,10 @@ Les deux appels deviennent `fitWhenCamera="contain"` pour la scène et
 - [ ] **Step 4 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 641 tests verts (639 + 2).
+Expected: au moins 641 tests verts (639 + 2). **Livré : 643.** L'implémenteur a trouvé
+par mutation que le cadrage n'était gardé que sur la scène et jamais sur la bande, et a
+ajouté le test manquant. Un compte supérieur à la prévision n'est pas une dérive : c'est
+le signe que le plan sous-prescrivait ses tests.
 
 - [ ] **Step 5 : commit**
 
@@ -701,6 +740,24 @@ git commit -m "feat(call): Never crop a shared screen, wherever it sits"
 - [ ] **Step 1 : écrire le test, qui échoue**
 
 ```ts
+// CORRIGÉ APRÈS EXÉCUTION. Cette ligne d'import n'est pas un détail de style :
+// `import * as RN from 'react-native'` REND CES TESTS INOPÉRANTS, et de la pire
+// façon — sans les rendre rouges. Le `_interopRequireWildcard` de Babel copie les
+// descripteurs d'accesseur du module dans un objet de namespace DISTINCT ; jest
+// redéfinit alors la propriété SUR LA COPIE SEULE, et l'objet brut que lit
+// l'import nommé du composant garde son getter d'origine. L'espion est réel, il
+// fonctionne, et le composant ne le voit jamais. Mesuré ici même : les trois
+// tests paysage échouaient bruyamment, les trois portrait passaient À VIDE —
+// `horizontal` valant déjà `true`, ils auraient passé contre une implémentation
+// nulle. `AGENTS.md` porte le mécanisme complet ; précédent : accounts.spec.ts:162.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const RN: typeof import('react-native') = require('react-native');
+
+// Et `jest.restoreAllMocks()` dans un `beforeEach` : ce fichier espionne un objet
+// de MODULE, donc partagé. Sans lui, le dernier 800×400 posé fuit vers les tests
+// suivants, qui lisent une dimension qu'ils n'ont pas posée. Dix-huit fichiers de
+// spec du dépôt le font déjà.
+
 // L'orientation se lit sur les DIMENSIONS de la fenêtre, jamais sur une API
 // d'orientation : sur un pliable elles changent sans rotation. Mesuré sur Pixel
 // 10 Pro Fold — couverture 1080×2364, écran interne 2076×2152.
@@ -794,7 +851,13 @@ Le fragment `<>` devient un `View` : sans conteneur, on ne peut pas passer la di
 - [ ] **Step 4 : barre complète**
 
 Run: `npm test && npm run typecheck && npm run lint && npx prettier --check .`
-Expected: 643 tests verts (641 + 2).
+Expected: au moins 645 tests verts (643 + 2). **Livré : 650**, et l'écart est instructif.
+Mes deux tests n'assertaient que la prop `horizontal` du ScrollView — jamais l'axe réel,
+jamais la disposition. L'implémenteur a trouvé par mutation deux trous à **zéro rouge** (la
+scène ne recevait jamais `flexDirection: row` ; l'axe du contenu de la bande restait `row`),
+et la revue de branche en a trouvé **deux autres** sur les cinq bascules de `landscape` que
+cette tâche prescrit. Cinq branches, une mutation proposée : le compte était faisable AVANT
+d'écrire la tâche, sur le code que le plan contenait déjà.
 
 - [ ] **Step 5 : commit**
 

@@ -37,9 +37,16 @@ se tait.
 *piste* qui doit prendre la scène indépendamment de qui parle. Présenter, c'est
 demander qu'on regarde son écran pendant qu'on parle par-dessus.
 
-Deux propriétés du socle rendent le changement sûr : `participants.ts` est la
-**seule** frontière avec LiveKit, et `selectLayout` est une **fonction pure**.
-Toute la décision reste éprouvable sans WebRTC.
+Deux propriétés du socle rendent le changement sûr : `participants.ts` est la seule
+frontière avec LiveKit **pour les pistes et les participants**, et `selectLayout`
+est une **fonction pure**. Toute la décision reste éprouvable sans WebRTC.
+
+> **Précisé après implémentation.** La première rédaction disait « la **seule**
+> frontière avec LiveKit », sans réserve. C'est vrai de la surface que ce lot
+> touche — `Track.Source` n'apparaît nulle part ailleurs hors des specs, vérifié par
+> balayage — mais `recordingStore.ts`, `connection.ts`, `media.ts` et
+> `useCallLayout.ts` importent aussi `livekit-client` pour d'autres surfaces. Le fait
+> est antérieur à ce lot ; la conception s'appuyait dessus comme sur un absolu.
 
 ## Décisions
 
@@ -117,7 +124,17 @@ segments de transcription. « Le plus récent » ne peut donc pas se déduire de
 l'état du SDK.
 
 `participants.ts` tiendra une table `trackSid → instant de première vue`,
-**alimentée à la lecture** et purgée des sids absents de la vue courante.
+**alimentée à la lecture** et purgée des sids absents.
+
+> **Corrigé après implémentation.** Cette phrase disait « absents de la **vue
+> courante** ». C'est le contraire de ce qui est livré, et la nuance est un bogue
+> évité : la vue rend `null` sur `isMuted`, donc purger depuis elle effacerait
+> l'instant d'un partage simplement **mis en pause**, qui en recevrait un plus
+> récent à la reprise et volerait la priorité de « plus récent » à quelqu'un qui
+> partage sans interruption depuis plus longtemps. La purge se fait donc depuis les
+> publications **brutes**, via un `screenSid` délibérément indifférent à `isMuted` —
+> LiveKit ne réattribue pas de `trackSid` à une coupure, la publication survit.
+> Voir `src/call/participants.ts:80-93`.
 
 Bâtir cette mémoire sur un **événement** — `TrackSubscribed` — manquerait tout
 partage **déjà en cours à la jonction**. C'est exactement le piège que ce dépôt a
@@ -131,6 +148,15 @@ dans la même lecture — le cas de la jonction — reçoivent le même instant 
 départage retombe alors sur l'ordre stable, ce qui est arbitraire mais
 déterministe, et n'a aucune conséquence perçue : personne n'a de raison d'attendre
 l'un plutôt que l'autre.
+
+> **Ajouté après implémentation.** Ce cas d'égalité n'est pas une curiosité de
+> jonction : `Date.now()` a une résolution d'une milliseconde, et **1994 lectures
+> sur 2000** placent deux partages découverts ensemble dans la même milliseconde —
+> mesuré. Sans un départage **explicite** (`src/call/layout.ts:174`), la comparaison
+> stricte `>` laisse le premier venu gagner, et un test écrit avec deux instants
+> distincts n'attrape la mutation que dans 0,3 % des exécutions. La règle qui en
+> sort vaut au-delà de ce lot : **une égalité que le code atteint en pratique n'est
+> pas un cas dégénéré, c'est le cas nominal**, et elle veut sa ligne et son test.
 
 **L'horloge reste à la frontière SDK.** `layout.ts` ne compare que des nombres et
 demeure une fonction pure, testable sans horloge ni faux timers.
@@ -222,8 +248,57 @@ La mise en page paysage se garde en rendant avec des dimensions de fenêtre
 forcées, les deux orientations, et en vérifiant que la bande change d'axe. C'est
 une assertion sur la structure, pas sur l'apparence.
 
+## Connu, non traité : la reconnexion complète efface l'ordre de récence
+
+Relevé en revue de branche, **établi dans le SDK et reproduit sur les doubles**, non
+corrigé — parce que le remède est une décision de conception, pas un correctif.
+
+Une reconnexion **complète** (`restartConnection`, distincte d'une simple reprise)
+détruit chaque participant distant **avant** d'émettre `Reconnecting`
+(`livekit-client.esm.mjs:25982`), et émet `TrackUnsubscribed` / `TrackUnpublished` /
+`ParticipantDisconnected` **en direct**, sans tampon. Ces trois événements sont dans
+`ROOM_VIEW_EVENTS`, et `useSyncExternalStore` relit **synchroniquement** dans le rappel
+d'abonnement. `readRoomView` lit donc une `Room` **vide**, `present` est vide, et
+`forgetAbsent` purge **toute** la table.
+
+Le partage lui-même survit parfaitement — c'est la règle « on lit, on n'attend pas » qui
+le sauve, et elle le sauve vraiment. Ce qui repart à zéro, c'est sa **place dans l'ordre**.
+Les `trackSid` reviennent identiques (le client ne les génère jamais), mais chaque écran
+reçoit un horodatage frais dans l'ordre des re-souscriptions sur le nouveau
+`PeerConnection` — un ordre que rien n'aligne sur l'ordre d'origine. Reproduit : à deux
+partages, la scène passe du présentateur de droit à l'autre.
+
+Le cas est étroit (deux partages simultanés **et** une reconnexion complète). La forme
+naturelle du remède est de ne purger que lorsque la `Room` est réellement `Connected`
+(`room.state`), ce qui reste dans la frontière SDK. **À arbitrer, pas à glisser** : la
+question de fond — la récence doit-elle survivre à une coupure réseau, ou repartir avec
+elle ? — n'est pas tranchée par ce document.
+
+**Et une note pour le jour où l'application ÉMETTRA un partage** : `republishAllTracks`
+(`:26002`) donne au participant **local** des `trackSid` **neufs** à chaque reconnexion
+complète. Sans conséquence aujourd'hui, fatal alors.
+
 ## Ce qu'aucun test ne prouvera
 
-Qu'une diapositive est **lisible** sur un écran de six pouces. Cela se vérifie
-sur appareil, en paysage, avec un vrai support partagé depuis un vrai
-navigateur — et cela vaut d'être fait avant de déclarer la fonction livrée.
+Rien de ce qui suit n'est un défaut connu : ce sont les endroits où la suite est
+**structurellement aveugle**, à constater sur appareil avant de déclarer la fonction
+livrée.
+
+1. **Qu'une diapositive est lisible sur six pouces**, en paysage, avec un vrai support
+   partagé depuis un vrai navigateur. RNTL ne rastérise rien.
+2. **Que la vignette d'écran de la bande sert à quelque chose.** En paysage elle fait
+   88×96 dp en `contain` : une diapositive 16:9 y occupe une bande de **88×50 dp**. Le
+   test garde la *valeur* `contain`, jamais qu'on y reconnaisse quoi que ce soit.
+3. **Que la colonne de 96 dp est le bon compromis en paysage**, où la hauteur utile
+   tombe vers 400 dp et où la barre de contrôle prend encore sa part.
+4. **Que la bascule d'orientation ne fait pas sauter la vidéo.** `configChanges` évite
+   bien de recréer l'activité, mais que `VideoTrack` survive à un changement de
+   contrainte de taille sans redémarrer sa surface ne se lit que sur appareil.
+5. **Que l'écran interne d'un pliable tombe du bon côté** : 2076÷2152 ≈ **0,965**, où un
+   prédicat binaire retourne toute la disposition sur 3,5 % de géométrie.
+6. **Le comportement réel à la reconnexion complète**, à deux partages — voir la section
+   ci-dessus. Une coupure Wi-Fi de dix secondes tranche entre « théorique » et « à
+   corriger ».
+7. **Que la scène du présentateur ne clignote pas** quand il coupe puis reprend son
+   partage : pendant la coupure elle retombe sur la parole, puis revient. La mémoire de
+   l'instant est gardée par un test ; le **va-et-vient visuel**, non.
