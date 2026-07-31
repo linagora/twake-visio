@@ -40,6 +40,7 @@
   "call.cameraUnknown": "Fotocamera",
   "call.cameraNumbered": "{{name}} {{index}}",
   "call.selectCamera": "Scegli una fotocamera",
+  "call.deviceSwitchFailed": "Impossibile cambiare fotocamera",
   "call.output.bluetooth": "Bluetooth",
   "call.output.headset": "Auricolari con filo",
   "call.output.speaker": "Altoparlante",

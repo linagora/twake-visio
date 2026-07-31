@@ -40,6 +40,7 @@
   "call.cameraUnknown": "Máy ảnh",
   "call.cameraNumbered": "{{name}} {{index}}",
   "call.selectCamera": "Chọn máy ảnh",
+  "call.deviceSwitchFailed": "Không thể đổi máy ảnh",
   "call.output.bluetooth": "Bluetooth",
   "call.output.headset": "Tai nghe có dây",
   "call.output.speaker": "Loa ngoài",

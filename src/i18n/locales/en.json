@@ -40,6 +40,7 @@
   "call.cameraUnknown": "Camera",
   "call.cameraNumbered": "{{name}} {{index}}",
   "call.selectCamera": "Choose a camera",
+  "call.deviceSwitchFailed": "Could not switch camera",
   "call.output.bluetooth": "Bluetooth",
   "call.output.headset": "Wired headset",
   "call.output.speaker": "Speaker",

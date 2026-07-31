@@ -40,6 +40,7 @@
   "call.cameraUnknown": "Камера",
   "call.cameraNumbered": "{{name}} {{index}}",
   "call.selectCamera": "Выбрать камеру",
+  "call.deviceSwitchFailed": "Не удалось переключить камеру",
   "call.output.bluetooth": "Bluetooth",
   "call.output.headset": "Проводная гарнитура",
   "call.output.speaker": "Динамик",

@@ -14,14 +14,23 @@ import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { createCallSession } from 'src/call/connection';
+import type { CameraChoice } from 'src/call/devices';
 import type { ParticipantView } from 'src/call/layout';
-import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
+import {
+  listCameras,
+  readActiveCameraId,
+  selectCamera,
+  setCameraEnabled,
+  setMicrophoneEnabled,
+  type FacingMode,
+} from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
+import { CameraMenu } from 'src/screens/room/cameraMenu';
 import { BAR_HIT_SLOP, BAR_ICON_COLOR, barStyles } from 'src/screens/room/controlBar';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { CallStage } from 'src/screens/room/stage';
@@ -31,7 +40,12 @@ import { tokens } from 'src/ui/tokens';
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
 // sont des clés de traduction : rien de ce qui vient du réseau ou du SDK ne
 // s'affiche tel quel.
-type MessageKey = 'error.network' | 'error.unauthorized' | 'call.ended' | 'call.permissionsDenied';
+type MessageKey =
+  | 'error.network'
+  | 'error.unauthorized'
+  | 'call.ended'
+  | 'call.permissionsDenied'
+  | 'call.deviceSwitchFailed';
 
 // La même distinction grossière sert deux appelants : l'accès initial au
 // salon (où c'est là, et là seulement, qu'un jeton refusé se distingue d'une
@@ -135,11 +149,14 @@ export function CallScreen(): React.ReactElement {
 
   const [micOn, setMicOn] = useState(mic !== '0');
   const [cameraOn, setCameraOn] = useState(camera !== '0');
-  // Le SDK n'expose pas la face courante de la caméra : c'est l'écran qui la
-  // conserve, pour le miroir de sa propre image dans `useCallLayout`. Rien ne
-  // la fait encore évoluer ici — la Task 7 la mettra à jour depuis la
-  // sélection du menu caméra.
+  // Le SDK n'expose pas la face courante d'une piste : c'est l'écran qui la
+  // conserve, et il la reprend du `CameraChoice` que le menu lui rend.
   const [facing, setFacing] = useState<FacingMode>('user');
+
+  // Relus à chaque ouverture du menu, et à ce moment seulement : aucun
+  // événement de changement de périphérique n'existe sur mobile.
+  const [cameras, setCameras] = useState<readonly CameraChoice[]>([]);
+  const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
 
   // La Room est prête et son identité stable dès le premier rendu — la session
   // la construit dans son constructeur. Le crochet doit être appelé ici, avant
@@ -167,9 +184,10 @@ export function CallScreen(): React.ReactElement {
   // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
   // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
   // comme un rejet : un simple `.catch()` sur ces trois actions ne le
-  // verrait donc jamais passer. Une seule case suffit : les trois actions ne
+  // verrait donc jamais passer. Une seule case pour cinq actions — les trois
+  // de modération et les deux canaux d'échec du changement de caméra — qui ne
   // se déclenchent qu'un geste à la fois.
-  const [moderationError, setModerationError] = useState<MessageKey | null>(null);
+  const [notice, setNotice] = useState<MessageKey | null>(null);
 
   // Une deuxième lecture de la Room, indépendante de `useCallLayout` :
   // celle-ci choisit qui a la scène et réordonne la bande sous le doigt à
@@ -294,6 +312,45 @@ export function CallScreen(): React.ReactElement {
     setCameraEnabled(session.getRoom(), next).catch(() => setCameraOn(!next));
   };
 
+  // Deux lectures, un seul instant. `listCameras` peut rejeter : un message
+  // d'erreur pour une liste que l'utilisateur vient tout juste de demander à
+  // voir n'aiderait personne à agir, et le menu s'ouvre vide.
+  const handleOpenCameraMenu = (): void => {
+    listCameras()
+      .then((list) => {
+        setCameras(list);
+        setActiveCameraId(readActiveCameraId(session.getRoom()));
+      })
+      .catch(() => undefined);
+  };
+
+  // Deux canaux d'échec, les deux traités : le booléen dit qu'Android est
+  // retombé sur son repli `facingMode`, le rejet dit que la contrainte a été
+  // refusée. L'état local n'avance que sur un vrai succès — même discipline que
+  // `handleToggleMic`, qui remet l'icône où elle était quand la commande
+  // échoue : l'interface ne doit jamais annoncer une caméra qui n'est pas celle
+  // qui filme.
+  //
+  // Caméra éteinte, le booléen vaut `true` sans rien prouver : c'est correct,
+  // la préférence est enregistrée et le prochain `setCameraEnabled(true)` la
+  // prendra. Rien à distinguer côté écran.
+  const handleSelectCamera = (choice: CameraChoice): void => {
+    selectCamera(session.getRoom(), choice.deviceId)
+      .then((switched) => {
+        if (!switched) {
+          setNotice('call.deviceSwitchFailed');
+          return;
+        }
+        setActiveCameraId(choice.deviceId);
+        // `'unknown'` n'a pas de miroir défini : la face précédente reste en
+        // vigueur plutôt que de retourner l'image sur une valeur qui ne veut
+        // rien dire.
+        if (choice.facing !== 'unknown') setFacing(choice.facing);
+        setNotice(null);
+      })
+      .catch(() => setNotice('call.deviceSwitchFailed'));
+  };
+
   // Le lien porte sur l'instance du compte, jamais sur une constante : une
   // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
   // mène pas à sa réunion.
@@ -336,8 +393,8 @@ export function CallScreen(): React.ReactElement {
   // n'entrait jamais.
   const handleAnswerEntry = (id: string, allow: boolean): void => {
     answer(id, allow)
-      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setModerationError('error.network'));
+      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setNotice('error.network'));
   };
 
   // Les trois actions de modération portent l'identité LiveKit que
@@ -363,22 +420,22 @@ export function CallScreen(): React.ReactElement {
   const handleMuteParticipant = (identity: string): void => {
     if (account === null || roomId === null) return;
     muteParticipant(account, roomId, identity)
-      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setModerationError('error.network'));
+      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setNotice('error.network'));
   };
 
   const handleRemoveParticipant = (identity: string): void => {
     if (account === null || roomId === null) return;
     removeParticipant(account, roomId, identity)
-      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setModerationError('error.network'));
+      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setNotice('error.network'));
   };
 
   const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
     if (account === null || roomId === null) return;
     updateParticipantRole(account, roomId, identity, role)
-      .then((result) => setModerationError(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setModerationError('error.network'));
+      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => setNotice('error.network'));
   };
 
   const message: MessageKey | null =
@@ -455,7 +512,7 @@ export function CallScreen(): React.ReactElement {
           onPress={handleToggleMic}
           accessibilityLabel={t('call.muted')}
         />
-        {/* La paire caméra : la bascule et, en Task 7, le chevron qui lui colle. */}
+        {/* La paire caméra : la bascule et le chevron qui lui colle. */}
         <View style={styles.cameraGroup}>
           <IconButton
             testID="camera-toggle"
@@ -465,6 +522,12 @@ export function CallScreen(): React.ReactElement {
             hitSlop={BAR_HIT_SLOP}
             onPress={handleToggleCamera}
             accessibilityLabel={t('prejoin.cameraOff')}
+          />
+          <CameraMenu
+            cameras={cameras}
+            activeDeviceId={activeCameraId}
+            onOpen={handleOpenCameraMenu}
+            onSelect={handleSelectCamera}
           />
         </View>
         <IconButton
@@ -499,15 +562,11 @@ export function CallScreen(): React.ReactElement {
       </View>
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
-          seul `visible` bascule, `Snackbar` gère elle-même son animation et
-          son délai de disparition. Le seul retour visible d'un micro coupé,
-          d'une expulsion ou d'un changement de rôle qui échoue. */}
-      <Snackbar
-        testID="moderation-error"
-        visible={moderationError !== null}
-        onDismiss={() => setModerationError(null)}
-      >
-        {moderationError !== null ? t(moderationError) : ''}
+          seul `visible` bascule. Une seule case pour cinq actions — modération
+          et changement de caméra — qui ne partent qu'un geste à la fois. Deux
+          Snackbars se superposeraient au même endroit de l'écran. */}
+      <Snackbar testID="call-notice" visible={notice !== null} onDismiss={() => setNotice(null)}>
+        {notice !== null ? t(notice) : ''}
       </Snackbar>
     </View>
   );
