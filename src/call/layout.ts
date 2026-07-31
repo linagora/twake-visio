@@ -157,6 +157,10 @@ function toTile(participant: ParticipantView, source: TileSource, facing: Facing
 // sont découverts dans la même lecture — l'ordre stable départage. Arbitraire,
 // mais déterministe : personne n'a de raison d'attendre l'un plutôt que l'autre,
 // et une scène qui sauterait entre deux écrans serait pire que ce choix.
+//
+// Le local est inclus dans la recherche, contrairement à `pickStage` : si c'est
+// soi qui présente, la scène doit le montrer aussi — présenter, c'est justement
+// demander qu'on regarde, y compris son propre écran.
 function pickScreen(view: RoomView): ParticipantView | null {
   let best: ParticipantView | null = null;
   for (const p of [view.local, ...view.remotes]) {
@@ -183,6 +187,8 @@ export function selectLayout(view: RoomView, facing: FacingMode): CallLayout {
       ? toTile(pickStage(view), 'camera', facing)
       : toTile(presenter, 'screen', facing);
 
+  // Sa propre vignette ouvre la bande, à une place fixe. La chercher parmi des
+  // vignettes qui bougent, c'est ne jamais savoir si l'on est cadré.
   const everyone = [view.local, ...[...view.remotes].sort(compareStable)];
   // Les visages d'abord, puis les autres écrans : une personne qui partage
   // apparaît donc deux fois, une fois par piste.

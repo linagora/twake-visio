@@ -323,15 +323,36 @@ describe('un écran partagé prend la scène', () => {
     expect(layout.stage.key).toBe('u-alice:screen');
   });
 
-  // L'ordre d'insertion est l'INVERSE de l'ordre attendu : un tri qui rendrait
-  // le premier venu passerait sinon.
+  // L'ordre d'insertion est l'INVERSE de l'ordre attendu : `ancien` (qui doit
+  // perdre) est inséré en premier, `recent` (qui doit gagner) en second. Un tri
+  // qui rendrait le premier venu passerait sinon.
   it('retient le plus récent quand deux personnes partagent', () => {
     const ancien = person('u-alice', { screen: fakeCamera('scr-1'), screenSince: 1000 });
     const recent = person('u-bob', { screen: fakeCamera('scr-2'), screenSince: 2000 });
 
-    const layout = selectLayout(view(ME, [recent, ancien]), 'user');
+    const layout = selectLayout(view(ME, [ancien, recent]), 'user');
 
     expect(layout.stage.key).toBe('u-bob:screen');
+  });
+
+  it('départage deux partages simultanés par l’ordre stable, jamais par l’ordre de la liste', () => {
+    // Le même instant n'est pas un cas limite : c'est le cas NORMAL de la
+    // jonction. `sinceFor` (src/call/participants.ts) horodate avec `Date.now()`
+    // dans la même passe synchrone de lecture, donc deux partages découverts
+    // ensemble reçoivent la même milliseconde. Sans départage déterministe, le
+    // gagnant serait le premier de la Map du SDK — que ce fichier qualifie
+    // lui-même de « stable pour personne » (ligne 92) — et la scène sauterait
+    // d'un écran à l'autre entre deux rendus.
+    //
+    // Bob est inséré EN PREMIER alors qu'Alice doit gagner : un « premier
+    // trouvé, gagnant » implicite passerait ce test si l'ordre n'était pas
+    // inversé.
+    const bob = person('u-bob', { screen: fakeCamera('scr-b'), screenSince: 1000 });
+    const alice = person('u-alice', { screen: fakeCamera('scr-a'), screenSince: 1000 });
+
+    const layout = selectLayout(view(ME, [bob, alice]), 'user');
+
+    expect(layout.stage.key).toBe('u-alice:screen');
   });
 
   it('rend la scène à la parole quand le partage cesse', () => {
@@ -364,6 +385,12 @@ describe('un écran partagé prend la scène', () => {
     const layout = selectLayout(view(ME, [a, b]), 'user');
 
     expect(layout.stage.key).toBe('u-b:screen');
-    expect(layout.filmstrip.map((t) => t.key)).toContain('u-a:screen');
+    // L'ordre entier, pas seulement la présence : les visages d'abord, l'écran restant ensuite.
+    expect(layout.filmstrip.map((t) => t.key)).toEqual([
+      'me:camera',
+      'u-a:camera',
+      'u-b:camera',
+      'u-a:screen',
+    ]);
   });
 });

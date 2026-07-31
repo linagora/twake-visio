@@ -1,5 +1,6 @@
 import { VideoTrack } from '@livekit/react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Track } from 'livekit-client';
 import React from 'react';
 import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
@@ -158,7 +159,14 @@ const mockRoom: {
     get attributes(): Record<string, string> {
       return mockLocalAttributes;
     },
-    getTrackPublication: () => mockCameraPublication,
+    // Doit distinguer la source : une réponse indifférente au paramètre
+    // fabriquerait un faux partage d'écran local dès qu'un test pose
+    // `mockCameraPublication`, puisque `src/call/participants.ts` lit aussi
+    // `Track.Source.ScreenShare`. C'est exactement ce qui rendait
+    // `tile-me:screen` réel et faisait passer deux tests ci-dessous pour la
+    // mauvaise raison, avant ce correctif.
+    getTrackPublication: (source: Track.Source) =>
+      source === Track.Source.Camera ? mockCameraPublication : undefined,
   },
   remoteParticipants: new Map<string, unknown>(),
   get metadata(): string | undefined {
