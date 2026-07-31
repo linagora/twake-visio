@@ -145,7 +145,7 @@ endroit à casser pour rien.
   `RoomEvent.RecordingStatusChanged` `:289`, `RoomEvent.Reconnected` `:29`, `Room.metadata` /
   `Room.isRecording` `Room.d.ts:143` / `:134`).
 
-### La couleur : la règle que ce périmètre impose, et qu'aucun test n'attrape
+### La couleur : la règle que ce périmètre impose, et ce qu'un test en garde
 
 `src/screens/room/call.tsx:109` force `tokens.color.backgroundDark` **dans les deux schémas**,
 alors que le thème Paper suit le schéma système (`src/ui/theme.ts`). Un composant posé sur cet
@@ -177,8 +177,11 @@ Règle de composition, héritée du périmètre A : **on surcharge la surface et
 l'un ni l'autre.** Un `Menu` laissé entièrement intact serait cohérent avec lui-même ; le
 piège n'apparaît qu'en forçant l'un sans l'autre.
 
-**Aucun test ne peut attraper cela** : RNTL ne calcule aucun style et ne rend aucun pixel.
-C'est une contrainte de relecture, pas de suite.
+**Aucun test ne prouve la lisibilité perçue** : RNTL ne calcule aucun style et ne rend aucun
+pixel, donc un contraste ne se mesure qu'en lisant le thème, le fond et le composant ensemble
+— ou sur un appareil. **Mais une égalité stricte `toHaveStyle` prouve que la couleur explicite
+n'a pas été retirée**, et cette garde-là vaut d'être écrite — voir « Le fond de la séance est
+sombre dans les deux schémas. Paper ne le sait pas. » dans `AGENTS.md`.
 
 ### Aucun bouton `disabled`, nulle part sur cet écran
 
@@ -2912,9 +2915,12 @@ git commit -m "feat(call): Start and stop the recording from the meeting"
 5. **Que LiveKit pousse effectivement `RoomMetadataChanged` à un participant absent au moment
    du changement.** Ce plan ne s'y fie pas — il lit — et l'abonnement à `Reconnected` est une
    assurance, pas une preuve.
-6. **Le contraste.** Jest ne rend aucun pixel : le bogue à 1,08:1 du périmètre B passait tous
-   les tests, celui à 1,13:1 du périmètre A aussi. Les ratios des contraintes globales sont
-   calculés, pas testés. La seule règle qui protège vraiment est celle-là : aucun composant
-   `react-native-paper` sur cet écran sans couleur explicite, et aucun bouton `disabled`.
+6. **Le contraste perçu.** Jest ne rend aucun pixel : le bogue à 1,08:1 du périmètre B passait
+   tous les tests, celui à 1,13:1 du périmètre A aussi, et les ratios des contraintes globales
+   restent calculés, pas mesurés sur un rendu. Mais depuis la tâche 5, une égalité stricte
+   `toHaveStyle` protège contre leur cause la plus commune — un retrait silencieux de la
+   couleur explicite — voir « Le fond de la séance est sombre dans les deux schémas. Paper ne
+   le sait pas. » dans `AGENTS.md`. Cette garde-là ne remplace pas la règle : elle protège
+   qu'elle reste posée.
 7. **La lisibilité réelle du menu de dépassement sur appareil.** L'ancre, l'ombre portée et la
    position du `Menu` au-dessus de la barre n'ont été vues par aucun œil : RNTL ne place rien.
