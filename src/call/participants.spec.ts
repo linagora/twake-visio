@@ -96,6 +96,18 @@ function fakeRoom(local: Participant, remotes: readonly Participant[] = []): Roo
 
 const ME = person('me', { isLocal: true, name: 'Ada' });
 
+// `screenSince` (`src/call/participants.ts:70`) vit au niveau MODULE : Jest ne
+// recharge le module qu'une fois par FICHIER, jamais par `it`, donc tous les
+// tests ci-dessous partagent la même table. Sans purge structurelle,
+// l'isolation ne tenait qu'à des trackSid choisis uniques à la main — un `it`
+// qui en recopierait un déjà employé hériterait silencieusement de son
+// horodatage. `readRoomView` sur une Room sans aucun partage vide la table via
+// `forgetAbsent(présent vide)` : la façon la plus simple de la purger sans
+// exposer `screenSince` hors du module.
+beforeEach(() => {
+  readRoomView(fakeRoom(ME).room);
+});
+
 describe('readRoomView', () => {
   it('distingue le participant local des distants', () => {
     const { room } = fakeRoom(ME, [person('bob'), person('cid')]);
@@ -371,6 +383,37 @@ describe('lecture du partage d’écran', () => {
     // Le second horodatage bouchonné (9_999) ne doit jamais être consommé :
     // le reprendre prouverait qu'une coupure a été confondue avec un arrêt.
     expect(after).toBe(1_000);
+  });
+
+  // Garde contre la fuite que le `beforeEach` du fichier referme : ces deux
+  // `it` sont délibérément ADJACENTS et réutilisent le MÊME trackSid. Sans la
+  // purge, le second hériterait silencieusement de l'horodatage posé par le
+  // premier au lieu d'en lire un frais — démontré ci-dessous, et exactement le
+  // risque que ce fichier courait avant que l'isolation ne devienne
+  // structurelle plutôt que conventionnelle. Même précédent que la garde
+  // finale de `stage.spec.tsx` contre la fuite de `jest.restoreAllMocks()` :
+  // une paire qui s'appuie sur l'ordre de déclaration par défaut de Jest pour
+  // mordre de façon fiable si la purge disparaît.
+  it('lit un premier instant pour un sid que le `it` suivant va réutiliser', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const alice = person('u-partage-adjacent-1', {
+      publications: { [Track.Source.ScreenShare]: screenPub('sid-partage-adjacent') },
+    });
+
+    expect(readRoomView(fakeRoom(ME, [alice]).room).remotes[0]?.screenSince).toBe(1_000);
+
+    now.mockRestore();
+  });
+
+  it('ne mord pas l’instant laissé par le `it` précédent pour ce même sid, purgé par le `beforeEach`', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(2_000);
+    const bob = person('u-partage-adjacent-2', {
+      publications: { [Track.Source.ScreenShare]: screenPub('sid-partage-adjacent') },
+    });
+
+    expect(readRoomView(fakeRoom(ME, [bob]).room).remotes[0]?.screenSince).toBe(2_000);
+
+    now.mockRestore();
   });
 });
 
