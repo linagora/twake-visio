@@ -338,14 +338,17 @@ export function CallScreen(): React.ReactElement {
 
   // Deux lectures, un seul instant. `listCameras` peut rejeter : un message
   // d'erreur pour une liste que l'utilisateur vient tout juste de demander à
-  // voir n'aiderait personne à agir, et le menu s'ouvre vide.
+  // voir n'aiderait personne à agir, et le menu s'ouvre vide — y compris à la
+  // réouverture qui suit un échec précédent : la liste est vidée plutôt que
+  // laissée à ce qu'a rendu la dernière ouverture réussie, potentiellement
+  // périmée entre-temps.
   const handleOpenCameraMenu = (): void => {
     listCameras()
       .then((list) => {
         setCameras(list);
         setActiveCameraId(readActiveCameraId(session.getRoom()));
       })
-      .catch(() => undefined);
+      .catch(() => setCameras([]));
   };
 
   // Deux canaux d'échec, les deux traités : le booléen dit qu'Android est
@@ -379,11 +382,14 @@ export function CallScreen(): React.ReactElement {
   // Sur Android, entre deux ouvertures, un casque branché ou débranché ne
   // produit aucun changement à l'écran — et rien ne le permettrait : la
   // plateforme n'émet aucun événement, et aucune API ne dit d'où sort le son.
-  // La liste est juste dès la réouverture, et le son, lui, a bien suivi.
+  // La liste est juste dès la réouverture, et le son, lui, a bien suivi. Un
+  // rejet la vide plutôt que de laisser voir celle, potentiellement périmée,
+  // de la dernière ouverture réussie — même discipline que
+  // `handleOpenCameraMenu`.
   const handleOpenAudioOutput = (): void => {
     listAudioOutputs()
       .then(setOutputs)
-      .catch(() => undefined);
+      .catch(() => setOutputs([]));
   };
 
   // Posé immédiatement, pas dans un `.then()` : la promesse native est résolue

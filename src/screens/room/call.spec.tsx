@@ -1106,6 +1106,35 @@ describe('CallScreen, choix de la caméra', () => {
     await waitFor(() => expect(media.listCameras).toHaveBeenCalled());
     expect(screen.queryByTestId('call-notice')).toBeNull();
     expect(screen.getByTestId('camera-menu-btn')).toBeTruthy();
+    // Le menu est vraiment vide, pas seulement silencieux : miroir du trou
+    // fermé côté audio en tâche 8 (`audio-output-option-bluetooth`, plus bas).
+    expect(screen.queryByTestId('camera-option-cam-front')).toBeNull();
+    expect(screen.queryByTestId('camera-option-cam-back')).toBeNull();
+  });
+
+  it("vide la liste plutôt que de garder celle d'avant quand une réouverture échoue", async () => {
+    // `handleOpenCameraMenu` ne remettait pas `cameras` à zéro dans son
+    // `.catch()` : une première ouverture réussie, puis un échec, laissait la
+    // liste précédente affichée à la réouverture suivante — pas le menu vide
+    // que promet le test ci-dessus, et que promet le commentaire de
+    // `handleOpenCameraMenu`.
+    const list = jest
+      .spyOn(media, 'listCameras')
+      .mockResolvedValueOnce([FRONT_CAMERA, BACK_CAMERA]);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+    await waitFor(() => expect(screen.getByTestId('camera-option-cam-front')).toBeTruthy());
+
+    list.mockRejectedValueOnce(new Error('énumération refusée'));
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+
+    await waitFor(() => expect(media.listCameras).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('camera-option-cam-front')).toBeNull();
+    expect(screen.queryByTestId('camera-option-cam-back')).toBeNull();
   });
 });
 
@@ -1226,6 +1255,28 @@ describe('CallScreen, sortie audio', () => {
 
     await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
     expect(screen.queryByTestId('call-notice')).toBeNull();
+    expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
+    expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
+  });
+
+  it("vide la liste plutôt que de garder celle d'avant quand une réouverture échoue", async () => {
+    // Même défaut, même correction que côté caméra : `handleOpenAudioOutput`
+    // ne remettait pas `outputs` à zéro dans son `.catch()`.
+    const list = jest
+      .spyOn(audioRoute, 'listAudioOutputs')
+      .mockResolvedValueOnce(['bluetooth', 'speaker']);
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-bluetooth')).toBeTruthy());
+
+    list.mockRejectedValueOnce(new Error('énumération refusée'));
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
     expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
   });
