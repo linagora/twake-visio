@@ -1628,6 +1628,18 @@ describe('CallScreen, main levée', () => {
     );
   });
 
+  it('propose de BAISSER dans le menu quand sa propre main est levée', async () => {
+    // `MoreMenu` reçoit `handRaised` de `call.tsx` et le transmet à
+    // `HandControl`, qui choisit le libellé. Une régression qui fige cette
+    // prop à `false` laisse `handleToggleHand` baisser la vraie main tout en
+    // affichant « Lever la main » — un libellé qui annonce l'inverse de son
+    // effet.
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+    await render(withPaper(<CallScreen />));
+    await openMenu();
+    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.lowerHand');
+  });
+
   it("retombe sur le slug quand le salon n'a pas d'identifiant", async () => {
     // `Room.id` est `string | null`, et `RoomViewSet.get_object()` accepte les
     // deux formes : le repli supprime le cas nul au lieu de fabriquer
