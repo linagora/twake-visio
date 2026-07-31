@@ -92,15 +92,10 @@ describe('RecordingControl', () => {
 
   it('arrête aussi pendant un enregistrement, une sauvegarde ou après une interruption', async () => {
     for (const state of [RECORDING, SAVING, ABORTED]) {
+      const onStart = jest.fn();
       const onStop = jest.fn();
       const view = await render(
-        <RecordingControl
-          state={state}
-          canStart
-          busy={false}
-          onStart={jest.fn()}
-          onStop={onStop}
-        />,
+        <RecordingControl state={state} canStart busy={false} onStart={onStart} onStop={onStop} />,
       );
 
       expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop');
@@ -113,6 +108,12 @@ describe('RecordingControl', () => {
       });
       await fireEvent.press(screen.getByTestId('recording-toggle'));
       expect(onStop).toHaveBeenCalledTimes(1);
+      // `onStart` doit être capturé, pas passé en ligne : sans lui, rien ici ne
+      // distingue un câblage correct d'un câblage qui appellerait les deux
+      // callbacks pour ces trois phases précisément, tout en restant correct
+      // sur `idle` et `starting` — les deux seules phases déjà couvertes dans
+      // les deux sens par les tests voisins.
+      expect(onStart).not.toHaveBeenCalled();
 
       await view.unmount();
     }
