@@ -10,6 +10,7 @@ import {
   updateParticipantRole,
   type ParticipantRole,
 } from 'src/api/participants';
+import { startRecording, stopRecording } from 'src/api/recording';
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
@@ -32,6 +33,11 @@ import {
 } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureMediaPermissions } from 'src/call/permissions';
+import {
+  canStartRecording,
+  recordingErrorMessage,
+  type RecordingMessageKey,
+} from 'src/call/recording';
 import { createRecordingStore } from 'src/call/recordingStore';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
@@ -45,6 +51,7 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { MoreMenu } from 'src/screens/room/moreMenu';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { CallStage } from 'src/screens/room/stage';
@@ -59,7 +66,8 @@ type MessageKey =
   | 'error.unauthorized'
   | 'call.ended'
   | 'call.permissionsDenied'
-  | 'call.deviceSwitchFailed';
+  | 'call.deviceSwitchFailed'
+  | RecordingMessageKey;
 
 // La même distinction grossière sert deux appelants : l'accès initial au
 // salon (où c'est là, et là seulement, qu'un jeton refusé se distingue d'une
@@ -201,6 +209,7 @@ export function CallScreen(): React.ReactElement {
   // aucune raison d'être.
   const [access, setAccess] = useState<RoomAccess | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [recordingBusy, setRecordingBusy] = useState(false);
 
   // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
   // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
@@ -250,6 +259,17 @@ export function CallScreen(): React.ReactElement {
   // `/api/v1.0/rooms//waiting-participants/` toutes les cinq secondes.
   const canModerate = access !== null && access.isAdministrable && roomId !== null;
   const hasLobby = access !== null && access.room.accessLevel !== 'public';
+
+  // Même forme que `canModerate`, `roomId !== null` inclus pour la même raison
+  // exactement : sans lui, un salon dont `room.id` vaut `null` fabriquerait
+  // `/api/v1.0/rooms//start-recording/`. `canStartRecording` est la frontière
+  // de divergence entre `main` et le déployé — tout ce qu'elle laisse passer
+  // est accepté par les deux serveurs.
+  const canRecord =
+    account !== null &&
+    roomId !== null &&
+    access !== null &&
+    canStartRecording(account.instance.features, access);
 
   // `roomId ?? ''` ne sert jamais de véritable requête : dès que `roomId` est
   // `null`, `canModerate` (et donc `enabled` ci-dessous) vaut déjà `false`, et
@@ -509,6 +529,43 @@ export function CallScreen(): React.ReactElement {
       .catch(() => setNotice('error.network'));
   };
 
+  // `result.ok` d'abord, un `.catch()` séparé pour l'exception inattendue :
+  // l'échec ordinaire de ces deux fonctions est une *valeur* résolue, jamais un
+  // rejet — un `.catch()` seul ne le verrait pas passer, et le périmètre B a
+  // livré ce bogue deux fois. Aucun état optimiste : les métadonnées sont la
+  // source unique, et un « en cours » local créerait une seconde source qui
+  // peut contredire la première. Un succès efface l'erreur d'un essai
+  // précédent, comme les trois actions de modération.
+  const handleStartRecording = (): void => {
+    if (account === null || roomId === null) return;
+    setRecordingBusy(true);
+    startRecording(account, roomId)
+      .then((result) => {
+        setRecordingBusy(false);
+        setNotice(result.ok ? null : recordingErrorMessage('start', result.error));
+      })
+      .catch(() => {
+        setRecordingBusy(false);
+        setNotice('error.network');
+      });
+  };
+
+  // Le serveur n'exige pas d'être celui qui a démarré l'enregistrement pour
+  // l'arrêter : la commande est offerte à tout administrateur du salon.
+  const handleStopRecording = (): void => {
+    if (account === null || roomId === null) return;
+    setRecordingBusy(true);
+    stopRecording(account, roomId)
+      .then((result) => {
+        setRecordingBusy(false);
+        setNotice(result.ok ? null : recordingErrorMessage('stop', result.error));
+      })
+      .catch(() => {
+        setRecordingBusy(false);
+        setNotice('error.network');
+      });
+  };
+
   const message: MessageKey | null =
     failure ?? (callState.status === 'disconnected' ? toDisconnectMessage(callState.reason) : null);
 
@@ -615,15 +672,19 @@ export function CallScreen(): React.ReactElement {
           onSelect={handleSelectAudioOutput}
           onSystemPicker={handleOpenSystemRoutePicker}
         />
-        <IconButton
-          testID="share-btn"
-          icon="share-variant"
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleShare}
-          accessibilityLabel={t('call.share')}
+        {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
+            demanderait 409. Le partage, seule commande de la barre qu'on
+            n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
+            porte aussi l'enregistrement. Sept cibles avant, sept après — et la
+            commande d'enregistrement n'est jamais adjacente au bouton
+            quitter. */}
+        <MoreMenu
+          recording={recordingState}
+          canRecord={canRecord}
+          recordingBusy={recordingBusy}
+          onShare={handleShare}
+          onStartRecording={handleStartRecording}
+          onStopRecording={handleStopRecording}
         />
         <IconButton
           testID="participants-toggle"
