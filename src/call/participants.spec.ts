@@ -286,6 +286,26 @@ describe('lecture du partage d’écran', () => {
     expect(second).toBe(first);
   });
 
+  // Le test ci-dessus peut passer par hasard : deux `Date.now()` synchrones
+  // tombent presque toujours sur la même milliseconde, donc un `sinceFor` qui
+  // écraserait la table à chaque lecture au lieu de la consulter le passerait
+  // aussi. Forcer l'horloge à avancer entre les deux lectures retire ce
+  // hasard : seule une vraie mémorisation peut alors rendre le même instant.
+  it('rend le premier instant même quand l’horloge avance entre deux lectures', () => {
+    const alice = person('u-alice', {
+      publications: { [Track.Source.ScreenShare]: screenPub('scr-clock') },
+    });
+    const { room } = fakeRoom(ME, [alice]);
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+
+    const first = readRoomView(room).remotes[0]?.screenSince;
+    const second = readRoomView(room).remotes[0]?.screenSince;
+
+    now.mockRestore();
+    expect(first).toBe(1_000);
+    expect(second).toBe(1_000);
+  });
+
   it('oublie un partage terminé, pour qu’un nouveau soit vu comme nouveau', () => {
     const partage = person('u-alice', {
       publications: { [Track.Source.ScreenShare]: screenPub('scr-1') },
