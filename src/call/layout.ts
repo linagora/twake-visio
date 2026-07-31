@@ -9,8 +9,13 @@ import type { FacingMode } from 'src/call/media';
 // ce dernier réexporte lui-même. Le type est ainsi ancré sur le seul contrat qui
 // compte vraiment, celui du composant qui va la recevoir.
 //
-// Ce module ne lit jamais l'intérieur d'une `CameraTrack` : il la transporte.
-export type CameraTrack = NonNullable<VideoTrackProps['trackRef']>;
+// Ce module ne lit jamais l'intérieur d'une `VideoTrackRef` : il la transporte.
+//
+// Nommée par ce qu'elle est — une référence de piste vidéo — et non par ce
+// qu'elle portait au départ. Depuis que le partage d'écran existe, la même forme
+// transporte un écran aussi bien qu'un visage, et un type nommé « caméra » qui
+// porte un écran est un mensonge que le prochain lecteur paiera.
+export type VideoTrackRef = NonNullable<VideoTrackProps['trackRef']>;
 
 // L'état d'un participant tel que la sélection en a besoin, et rien de plus. Ce
 // sont des valeurs simples — pas d'objets du SDK — pour que les règles
@@ -28,7 +33,7 @@ export type ParticipantView = {
   // `null` quand la caméra n'est pas publiée, qu'elle est coupée, ou que la
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.
-  readonly camera: CameraTrack | null;
+  readonly camera: VideoTrackRef | null;
   // Horodatage ISO 8601 posé par le serveur meet, `null` quand la main est
   // baissée. Le contrat backend distingue la chaîne vide (baissée) de
   // l'absence de clé (jamais levée) ; les deux se lisent `null` ici. Un champ
@@ -52,7 +57,7 @@ export type Tile = {
   // Nettoyé, éventuellement vide. La coquille n'a donc qu'un seul cas d'absence
   // à traiter, et aucune règle de nom ne lui incombe.
   readonly name: string;
-  readonly camera: CameraTrack | null;
+  readonly camera: VideoTrackRef | null;
   readonly isLocal: boolean;
   readonly isSpeaking: boolean;
   readonly mirror: boolean;

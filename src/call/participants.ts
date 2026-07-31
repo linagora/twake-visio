@@ -2,7 +2,7 @@ import { RoomEvent, Track } from 'livekit-client';
 import type { Participant, Room } from 'livekit-client';
 
 import { readHandRaisedAt } from 'src/call/hands';
-import type { CameraTrack, ParticipantView, RoomView } from 'src/call/layout';
+import type { VideoTrackRef, ParticipantView, RoomView } from 'src/call/layout';
 
 // Tout ce qui peut changer ce qui s'affiche, et rien d'autre. Un événement
 // oublié ici ne casse rien de visible en développement : il fige simplement une
@@ -42,7 +42,7 @@ export const ROOM_VIEW_EVENTS = [
 // l'écran : rien n'est publié, la piste n'est pas — ou plus — souscrite, ou la
 // caméra est coupée. La coquille pose alors un carton nommé plutôt qu'un
 // rectangle noir, qu'on ne distinguerait pas d'une panne.
-function readCamera(participant: Participant): CameraTrack | null {
+function readCamera(participant: Participant): VideoTrackRef | null {
   // On vise explicitement la source `Camera`. Un filtre sur les pistes vidéo
   // attraperait le partage d'écran et le poserait à la place du visage.
   const publication = participant.getTrackPublication(Track.Source.Camera);

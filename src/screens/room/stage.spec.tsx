@@ -2,7 +2,7 @@ import { VideoTrack } from '@livekit/react-native';
 import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
-import type { CallLayout, CameraTrack, Tile } from 'src/call/layout';
+import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
 import { CallStage } from './stage';
 
 // Ce que ces tests peuvent montrer, et ce qu'ils ne peuvent pas : `VideoTrack`
@@ -15,8 +15,8 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-function fakeCamera(sid: string): CameraTrack {
-  return { publication: { trackSid: sid } } as unknown as CameraTrack;
+function fakeCamera(sid: string): VideoTrackRef {
+  return { publication: { trackSid: sid } } as unknown as VideoTrackRef;
 }
 
 function tile(key: string, overrides: Partial<Tile> = {}): Tile {

@@ -1,14 +1,14 @@
 import {
   selectLayout,
-  type CameraTrack,
+  type VideoTrackRef,
   type ParticipantView,
   type RoomView,
 } from 'src/call/layout';
 
 // Une référence de piste opaque : `selectLayout` la transporte sans jamais la
 // lire, il suffit donc qu'elle soit reconnaissable à l'identité.
-function fakeCamera(sid: string): CameraTrack {
-  return { publication: { trackSid: sid } } as unknown as CameraTrack;
+function fakeCamera(sid: string): VideoTrackRef {
+  return { publication: { trackSid: sid } } as unknown as VideoTrackRef;
 }
 
 function person(identity: string, overrides: Partial<ParticipantView> = {}): ParticipantView {
