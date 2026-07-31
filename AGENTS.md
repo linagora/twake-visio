@@ -77,8 +77,15 @@ Sans `PaperProvider` ancêtre, un `Text` dépouillé de son style retombe sur
 `rgba(28, 27, 31, 1)` — le `neutral10` du thème clair par défaut de Paper. Ce n'est pas la
 valeur qu'afficherait l'application réelle, qui retomberait sur son propre `onSurface` ;
 mais l'assertion étant une égalité stricte, **n'importe quel repli la fait échouer**. C'est
-la cause qu'on garde, pas le symptôme. Précédents : `waitingBanner.spec.tsx`,
-`cameraMenu.spec.tsx`, `recordingIndicator.spec.tsx`.
+la cause qu'on garde, pas le symptôme. Précédents : `participantsPanel.spec.tsx` (cinq, le
+plus du dépôt), `waitingBanner.spec.tsx`, `cameraMenu.spec.tsx`,
+`recordingIndicator.spec.tsx`, `recordingControl.spec.tsx`.
+
+**Elle vaut aussi pour la surface**, pas seulement pour le texte posé dessus : un `Menu`
+expose son `Surface` sous le `testID` `` `${testID}-surface` `` (`Menu.tsx:680`), donc
+`toHaveStyle({ backgroundColor: tokens.color.surfaceDark })` s'y applique. Précédent :
+`moreMenu.spec.tsx`. On force la surface **et** le texte, ou ni l'un ni l'autre — une
+surface forcée sous un texte laissé au thème est le pire des trois cas.
 
 **Cette garde vaut pour le texte. Pour une icône, elle dépend de la façon dont l'icône
 atteint l'écran, pas de sa nature.** Un glyphe rendu directement avec son propre `testID`
