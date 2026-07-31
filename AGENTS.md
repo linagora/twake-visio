@@ -80,8 +80,19 @@ mais l'assertion étant une égalité stricte, **n'importe quel repli la fait é
 la cause qu'on garde, pas le symptôme. Précédents : `waitingBanner.spec.tsx`,
 `cameraMenu.spec.tsx`, `recordingIndicator.spec.tsx`.
 
-**Cette garde vaut pour le texte et les icônes, jamais pour `rippleColor`** — et ne la
-cherche pas là, elle est hors de portée. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
+**Cette garde vaut pour le texte. Pour une icône, elle dépend de la façon dont l'icône
+atteint l'écran, pas de sa nature.** Un glyphe rendu directement avec son propre `testID`
+— le précédent est la coche de `menuCheck.tsx`, gardée par `cameraMenu.spec.tsx` et
+`audioOutputControl.spec.tsx` — est un `Text` comme un autre, donc joignable. L'`iconColor`
+d'un `IconButton` à icône-chaîne (`icon="dots-vertical"`, le cas par défaut) ne l'est
+**jamais** : `IconButton.tsx:211` rend `<IconComponent color={iconColor} source={icon} />`
+**sans lui transmettre de `testID`**, et le chemin par défaut pose en plus
+`accessibilityElementsHidden`. Aucun des sept `IconButton` de la barre ne garde son
+`iconColor`, `leave-btn` compris ; n'en fabrique pas un. Passer `icon` en fonction rendrait
+la garde possible, mais c'est un changement d'architecture, pas une correction de test.
+
+**Et jamais pour `rippleColor`** — ne la cherche pas là non plus, elle est hors de portée
+pour une autre raison. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
 donc `TouchableRipple.supported` (`TouchableRipple.native.tsx:130`) est faux et la branche
 empruntée n'expose la couleur que dans une vue d'ondulation **transitoire**, conditionnée
 par `pressed`. `jest.replaceProperty(Platform, 'OS', 'android')` — l'idiome pourtant en
