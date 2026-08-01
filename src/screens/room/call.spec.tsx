@@ -100,7 +100,12 @@ function remoteParticipant(
     isLocal: false,
     isSpeaking: false,
     attributes,
-    getTrackPublication: () => undefined,
+    // Un micro publié : c'est le cas ordinaire d'une personne en séance, et
+    // c'est ce qui rend « Couper le micro » disponible — le serveur exige le
+    // `track_sid`, donc l'action n'a pas de sens sans publication. Les tests
+    // qui veulent l'ABSENCE de micro construisent leur propre coquille.
+    getTrackPublication: (source: unknown) =>
+      source === Track.Source.Microphone ? { trackSid: `TR_${identity}` } : undefined,
   };
 }
 
@@ -325,7 +330,10 @@ async function openParticipantActions(index = 0): Promise<void> {
     expect(screen.getAllByTestId('participant-actions').length).toBeGreaterThan(index),
   );
   await fireEvent.press(nth(screen.getAllByTestId('participant-actions'), index));
-  await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+  // Le TITRE de la feuille, jamais l'une des actions : « Couper le micro »
+  // n'existe que si la personne publie un micro, et attendre celle-là ferait
+  // expirer tout test portant sur quelqu'un qui n'en publie pas.
+  await waitFor(() => expect(screen.getByTestId('participant-sheet-title')).toBeTruthy());
 }
 
 describe('CallScreen', () => {
@@ -790,7 +798,16 @@ describe('CallScreen, panneau des participants', () => {
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
-    expect(muteSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
+    // Le jeton LiveKit et le trackSid du micro visé, jamais le compte : la
+    // route `mute-participant` refuse le porteur OIDC (mesuré, 403) et exige
+    // `track_sid` (mesuré, sérialiseur du serveur).
+    expect(muteSpy).toHaveBeenCalledWith(
+      ACCOUNT.instance.serverUrl,
+      'lk',
+      'r-1',
+      'bob-identity',
+      'TR_bob-identity',
+    );
   });
 
   it('expulse et promeut par la même identité LiveKit, pas par la première', async () => {

@@ -112,10 +112,22 @@ function forgetAbsent(present: ReadonlySet<string>): void {
   }
 }
 
+// Le trackSid du micro, indépendant de `isMuted` : une piste que son émetteur
+// a coupée garde sa publication et son sid, et couper côté serveur reste
+// possible — c'est l'absence de publication, et elle seule, qui rend l'action
+// sans objet. Même distinction que `screenSid` plus haut, pour une raison
+// différente.
+function micTrackSid(participant: Participant): string | null {
+  const publication = participant.getTrackPublication(Track.Source.Microphone);
+  if (publication === undefined) return null;
+  return publication.trackSid;
+}
+
 function readParticipant(participant: Participant): ParticipantView {
   const screen = readScreen(participant);
   return {
     identity: participant.identity,
+    micTrackSid: micTrackSid(participant),
     // Le SDK laisse `name` indéfini tant que le jeton n'en porte pas.
     name: participant.name ?? '',
     isLocal: participant.isLocal,

@@ -17,6 +17,7 @@ function person(identity: string, overrides: Partial<ParticipantView> = {}): Par
     name: identity,
     isLocal: false,
     isSpeaking: false,
+    micTrackSid: null,
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,

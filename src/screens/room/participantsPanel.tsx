@@ -23,7 +23,10 @@ const styles = StyleSheet.create({
 type RowProps = {
   readonly participant: ParticipantView;
   readonly canModerate: boolean;
-  readonly onMute: (identity: string) => void;
+  // Le trackSid en second argument : `mute-participant` du serveur meet
+  // l'exige, et la ligne est le seul endroit qui sache lequel — voir
+  // `ParticipantView.micTrackSid`.
+  readonly onMute: (identity: string, trackSid: string) => void;
   readonly onRemove: (identity: string) => void;
   readonly onRole: (identity: string, role: ParticipantRole) => void;
 };
@@ -78,6 +81,12 @@ function ParticipantRow({
   // mal placé n'est pas rattrapable.
   const canAct = canModerate && !participant.isLocal;
 
+  // Extrait dans une const : lu directement sur `participant`, le rétrécissement
+  // de type ne survivrait pas à la fermeture du `onPress`, et il faudrait un
+  // `?? ''` qui enverrait un sid vide au serveur au lieu de rendre le cas
+  // impossible.
+  const micTrackSid = participant.micTrackSid;
+
   return (
     <>
       <List.Item
@@ -123,14 +132,21 @@ function ParticipantRow({
               par-dessus le panneau masque le résultat de l'action qu'on vient
               de déclencher. C'est le trou que le lot des panneaux a livré trois
               fois. */}
-          <SheetRow
-            testID="participant-mute"
-            title={t('participants.mute')}
-            onPress={() => {
-              setSheetVisible(false);
-              onMute(participant.identity);
-            }}
-          />
+          {/* Sans micro publié, il n'y a rien à couper : le serveur veut un
+              `track_sid`, et il n'en existe aucun. On masque plutôt que de
+              griser — la convention de cet écran, et la seule qui tienne ici
+              puisqu'un `SheetRow` désactivé retomberait de toute façon sur le
+              quasi-noir de Paper. */}
+          {micTrackSid !== null ? (
+            <SheetRow
+              testID="participant-mute"
+              title={t('participants.mute')}
+              onPress={() => {
+                setSheetVisible(false);
+                onMute(participant.identity, micTrackSid);
+              }}
+            />
+          ) : null}
           <SheetRow
             testID="participant-promote"
             title={t('participants.promote')}
@@ -161,7 +177,8 @@ function ParticipantRow({
 export type ParticipantsPanelProps = {
   readonly participants: readonly ParticipantView[];
   readonly canModerate: boolean;
-  readonly onMute: (identity: string) => void;
+  // Deux arguments : voir `RowProps.onMute`.
+  readonly onMute: (identity: string, trackSid: string) => void;
   readonly onRemove: (identity: string) => void;
   readonly onRole: (identity: string, role: ParticipantRole) => void;
 };

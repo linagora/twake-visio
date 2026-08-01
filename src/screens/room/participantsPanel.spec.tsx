@@ -31,14 +31,25 @@ function withPaper(node: React.ReactElement): React.ReactElement {
 async function openActions(index = 0): Promise<void> {
   const buttons = screen.getAllByTestId('participant-actions');
   await fireEvent.press(nth(buttons, index));
-  await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+  // Le titre, jamais une action : « Couper le micro » n'existe que pour qui
+  // publie un micro.
+  await waitFor(() => expect(screen.getByTestId('participant-sheet-title')).toBeTruthy());
 }
 
-const view = (identity: string, name: string, isLocal = false): ParticipantView => ({
+// `micTrackSid` non nul par défaut : une personne en séance publie un micro,
+// et c'est ce qui rend « Couper le micro » disponible. Le cas nul a son propre
+// test — l'action doit alors disparaître, faute de `track_sid` à envoyer.
+const view = (
+  identity: string,
+  name: string,
+  isLocal = false,
+  micTrackSid: string | null = `TR_${identity}`,
+): ParticipantView => ({
   identity,
   name,
   isLocal,
   isSpeaking: false,
+  micTrackSid,
   lastSpokeAt: null,
   joinedAt: null,
   camera: null,
@@ -110,7 +121,7 @@ describe('ParticipantsPanel', () => {
     await openActions();
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
-    expect(onMute).toHaveBeenCalledWith('PA_1');
+    expect(onMute).toHaveBeenCalledWith('PA_1', 'TR_PA_1');
   });
 
   it('expulse par la même identité', async () => {
@@ -201,9 +212,32 @@ describe('ParticipantsPanel', () => {
     await openActions(1);
     await fireEvent.press(screen.getByTestId('participant-promote'));
 
-    expect(onMute).toHaveBeenCalledWith('PA_2');
+    expect(onMute).toHaveBeenCalledWith('PA_2', 'TR_PA_2');
     expect(onRemove).toHaveBeenCalledWith('PA_2');
     expect(onRole).toHaveBeenCalledWith('PA_2', 'administrator');
+  });
+
+  it("n'offre pas de couper un micro qui n'est pas publié", async () => {
+    // Le serveur exige un `track_sid` : sans publication, il n'y en a aucun à
+    // envoyer et l'action n'a pas d'objet. On masque plutôt que de griser —
+    // convention de cet écran. Les deux autres actions restent, elles : elles
+    // ne dépendent pas d'une piste.
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', 'Ada', false, null)]}
+          canModerate
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+    await openActions();
+
+    expect(screen.queryByTestId('participant-mute')).toBe(null);
+    expect(screen.getByTestId('participant-remove')).toBeTruthy();
+    expect(screen.getByTestId('participant-promote')).toBeTruthy();
   });
 
   it('ne pose jamais les trois actions sur la ligne elle-même', async () => {

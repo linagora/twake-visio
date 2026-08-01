@@ -11,6 +11,7 @@ function person(
     name: options.name ?? identity,
     isLocal: options.isLocal ?? false,
     isSpeaking: false,
+    micTrackSid: null,
     lastSpokeAt: null,
     joinedAt: null,
     camera: null,

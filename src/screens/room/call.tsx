@@ -687,9 +687,14 @@ export function CallScreen(): React.ReactElement {
   // serveur a réellement expulsé — un 403 devient indiscernable d'un appui
   // non enregistré. Un succès efface une éventuelle erreur affichée par un
   // essai précédent.
-  const handleMuteParticipant = (identity: string): void => {
-    if (account === null || roomId === null) return;
-    muteParticipant(account, roomId, identity)
+  // Seule des trois à ne pas prendre `account` : `mute-participant` refuse le
+  // porteur OIDC et veut le jeton LiveKit de LA séance en cours, plus le
+  // `track_sid` du micro visé — les deux mesurés sur une instance réelle, voir
+  // `src/api/participants.ts`. `access` porte l'un et la ligne du panneau
+  // l'autre ; ni l'un ni l'autre ne peut être reconstruit ici.
+  const handleMuteParticipant = (identity: string, trackSid: string): void => {
+    if (account === null || roomId === null || access === null) return;
+    muteParticipant(account.instance.serverUrl, access.token, roomId, identity, trackSid)
       .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
       .catch(() => setNotice('error.network'));
   };
