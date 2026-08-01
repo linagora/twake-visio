@@ -979,7 +979,17 @@ export function CallScreen(): React.ReactElement {
       />
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
-          en croyant que c'est cassé, et raccroche alors que ça se rétablit. */}
+          en croyant que c'est cassé, et raccroche alors que ça se rétablit.
+
+          DÉLIBÉRÉMENT HORS de la garde de plein écran, à l'inverse des trois
+          bandeaux et des bulles juste au-dessus — et ce n'est pas un oubli.
+          La règle arbitrée est « en plein écran, une tuile et rien d'autre,
+          sans exception », mais elle porte sur ce qui offre une COMMANDE. Ce
+          bandeau n'en offre aucune : il décrit l'état du monde. Le masquer
+          n'allègerait pas l'écran, il le rendrait incompréhensible — une image
+          figée sans rien qui dise pourquoi se lit exactement comme un
+          plantage, ce que la phrase ci-dessus dit déjà. Même raison pour le
+          `Snackbar` plus bas. Arbitré explicitement, pas hérité. */}
       {callState.status === 'reconnecting' ? (
         <View style={styles.banner}>
           <Text testID="call-reconnecting" style={styles.bannerText}>
