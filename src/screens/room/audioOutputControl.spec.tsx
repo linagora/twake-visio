@@ -1,5 +1,5 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
@@ -10,21 +10,24 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// `BottomSheet` monte sa feuille dans un `Portal`, et `Modal` (react-native-paper)
+// lit `useSafeAreaInsets()` (`Modal.tsx:118`). Pas strictement requis ici —
+// `SafeAreaProviderCompat`, que `PaperProvider` pose toujours, retombe déjà sur
+// des insets à zéro quand aucun fournisseur natif n'a répondu, ce qui couvre les
+// environnements de test. Gardé pour documenter l'intention plutôt que de
+// compter sur ce repli interne d'une bibliothèque tierce, comme dans
+// `cameraMenu.spec.tsx`.
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
-// Voir `cameraMenu.spec.tsx` : sans `animation.scale` à zéro et sans le vidage
-// d'une frame avant l'appui, l'ouverture du menu est instable sous Jest.
+// `animation.scale` à zéro ramène à zéro la durée des deux animations
+// d'opacité que `Modal` lance avec `Animated.timing` — à l'ouverture et à la
+// fermeture (`Modal.tsx:117-144`, `duration: scale * DEFAULT_DURATION`, sans
+// quoi chacune prendrait 220 ms).
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
-}
-
-async function settleMenus(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 32));
-  });
 }
 
 // Le caractère que `MaterialCommunityIcons` dessine réellement pour "check",
@@ -55,7 +58,6 @@ describe('AudioOutputControl, mode système', () => {
       ),
     );
 
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     expect(onSystemPicker).toHaveBeenCalledTimes(1);
@@ -83,7 +85,6 @@ describe('AudioOutputControl, mode menu', () => {
     );
     expect(onOpen).not.toHaveBeenCalled();
 
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     expect(onOpen).toHaveBeenCalledTimes(1);
@@ -107,7 +108,6 @@ describe('AudioOutputControl, mode menu', () => {
       ),
     );
 
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     expect(onSystemPicker).not.toHaveBeenCalled();
@@ -129,7 +129,6 @@ describe('AudioOutputControl, mode menu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
 
@@ -154,7 +153,6 @@ describe('AudioOutputControl, mode menu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
@@ -192,7 +190,6 @@ describe('AudioOutputControl, mode menu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
     await waitFor(() =>
       expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
@@ -234,10 +231,21 @@ describe('AudioOutputControl, mode menu', () => {
       ),
     );
 
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
+    // La couleur est explicite depuis `controlBar.ts`, d'autant plus utile que
+    // la surface d'un `Modal` est transparente par défaut (voir `Modal.tsx`,
+    // `styles.content`).
+    expect(screen.getByTestId('audio-output-note')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+    // La feuille elle-même : `Modal` expose sa `Surface` sous
+    // `` `${testID}-surface` `` (`Modal.tsx:219-220`), et `BottomSheet` lui
+    // passe `sheetStyles.surface` par `contentContainerStyle`.
+    expect(screen.getByTestId('audio-output-sheet-surface')).toHaveStyle({
+      backgroundColor: tokens.color.surfaceDark,
+    });
   });
 
   // Même défaut que celui trouvé et corrigé en revue de la tâche 4
@@ -262,7 +270,6 @@ describe('AudioOutputControl, mode menu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     const check = await waitFor(() => screen.getByTestId('audio-output-check-speaker'));
@@ -292,7 +299,6 @@ describe('AudioOutputControl, mode menu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
 
