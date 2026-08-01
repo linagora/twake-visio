@@ -2328,16 +2328,20 @@ describe('CallScreen, plein écran', () => {
     expect(within(screen.getByTestId('grid')).getByTestId('tile-me:camera')).toBeTruthy();
   });
 
-  // I4, reproduit par la revue : la clé `fullscreen` elle-même n'est JAMAIS
-  // effacée par ce retour à la normale — seule sa RÉSOLUTION
-  // (`fullscreenTile`) retombe à `null`, exactement comme le fait
-  // l'épinglage (`src/call/layout.ts:198-201` : « si elle revient,
-  // l'épinglage reprend tout seul »). Bénin pour l'épinglage, où une tuile
-  // qui revient se déplace, sous les yeux de la personne. Pas bénin ici : si
-  // Bob revient avec la MÊME identité — donc la MÊME clé de tuile —, elle
-  // résout de nouveau, et rejetterait l'écran dans un plein écran sans
-  // commandes sans que personne n'ait rien demandé.
-  it('ne ressuscite pas le plein écran quand la cible revient sans le moindre geste', async () => {
+  // I4, reproduit par la revue : ni `fullscreen` ni `pin` n'étaient effacés par
+  // ce retour à la normale — seule leur RÉSOLUTION retombait à `null`
+  // (`src/call/layout.ts:283-287` : « si elle revient, l'épinglage reprend tout
+  // seul »). Une clé périmée qui résout de nouveau rejette l'écran dans un état
+  // que personne n'a demandé.
+  //
+  // **Ce test affirmait la résurrection de l'ÉPINGLAGE comme voulue.** Elle ne
+  // l'est plus. L'argument d'alors — « bénin, la tuile qui revient se déplace
+  // sous les yeux de la personne » — supposait un badge visible pendant
+  // l'absence. Il n'y en a pas : une clé qui ne résout plus ne marque RIEN à
+  // l'écran, et rien ne peut plus l'effacer, puisque le badge est le seul geste
+  // qui désépingle et qu'il n'est pas rendu. L'épinglage se guérit donc comme
+  // le plein écran, et pour la même raison.
+  it('ne ressuscite ni le plein écran ni l’épinglage quand la cible revient sans un geste', async () => {
     // Ada présente : c'est ce qui produit la bande, seul endroit d'où l'on
     // épingle encore. Bob y est épinglé, puis basculé en plein écran depuis la
     // scène — la seule façon de poser les DEUX clés sur la MÊME tuile, ce que
@@ -2360,13 +2364,16 @@ describe('CallScreen, plein écran', () => {
     await emitRoom('participantConnected');
     await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
 
-    // Les deux clés se comportent DIFFÉREMMENT, et c'est tout l'objet de ce
-    // test. L'ÉPINGLAGE reprend : c'est le comportement voulu et écrit
-    // (`src/call/layout.ts`, « si elle revient, l'épinglage reprend tout
-    // seul »), et il est visible — Bob remonte sur la scène, badge compris.
-    expect(screen.getByTestId('pin-marker')).toBeTruthy();
-    // Le PLEIN ÉCRAN, lui, ne doit pas revenir : il retirerait toutes les
-    // commandes sans que personne n'ait rien demandé. La barre est donc là.
+    // L'ÉPINGLAGE ne reprend pas : ni badge, ni scène volée. La scène revient à
+    // ce qui la tenait avant l'épinglage — le partage d'Ada — et Bob rentre
+    // dans la bande comme n'importe qui.
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
+    expect(
+      within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:screen'),
+    ).toBeTruthy();
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+    // Le PLEIN ÉCRAN non plus : il retirerait toutes les commandes sans que
+    // personne n'ait rien demandé. La barre est donc là.
     expect(screen.getByTestId('mic-toggle')).toBeTruthy();
     expect(screen.getByTestId('leave-btn')).toBeTruthy();
   });

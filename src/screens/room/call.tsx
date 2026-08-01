@@ -262,6 +262,37 @@ export function CallScreen(): React.ReactElement {
     setFullscreen(null);
   }
 
+  // La MÊME guérison pour l'épinglage, et pour une raison qui lui est propre.
+  // `selectLayout` résout la clé à chaque rendu sans jamais l'effacer
+  // (`src/call/layout.ts` : « si elle revient, l'épinglage reprend tout seul »),
+  // ce qui laissait une clé périmée survivre à la personne qu'elle désignait.
+  // Trois conséquences, dans cet ordre de gravité :
+  //
+  //   1. rien ne la MARQUE — le badge vit sur la tuile épinglée, qui n'existe
+  //      plus, et la grille n'en a jamais ;
+  //   2. rien ne peut donc l'EFFACER, puisque ce badge est le seul geste qui
+  //      désépingle ;
+  //   3. si la personne revient sous la même identité — reconnexion, ou simple
+  //      aller-retour — la scène lui saute dessus sans que personne n'ait rien
+  //      demandé.
+  //
+  // `layout.pinned` EST la résolution : `selectLayout` ne le met à vrai que
+  // lorsque la clé désigne encore une tuile présente. Un mode `grid`, comme un
+  // `focus` produit par un partage d'écran, disent tous deux qu'elle ne résout
+  // plus.
+  //
+  // `layout !== null` n'est jamais atteint : `box` n'est posée qu'une fois et
+  // n'est jamais remise à `null`, et poser un épinglage exige une bande, donc
+  // une disposition déjà calculée. La garde est là pour le typage — aucun test
+  // ne peut la rougir, et il ne faut pas en fabriquer un.
+  //
+  // Corrigé PENDANT le rendu, jamais dans un effet, pour les raisons écrites
+  // juste au-dessus. Ne boucle pas : la condition redevient fausse à l'instant
+  // même où cet appel s'exécute.
+  if (pin !== null && layout !== null && !(layout.mode === 'focus' && layout.pinned)) {
+    setPin(null);
+  }
+
   // Un appui sur une VIGNETTE DE BANDE épingle celle qu'on touche. Ce n'est pas
   // un aller-retour : une tuile épinglée force le mode `focus` et occupe la
   // scène, donc la bande ne peut jamais porter la tuile déjà épinglée
