@@ -107,7 +107,39 @@ participant distant. Deux fois payé.
 | Sur quoi porte-t-il ? | Une **clé de tuile** (`${identity}:${source}`), pas une personne. |
 | Où vit-il ? | Dans `call.tsx`, en `useState`. **Local à l'appareil**, non partagé, non persisté. |
 | Survit-il au départ ? | Il n'est jamais « effacé » : il est **résolu contre la vue présente** à chaque rendu, et ignoré s'il ne résout pas. Une reconnexion le conserve donc. |
-| Quel geste ? | **Appui long** sur n'importe quelle tuile, plus un marqueur pressable sur la tuile épinglée pour en sortir. |
+| Quel geste ? | **Appui long** sur n'importe quelle tuile, plus un marqueur pressable pour en sortir. |
+
+> ## Décision du 2026-08-01, prise sur appareil : l'épinglage cède la place au PLEIN ÉCRAN
+>
+> Constaté en séance réelle, écran partagé depuis un navigateur de bureau, sur l'écran de
+> couverture d'un Pixel 10 Pro Fold en paysage : la scène fonctionne, mais elle ne reçoit que
+> **695 × 391 dp** d'image utile, parce que la bande en colonne lui prend 96 dp de large et la
+> barre de contrôle 52 dp de haut. La boîte vaut 969,8 × 443 dp, et une source 16:9 en
+> `contain` y est limitée par la hauteur.
+>
+> **Masquer les deux porte l'image à 787,6 × 443 dp — +13 % en linéaire, +28 % en surface.**
+> Sur du texte partagé, 13 % de hauteur de glyphe sépare « lisible » de « confortable ».
+>
+> **Ce que cela change, et c'est une simplification :**
+>
+> - **L'épinglage disparaît en tant que notion distincte.** Les quatre lignes ci-dessus ne
+>   s'appliquent plus. `selectLayout` ne prend plus de troisième entrée : la scène est
+>   décidée par le contenu seul (un écran partagé la prend, sinon la parole).
+> - **L'appui long ouvre le PLEIN ÉCRAN** sur la tuile visée : ni bande, ni barre de contrôle,
+>   ni marqueur. Un appui n'importe où ramène les commandes pour quelques secondes, à la
+>   manière d'un lecteur vidéo — c'est la convention la plus répandue, et elle évite d'avoir à
+>   viser une petite cible pour sortir.
+> - **L'appui simple fait apparaître une icône d'agrandissement** sur la tuile, quelques
+>   secondes. C'est la voie qui se **découvre** ; l'appui long est le raccourci de celui qui
+>   sait. Les deux mènent au même état.
+>
+> **Ce qu'on perd, et c'est assumé :** « garder cette personne sur la scène tout en voyant les
+> autres ». Le plein écran est exclusif par construction. Arbitré explicitement.
+>
+> **Ce qu'aucun test ne prouvera, et qui s'ajoute à la liste :** qu'un appui long se découvre
+> — le problème est seulement déplacé, pas résolu, et c'est précisément pourquoi l'appui
+> simple garde une affordance visible. Et que les commandes rappelées se retirent au bon
+> moment : trop tôt on les rate, trop tard elles gênent.
 | Le paysage ? | La grille **remplace** la bascule `width > height` du lot en cours par un unique comparatif continu, `W / H` contre `TILE_ASPECT`. |
 
 ### 1. Le nombre de tuiles vient de la boîte mesurée, pas de l'orientation
