@@ -13,7 +13,7 @@ import {
 import { buildAuthorizeUrl, exchangeCode } from 'src/auth/oidc';
 import { createPkcePair } from 'src/auth/pkce';
 import { clearTokens, saveTokens } from 'src/auth/storage';
-import { OIDC_REDIRECT_URI } from 'src/constants';
+import { OIDC_RETURN_URL } from 'src/constants';
 import { fetchInstanceConfig } from 'src/instance/discovery';
 
 export type LoginError =
@@ -71,7 +71,7 @@ export async function signIn(serverUrl: string, loginHint?: string): Promise<Log
   const authorizeUrl = buildAuthorizeUrl(instance.value, pkce, state, nonce, loginHint);
 
   // Navigateur système, jamais une WebView : RFC 8252.
-  const session = await openAuthSessionAsync(authorizeUrl, OIDC_REDIRECT_URI);
+  const session = await openAuthSessionAsync(authorizeUrl, OIDC_RETURN_URL);
   if (session.type !== 'success') return { ok: false, error: 'cancelled' };
 
   const returned = new URL(session.url);

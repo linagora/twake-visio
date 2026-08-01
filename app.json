@@ -32,18 +32,6 @@
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
-        },
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "meet.twake-dev.maudet.cloud",
-              "pathPrefix": "/auth/mobile-callback"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },

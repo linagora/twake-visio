@@ -18,29 +18,35 @@ describe('buildAuthorizeUrl', () => {
     expect(url.origin + url.pathname).toBe('https://sso.linagora.com/oauth2/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('client_id')).toBe('twake-visio');
-    // HTTPS, et non le schéma personnalisé : Chrome ne dispatche pas d'intention
-    // applicative pour une redirection en schéma personnalisé qui répond à un
-    // POST de formulaire — donc la PREMIÈRE connexion, celle où l'on saisit son
-    // mot de passe, restait bloquée. Établi trois fois par comparaison
-    // contrôlée. La valeur est écrite en dur ici plutôt que lue depuis la
-    // constante : comparer le code à lui-même ne garderait rien.
+    // Dérivée de l'INSTANCE découverte, jamais écrite en dur : c'est ce qui
+    // permet à l'application publiée sur les stores de servir un client dont
+    // personne ne connaissait le domaine à la compilation.
+    //
+    // Et c'est une URL HTTPS, pas le schéma de l'application : Chrome ne
+    // dispatche pas d'intention pour une redirection en schéma personnalisé qui
+    // répond à un POST de formulaire, donc la première connexion — celle où
+    // l'on saisit son mot de passe — restait bloquée. La page servie par
+    // l'instance termine la chaîne du POST et rebondit ensuite vers le schéma.
     expect(url.searchParams.get('redirect_uri')).toBe(
-      'https://meet.twake-dev.maudet.cloud/auth/mobile-callback',
+      'https://meet.linagora.com/auth/mobile-callback',
     );
-    expect(url.searchParams.get('code_challenge')).toBe('chal');
-    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(url.searchParams.get('state')).toBe('st4te');
-  });
-
-  // Sans lui, LemonLDAP::NG refuse d'émettre le code APRÈS avoir authentifié la
-  // personne, et redirige vers `redirect_uri` en portant une erreur. Les deux
-  // valeurs sont volontairement distinctes ici : une implémentation qui
-  // recopierait `state` dans `nonce` passerait un test qui les confondrait.
-  it('porte un nonce, distinct du state', () => {
-    const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st4te', 'n0nce'));
 
     expect(url.searchParams.get('nonce')).toBe('n0nce');
     expect(url.searchParams.get('nonce')).not.toBe(url.searchParams.get('state'));
+  });
+
+  // La MÊME fonction, une AUTRE instance. Sans ce second cas, l'assertion
+  // ci-dessus passerait contre une URL écrite en dur — et c'est précisément ce
+  // qu'il ne faut pas, puisque l'application publiée doit servir des clients
+  // dont le domaine n'existait pas à la compilation.
+  it('dérive l’URL de retour de l’instance découverte, jamais d’une constante', () => {
+    const autre = { ...CONFIG, serverUrl: 'https://visio.une-autre-mairie.fr' };
+
+    const url = new URL(buildAuthorizeUrl(autre, PKCE, 'st', 'no'));
+
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      'https://visio.une-autre-mairie.fr/auth/mobile-callback',
+    );
   });
 
   it('transmet login_hint quand il est fourni', () => {

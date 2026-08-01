@@ -1,4 +1,12 @@
-import { OIDC_REDIRECT_URI, REQUEST_TIMEOUT_MS } from 'src/constants';
+import { OIDC_CALLBACK_PATH, REQUEST_TIMEOUT_MS } from 'src/constants';
+
+// L'URL de retour déclarée au SSO : la page de rebond de l'instance DÉCOUVERTE,
+// jamais une constante. C'est ce qui permet à une application publiée sur les
+// stores de servir un client dont le domaine n'existait pas à la compilation.
+// `serverUrl` arrive déjà normalisée sans barre finale (`discovery.ts:58`).
+export function redirectUriFor(config: InstanceConfig): string {
+  return `${config.serverUrl}${OIDC_CALLBACK_PATH}`;
+}
 import type { PkcePair } from 'src/auth/pkce';
 import type { InstanceConfig } from 'src/instance/types';
 
@@ -53,7 +61,7 @@ export function buildAuthorizeUrl(
   const url = new URL(`${config.issuer}/oauth2/authorize`);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', config.clientId);
-  url.searchParams.set('redirect_uri', OIDC_REDIRECT_URI);
+  url.searchParams.set('redirect_uri', redirectUriFor(config));
   url.searchParams.set('scope', 'openid email profile');
   url.searchParams.set('code_challenge', pkce.challenge);
   url.searchParams.set('code_challenge_method', pkce.method);
@@ -121,7 +129,7 @@ export async function exchangeCode(
     {
       grant_type: 'authorization_code',
       code,
-      redirect_uri: OIDC_REDIRECT_URI,
+      redirect_uri: redirectUriFor(config),
       code_verifier: verifier,
     },
     null,
