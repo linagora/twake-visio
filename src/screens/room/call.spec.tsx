@@ -2528,6 +2528,34 @@ describe('CallScreen — le chat', () => {
     await waitFor(() => expect(screen.queryByTestId('call-notice')).toBeNull());
   });
 
+  // MESURÉ : sans ce test, figer `behavior={undefined}` sur la racine laissait
+  // les 105 autres verts. Aucun test de RNTL n'ouvre de clavier, et ce que
+  // `KeyboardAvoidingView` fait de cette prop SUR UN APPAREIL n'est donc pas
+  // prouvable ici — mais que le câblage n'ait pas été retiré, si. C'est la
+  // cause qu'on garde, pas le symptôme : sans elle, la zone de saisie et le
+  // bouton « quitter » passent sous le clavier sur iOS.
+  //
+  // Le préréglage Jest fixe `Platform.OS` à 'ios', donc c'est la branche
+  // 'padding' que ce fichier rend ; l'autre est gardée dans `keyboard.spec.ts`,
+  // et c'est précisément pourquoi `keyboardMode()` est une VALEUR.
+  it('rembourre la racine entière, et non le seul panneau', async () => {
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() => expect(screen.getByTestId('call-root')).toBeTruthy());
+    // `behavior` elle-même n'est joignable par aucune assertion :
+    // `KeyboardAvoidingView` la retire de ses props avant de les étaler sur sa
+    // `View` (`KeyboardAvoidingView.js:225-233`) — le même piège que le
+    // `visible` d'un `Badge`. Ce qui reste observable est ce que la branche
+    // 'padding' COMPOSE : `StyleSheet.compose(style, {paddingBottom:
+    // bottomHeight})` (`:279`), là où la branche par défaut passe `style` tel
+    // quel (`:291`). Clavier fermé, `bottomHeight` vaut 0 — et `styles.root`
+    // ne porte aucun `paddingBottom`, donc cette clé n'est là que si la
+    // branche de rembourrage est active. Convention INTERNE à React Native,
+    // pas un contrat d'API : une montée de version peut la changer, et le
+    // rouge de cette suite serait alors le seul signal.
+    expect(screen.getByTestId('call-root')).toHaveStyle({ paddingBottom: 0 });
+  });
+
   it('enregistre lk.chat une seule fois, et le libère au démontage', async () => {
     // Un gestionnaire laissé sur une Room vivante est une fuite qu'aucun écran
     // ne rattrape ; deux enregistrements feraient jeter le SDK.

@@ -846,6 +846,7 @@ export function CallScreen(): React.ReactElement {
     // qu'elle remplace. `keyboardMode()` est une VALEUR : c'est ce qui permet à
     // une spec de rendre les deux branches sans bouchonner `Platform`.
     <KeyboardAvoidingView
+      testID="call-root"
       style={styles.root}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
