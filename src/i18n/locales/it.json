@@ -87,5 +87,6 @@
   "error.forbidden": "Azione rifiutata: permessi insufficienti",
   "error.notFound": "Non trovato sul server",
   "error.badRequest": "Il server ha rifiutato la richiesta",
-  "error.serverError": "Errore del server"
+  "error.serverError": "Errore del server",
+  "participants.actions": "Azioni per questo partecipante"
 }

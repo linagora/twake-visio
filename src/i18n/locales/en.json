@@ -87,5 +87,6 @@
   "error.forbidden": "Action refused by the server",
   "error.notFound": "Not found on the server",
   "error.badRequest": "The server rejected the request",
-  "error.serverError": "Server error"
+  "error.serverError": "Server error",
+  "participants.actions": "Actions for this participant"
 }

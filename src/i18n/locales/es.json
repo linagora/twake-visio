@@ -87,5 +87,6 @@
   "error.forbidden": "Acción rechazada: permisos insuficientes",
   "error.notFound": "No encontrado en el servidor",
   "error.badRequest": "El servidor rechazó la solicitud",
-  "error.serverError": "Error del servidor"
+  "error.serverError": "Error del servidor",
+  "participants.actions": "Acciones para este participante"
 }

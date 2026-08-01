@@ -87,5 +87,6 @@
   "error.forbidden": "Aktion abgelehnt: keine ausreichenden Rechte",
   "error.notFound": "Auf dem Server nicht gefunden",
   "error.badRequest": "Der Server hat die Anfrage abgelehnt",
-  "error.serverError": "Serverfehler"
+  "error.serverError": "Serverfehler",
+  "participants.actions": "Aktionen für diese Person"
 }

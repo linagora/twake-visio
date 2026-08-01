@@ -87,5 +87,6 @@
   "error.forbidden": "Hành động bị từ chối: không đủ quyền",
   "error.notFound": "Không tìm thấy trên máy chủ",
   "error.badRequest": "Máy chủ đã từ chối yêu cầu",
-  "error.serverError": "Lỗi máy chủ"
+  "error.serverError": "Lỗi máy chủ",
+  "participants.actions": "Hành động với người này"
 }

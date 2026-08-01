@@ -87,5 +87,6 @@
   "error.forbidden": "Action refusée : droits insuffisants",
   "error.notFound": "Introuvable sur le serveur",
   "error.badRequest": "Requête refusée par le serveur",
-  "error.serverError": "Erreur du serveur"
+  "error.serverError": "Erreur du serveur",
+  "participants.actions": "Actions sur cette personne"
 }

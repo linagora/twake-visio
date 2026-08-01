@@ -315,6 +315,19 @@ beforeEach(() => {
   jest.spyOn(audioRoute, 'openSystemRoutePicker').mockResolvedValue();
 });
 
+// Les trois actions de modération vivent désormais dans une feuille inférieure,
+// ouverte par la seule cible que porte la ligne. `Modal` ne monte rien à l'état
+// fermé (`Modal.tsx:182`) : sans cette ouverture, aucune des trois n'existe
+// dans l'arbre. C'est voulu — voir `participantsPanel.tsx`, où trois boutons
+// posés sur la ligne écrasaient le nom à 39 px sur un écran réel.
+async function openParticipantActions(index = 0): Promise<void> {
+  await waitFor(() =>
+    expect(screen.getAllByTestId('participant-actions').length).toBeGreaterThan(index),
+  );
+  await fireEvent.press(nth(screen.getAllByTestId('participant-actions'), index));
+  await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+}
+
 describe('CallScreen', () => {
   it("lit l'état courant à l'initialisation, que `subscribe` ne pousse pas", async () => {
     // Le régresseur : le double n'appelle jamais le listener à l'abonnement.
@@ -771,9 +784,11 @@ describe('CallScreen, panneau des participants', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getAllByTestId('participant-mute')).toHaveLength(2));
+    // La SECONDE ligne : `openParticipantActions(0)` donnerait Alice, et le
+    // test ne distinguerait plus rien.
+    await openParticipantActions(1);
 
-    await fireEvent.press(nth(screen.getAllByTestId('participant-mute'), 1));
+    await fireEvent.press(screen.getByTestId('participant-mute'));
 
     expect(muteSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
   });
@@ -798,10 +813,12 @@ describe('CallScreen, panneau des participants', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getAllByTestId('participant-remove')).toHaveLength(2));
-
-    await fireEvent.press(nth(screen.getAllByTestId('participant-remove'), 1));
-    await fireEvent.press(nth(screen.getAllByTestId('participant-promote'), 1));
+    // Une action referme la feuille : on la rouvre entre les deux, toujours
+    // celle de la seconde ligne.
+    await openParticipantActions(1);
+    await fireEvent.press(screen.getByTestId('participant-remove'));
+    await openParticipantActions(1);
+    await fireEvent.press(screen.getByTestId('participant-promote'));
 
     expect(removeSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
     expect(roleSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity', 'administrator');
@@ -864,7 +881,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -889,7 +906,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -920,7 +937,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -946,7 +963,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -967,7 +984,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-remove')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-remove'));
 
@@ -986,7 +1003,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-promote')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-promote'));
 
@@ -1005,7 +1022,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -1031,7 +1048,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
     await act(async () => {
@@ -1055,7 +1072,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
     await waitFor(() => {
@@ -1063,6 +1080,8 @@ describe('CallScreen, échec de modération', () => {
     });
 
     muteSpy.mockResolvedValueOnce({ ok: true, value: undefined });
+    // Le premier appui a refermé la feuille : la rouvrir fait partie du geste.
+    await openParticipantActions();
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
     await waitFor(() => {

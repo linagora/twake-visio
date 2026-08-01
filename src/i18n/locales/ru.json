@@ -87,5 +87,6 @@
   "error.forbidden": "Действие отклонено: недостаточно прав",
   "error.notFound": "Не найдено на сервере",
   "error.badRequest": "Сервер отклонил запрос",
-  "error.serverError": "Ошибка сервера"
+  "error.serverError": "Ошибка сервера",
+  "participants.actions": "Действия с этим участником"
 }
