@@ -149,6 +149,22 @@ let mockLocalAttributes: Record<string, string> = {};
 // façon de faire arriver un changement d'attributs comme le fait le serveur.
 const mockRoomHandlers = new Map<string, (() => void)[]>();
 
+// Le flux de chat, du côté du double. `registerTextStreamHandler` n'est pas
+// une émission d'événement : c'est une carte d'un seul gestionnaire par topic,
+// et le vrai JETTE sur un doublon. Le double jette aussi, sans quoi rien ne
+// garderait l'ordre `unregister` → `register` que le magasin respecte.
+type StreamHandler = (
+  reader: { info: { id: string; timestamp: number }; readAll: () => Promise<string> },
+  info: { identity: string },
+) => void;
+
+const mockTextStreamHandlers = new Map<string, StreamHandler>();
+const mockSendText = jest.fn();
+// Le nom LiveKit du participant local, celui que le magasin de chat recopie
+// dans l'écho d'un message émis. Un accesseur, pas un champ figé, pour la
+// même raison que `mockLocalAttributes` juste au-dessus.
+let mockLocalName: string | undefined;
+
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
@@ -156,11 +172,17 @@ const mockRoom: {
   readonly isRecording: boolean;
   on: (event: string, handler: () => void) => unknown;
   off: (event: string, handler: () => void) => unknown;
+  registerTextStreamHandler: (topic: string, handler: StreamHandler) => void;
+  unregisterTextStreamHandler: (topic: string) => void;
+  getParticipantByIdentity: (identity: string) => unknown;
 } = {
   localParticipant: {
     identity: 'me',
     isLocal: true,
     isSpeaking: false,
+    get name(): string | undefined {
+      return mockLocalName;
+    },
     get attributes(): Record<string, string> {
       return mockLocalAttributes;
     },
@@ -172,6 +194,7 @@ const mockRoom: {
     // mauvaise raison, avant ce correctif.
     getTrackPublication: (source: Track.Source) =>
       source === Track.Source.Camera ? mockCameraPublication : undefined,
+    sendText: mockSendText,
   },
   remoteParticipants: new Map<string, unknown>(),
   get metadata(): string | undefined {
@@ -190,6 +213,20 @@ const mockRoom: {
     if (index !== -1) attached.splice(index, 1);
     if (attached.length === 0) mockRoomHandlers.delete(event);
     return mockRoom;
+  },
+  registerTextStreamHandler(topic: string, handler: StreamHandler): void {
+    if (mockTextStreamHandlers.has(topic)) {
+      throw new Error(`handler already registered for ${topic}`);
+    }
+    mockTextStreamHandlers.set(topic, handler);
+  },
+  unregisterTextStreamHandler(topic: string): void {
+    mockTextStreamHandlers.delete(topic);
+  },
+  // Le magasin y résout le nom d'un émetteur ; `remoteParticipants` est déjà
+  // la carte que les tests de modération peuplent.
+  getParticipantByIdentity(identity: string): unknown {
+    return mockRoom.remoteParticipants.get(identity);
   },
 };
 
@@ -299,6 +336,9 @@ beforeEach(() => {
   // sans ce nettoyage, ils survivraient au test suivant.
   mockRoom.remoteParticipants.clear();
   mockRoomHandlers.clear();
+  mockTextStreamHandlers.clear();
+  mockSendText.mockReset().mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+  mockLocalName = 'Ada';
   mockLocalAttributes = {};
   mockRoomMetadata = undefined;
   mockRoomIsRecording = false;
