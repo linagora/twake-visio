@@ -3,6 +3,7 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
+import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
 import { tokens } from 'src/ui/tokens';
 import { MoreMenu } from './moreMenu';
@@ -53,6 +54,7 @@ type Overrides = {
   onStartRecording?: () => void;
   onStopRecording?: () => void;
   onToggleHand?: () => void;
+  onSendReaction?: (key: ReactionKey) => void;
 };
 
 function menu(overrides: Overrides = {}): React.ReactElement {
@@ -68,6 +70,7 @@ function menu(overrides: Overrides = {}): React.ReactElement {
       onStartRecording={overrides.onStartRecording ?? jest.fn()}
       onStopRecording={overrides.onStopRecording ?? jest.fn()}
       onToggleHand={overrides.onToggleHand ?? jest.fn()}
+      onSendReaction={overrides.onSendReaction ?? jest.fn()}
     />,
   );
 }
@@ -287,5 +290,32 @@ describe('MoreMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     expect(screen.queryByTestId('hand-queue')).toBe(null);
+  });
+
+  it('offre les huit réactions et les garde après un envoi', async () => {
+    const onSendReaction = jest.fn();
+    await render(menu({ onSendReaction }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+
+    expect(onSendReaction).toHaveBeenCalledWith('thumbs-up');
+    // À l'inverse de ses trois voisines (`share-btn`, `recording-toggle`,
+    // `hand-toggle`), une réaction NE referme PAS le menu.
+    expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy();
+  });
+
+  it('envoie une seconde réaction sans rouvrir le menu', async () => {
+    const onSendReaction = jest.fn();
+    await render(menu({ onSendReaction }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
+
+    expect(onSendReaction).toHaveBeenNthCalledWith(1, 'thumbs-up');
+    expect(onSendReaction).toHaveBeenNthCalledWith(2, 'red-heart');
   });
 });
