@@ -35,6 +35,8 @@ import {
 } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureBluetoothPermission, ensureMediaPermissions } from 'src/call/permissions';
+import type { ReactionKey } from 'src/call/reactions';
+import { createReactionStore } from 'src/call/reactionStore';
 import {
   canStartRecording,
   recordingErrorMessage,
@@ -56,6 +58,7 @@ import {
 import { HandBanner } from 'src/screens/room/handBanner';
 import { MoreMenu } from 'src/screens/room/moreMenu';
 import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
+import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
@@ -75,6 +78,7 @@ type MessageKey =
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
+  | 'call.reactionFailed'
   | RecordingMessageKey;
 
 // Sert deux appelants : l'accès initial au salon, et les trois actions de
@@ -372,6 +376,15 @@ export function CallScreen(): React.ReactElement {
   const recordingStore = useMemo(() => createRecordingStore(session.getRoom()), [session]);
   const recordingState = useSyncExternalStore(recordingStore.subscribe, recordingStore.getSnapshot);
 
+  // Troisième magasin indépendant, comme `recordingStore` et `roomViewStore` :
+  // `useState`, pas `useMemo` — React se réserve le droit de jeter un
+  // `useMemo`, et un magasin jeté laisserait derrière lui un abonnement
+  // `RoomEvent.DataReceived` sur une `Room` vivante que plus personne ne
+  // détacherait. `createReactionStore` s'abonne dès sa construction : il n'y
+  // a pas de second instant où le faire.
+  const [reactionStore] = useState(() => createReactionStore(session.getRoom()));
+  const reactions = useSyncExternalStore(reactionStore.subscribe, reactionStore.getSnapshot);
+
   // `Room.id` est `string | null` depuis le premier commit d'API : distinct
   // d'`access?.room.id`, dont les usages plus bas l'écrasaient en `''` — au
   // lieu de garder l'absence — ce qui fabriquait des routes de la forme
@@ -420,11 +433,15 @@ export function CallScreen(): React.ReactElement {
     const unsubscribe = session.subscribe(setCallState);
     return () => {
       unsubscribe();
+      // Avant `session.dispose()` : détacher le canal de données pendant que
+      // la Room existe encore, la même précaution que le désabonnement de
+      // `setCallState` juste au-dessus.
+      reactionStore.dispose();
       // Terminal. Sans lui, chaque passage sur cet écran laisse derrière lui
       // une Room vivante, et avec elle le micro, la caméra et le transport.
       session.dispose();
     };
-  }, [session]);
+  }, [session, reactionStore]);
 
   // Ne dépend d'aucune des bascules : le nettoyage d'un effet s'exécute à
   // chacune de ses relances, et un effet de connexion qui dépendrait de `micOn`
@@ -641,6 +658,24 @@ export function CallScreen(): React.ReactElement {
         setHandBusy(false);
         setNotice('call.handFailed');
       });
+  };
+
+  // Le store ne distingue pas, dans son booléen, un refus de débit d'un
+  // échec de publication (§6.5/§7.5 de la conception ne rendent que
+  // `boolean`) — alors que la limite de débit doit rester silencieuse en
+  // toute circonstance (§5.C11 : « son refus n'est signalé par aucun
+  // message »). Suivre §8 à la lettre (Snackbar sur tout échec hors
+  // reconnexion) violerait donc §5.C11 dans le cas le plus fréquent : presser
+  // vite est justement ce qui déclenche la limite de débit. Ce plan choisit
+  // le silence dans les deux cas — voir
+  // `docs/superpowers/plans/2026-08-01-scope-C2-reactions.md` pour le détail
+  // et le signalement à qui possède la conception.
+  //
+  // `.catch()` par discipline, pas par nécessité : `send()` ne rejette
+  // jamais (même contrat que `CallSession.connect`), mais rien ne l'affirme
+  // au typage — même motif que `handleSelectAudioOutput` un peu plus haut.
+  const handleSendReaction = (key: ReactionKey): void => {
+    reactionStore.send(key).catch(() => undefined);
   };
 
   // Invariant défensif, gardé après la simplification des gestes : ouvrir ce
@@ -905,6 +940,7 @@ export function CallScreen(): React.ReactElement {
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecording}
             onToggleHand={handleToggleHand}
+            onSendReaction={handleSendReaction}
           />
           <IconButton
             testID="participants-toggle"
@@ -930,6 +966,11 @@ export function CallScreen(): React.ReactElement {
           />
         </View>
       ) : null}
+
+      {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
+          l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
+          repos, donc toujours montée, jamais enveloppée d'une condition. */}
+      <ReactionOverlay reactions={reactions} />
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
           seul `visible` bascule. Une seule case pour cinq actions — modération
