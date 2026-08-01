@@ -138,6 +138,35 @@ describe('AudioOutputControl, mode menu', () => {
     expect(onSelect).not.toHaveBeenCalledWith('bluetooth');
   });
 
+  // Trouvé manquant par mutation (même trou que la tâche 3 sur
+  // `cameraMenu.tsx`) : retirer `setVisible(false)` du gestionnaire d'appui ne
+  // faisait rougir aucun des neuf tests ci-dessus, alors qu'un `onPress` sans
+  // lui laisserait la feuille ouverte après un choix. `Modal` ne démonte
+  // qu'après sa propre animation de fermeture asynchrone (`hideModalAnimation`,
+  // `Modal.tsx:131-144` : le callback de fin de `Animated.timing` retarde
+  // `setVisibleInternal(false)`), d'où le `waitFor` plutôt qu'une assertion
+  // synchrone.
+  it('referme la feuille après un choix', async () => {
+    await render(
+      withPaper(
+        <AudioOutputControl
+          mode="menu"
+          outputs={['bluetooth', 'speaker']}
+          chosen={null}
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+          onSystemPicker={jest.fn()}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
+
+    await waitFor(() => expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull());
+  });
+
   it('coche ce que nous avons demandé, et rien avant un choix', async () => {
     // La coche marque notre propre choix, jamais l'état du système : aucune
     // API ne dit d'où sort le son.
