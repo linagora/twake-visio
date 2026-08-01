@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
+import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
 
 import { toggleHand } from 'src/api/hand';
 import {
@@ -15,26 +15,12 @@ import { startRecording, stopRecording } from 'src/api/recording';
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
-import {
-  audioRouteControl,
-  listAudioOutputs,
-  openSystemRoutePicker,
-  selectAudioOutput,
-} from 'src/call/audioRoute';
 import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
-import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, raisedHands } from 'src/call/hands';
 import type { ParticipantView, Tile } from 'src/call/layout';
-import {
-  listCameras,
-  readActiveCameraId,
-  selectCamera,
-  setCameraEnabled,
-  setMicrophoneEnabled,
-  type FacingMode,
-} from 'src/call/media';
+import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
 import { ensureBluetoothPermission, ensureMediaPermissions } from 'src/call/permissions';
 import type { ReactionKey } from 'src/call/reactions';
@@ -49,21 +35,11 @@ import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
-import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
-import { CameraMenu } from 'src/screens/room/cameraMenu';
-import { ChatPanel } from 'src/screens/room/chatPanel';
-import {
-  BAR_HIT_SLOP,
-  BAR_ICON_COLOR,
-  BAR_RIPPLE_COLOR,
-  barStyles,
-} from 'src/screens/room/controlBar';
+import { CallControlBar } from 'src/screens/room/callControlBar';
+import { CallPanels, type Panel } from 'src/screens/room/callPanels';
 import { HandBanner } from 'src/screens/room/handBanner';
-import { MoreMenu } from 'src/screens/room/moreMenu';
-import { ParticipantsPanel } from 'src/screens/room/participantsPanel';
 import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
-import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
 import { keyboardMode } from 'src/ui/keyboard';
 import { tokens } from 'src/ui/tokens';
@@ -133,9 +109,6 @@ function toDisconnectMessage(reason: string): MessageKey {
   return reason === 'closed' ? 'call.ended' : 'error.network';
 }
 
-// Trois états qui s'excluent, nommés pour que `openPanel` puisse les prendre.
-type Panel = 'none' | 'participants' | 'chat';
-
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
 // chaque rendu, y compris quand personne n'est connecté. `access` — qui
 // gouverne la garde juste en dessous — ne se remplit que depuis l'effet de
@@ -162,18 +135,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: tokens.color.backgroundDark },
   banner: { alignItems: 'center', paddingVertical: tokens.spacing.sm },
   bannerText: { color: tokens.color.textDark },
-  controls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
-    // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
-    gap: tokens.spacing.sm,
-    padding: tokens.spacing.xs,
-  },
-  // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
-  // le web obtient avec `gap: '1px'`.
-  cameraGroup: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -212,23 +173,13 @@ export function CallScreen(): React.ReactElement {
     getActiveAccount() === null ? 'error.unauthorized' : null,
   );
 
-  const [micOn, setMicOn] = useState(mic !== '0');
-  const [cameraOn, setCameraOn] = useState(camera !== '0');
   // Le SDK n'expose pas la face courante d'une piste : c'est l'écran qui la
-  // conserve, et il la reprend du `CameraChoice` que le menu lui rend.
+  // conserve, et il la reprend du `CameraChoice` que le menu lui rend — par
+  // `onFacingChange`, puisque le menu vit dans `CallControlBar`. Le SEUL des
+  // états de périphérique qui reste ici, parce que c'est le seul que quelqu'un
+  // d'autre lise : `useCallLayout`, plus bas, en tire le miroir de la vignette
+  // locale.
   const [facing, setFacing] = useState<FacingMode>('user');
-
-  // Relus à chaque ouverture du menu, et à ce moment seulement : aucun
-  // événement de changement de périphérique n'existe sur mobile.
-  const [cameras, setCameras] = useState<readonly CameraChoice[]>([]);
-  const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
-
-  const [outputs, setOutputs] = useState<readonly AudioOutputKind[]>([]);
-  // Ce que *nous* avons demandé pendant cette séance, jamais l'état du système :
-  // aucune API ne dit d'où sort le son, sur aucune des deux plateformes. Rien
-  // n'est persisté entre deux séances — un choix manuel désarme la bascule
-  // automatique côté Android, et le persister la désarmerait pour toujours.
-  const [chosenOutput, setChosenOutput] = useState<AudioOutputKind | null>(null);
 
   // La Room est prête et son identité stable dès le premier rendu — la session
   // la construit dans son constructeur. Le crochet doit être appelé ici, avant
@@ -442,11 +393,6 @@ export function CallScreen(): React.ReactElement {
   // `/api/v1.0/rooms//mute-participant/`.
   const roomId = access?.room.id ?? null;
 
-  // Une valeur, pas une lecture de `Platform` par le composant : c'est ce qui
-  // permet à une spec de rendre les deux branches sans bouchonner la
-  // plateforme.
-  const routeControl = audioRouteControl();
-
   // Les trois gardes réunies : un salon public n'a pas de salle d'attente,
   // sans privilège le serveur refuserait la requête, et sans identifiant de
   // salon il n'y a pas de route à construire. Sans ce dernier, un salon
@@ -501,8 +447,10 @@ export function CallScreen(): React.ReactElement {
   }, [session, reactionStore]);
 
   // Ne dépend d'aucune des bascules : le nettoyage d'un effet s'exécute à
-  // chacune de ses relances, et un effet de connexion qui dépendrait de `micOn`
-  // couperait la séance à chaque appui sur le micro.
+  // chacune de ses relances, et un effet de connexion qui dépendrait de l'état
+  // du micro — désormais dans `CallControlBar` — couperait la séance à chaque
+  // appui sur le micro. C'est aussi pourquoi il lit les paramètres d'URL
+  // directement, et jamais la bascule.
   useEffect(() => {
     // Nom distinct du `account` de plus haut : celui-ci vit dans la fermeture
     // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
@@ -567,95 +515,6 @@ export function CallScreen(): React.ReactElement {
       cancelled = true;
     };
   }, [session, slug, camera, mic]);
-
-  const handleToggleMic = (): void => {
-    const next = !micOn;
-    setMicOn(next);
-    // L'icône revient où elle était si la commande échoue : elle ne doit jamais
-    // annoncer un micro coupé qui ne l'est pas.
-    setMicrophoneEnabled(session.getRoom(), next).catch(() => setMicOn(!next));
-  };
-
-  const handleToggleCamera = (): void => {
-    const next = !cameraOn;
-    setCameraOn(next);
-    setCameraEnabled(session.getRoom(), next).catch(() => setCameraOn(!next));
-  };
-
-  // Deux lectures, un seul instant. `listCameras` peut rejeter : un message
-  // d'erreur pour une liste que l'utilisateur vient tout juste de demander à
-  // voir n'aiderait personne à agir, et le menu s'ouvre vide — y compris à la
-  // réouverture qui suit un échec précédent : la liste est vidée plutôt que
-  // laissée à ce qu'a rendu la dernière ouverture réussie, potentiellement
-  // périmée entre-temps.
-  const handleOpenCameraMenu = (): void => {
-    listCameras()
-      .then((list) => {
-        setCameras(list);
-        setActiveCameraId(readActiveCameraId(session.getRoom()));
-      })
-      .catch(() => setCameras([]));
-  };
-
-  // Deux canaux d'échec, les deux traités : le booléen dit qu'Android est
-  // retombé sur son repli `facingMode`, le rejet dit que la contrainte a été
-  // refusée. L'état local n'avance que sur un vrai succès — même discipline que
-  // `handleToggleMic`, qui remet l'icône où elle était quand la commande
-  // échoue : l'interface ne doit jamais annoncer une caméra qui n'est pas celle
-  // qui filme.
-  //
-  // Caméra éteinte, le booléen vaut `true` sans rien prouver : c'est correct,
-  // la préférence est enregistrée et le prochain `setCameraEnabled(true)` la
-  // prendra. Rien à distinguer côté écran.
-  const handleSelectCamera = (choice: CameraChoice): void => {
-    selectCamera(session.getRoom(), choice.deviceId)
-      .then((switched) => {
-        if (!switched) {
-          setNotice('call.deviceSwitchFailed');
-          return;
-        }
-        setActiveCameraId(choice.deviceId);
-        // `'unknown'` n'a pas de miroir défini : la face précédente reste en
-        // vigueur plutôt que de retourner l'image sur une valeur qui ne veut
-        // rien dire.
-        if (choice.facing !== 'unknown') setFacing(choice.facing);
-        setNotice(null);
-      })
-      .catch(() => setNotice('call.deviceSwitchFailed'));
-  };
-
-  // La liste est relue à chaque ouverture du menu, et à ce moment seulement.
-  // Sur Android, entre deux ouvertures, un casque branché ou débranché ne
-  // produit aucun changement à l'écran — et rien ne le permettrait : la
-  // plateforme n'émet aucun événement, et aucune API ne dit d'où sort le son.
-  // La liste est juste dès la réouverture, et le son, lui, a bien suivi. Un
-  // rejet la vide plutôt que de laisser voir celle, potentiellement périmée,
-  // de la dernière ouverture réussie — même discipline que
-  // `handleOpenCameraMenu`.
-  const handleOpenAudioOutput = (): void => {
-    listAudioOutputs()
-      .then(setOutputs)
-      .catch(() => setOutputs([]));
-  };
-
-  // Posé immédiatement, pas dans un `.then()` : la promesse native est résolue
-  // avant que le travail ne soit posté sur son handler, et un identifiant
-  // inconnu est un no-op silencieux. Attendre n'apprendrait rien de plus.
-  // L'état enregistre ce qui a été *demandé*, et le menu l'affiche comme tel —
-  // jamais comme un état constaté.
-  const handleSelectAudioOutput = (kind: AudioOutputKind): void => {
-    setChosenOutput(kind);
-    // Aucune branche d'échec, parce qu'il n'en existe aucune : afficher un
-    // succès serait du bruit, afficher un échec serait une invention.
-    selectAudioOutput(kind).catch(() => undefined);
-  };
-
-  // Rien ne dit si le sélecteur de la plateforme est apparu : la méthode native
-  // n'a pas de resolver, et elle simule un clic sur une vue jamais insérée dans
-  // la hiérarchie. Il n'y a donc rien à lire, et rien à afficher.
-  const handleOpenSystemRoutePicker = (): void => {
-    openSystemRoutePicker().catch(() => undefined);
-  };
 
   // Le lien porte sur l'instance du compte, jamais sur une constante : une
   // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
@@ -969,36 +828,26 @@ export function CallScreen(): React.ReactElement {
           peuvent être vrais en même temps. */}
       <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
 
-      {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
-          deux se disputeraient la même vidéo, qui est la raison d'être de cet
-          écran. La barre de contrôle, elle, reste en place dans les trois cas —
-          quitter reste toujours possible. Les participants se referment par le
-          même bouton qui les ouvre ; le chat porte sa propre sortie, parce que
-          son point d'entrée est une ligne de feuille et non une bascule de
-          barre. */}
-      {panel === 'participants' ? (
-        <ParticipantsPanel
-          participants={participants}
-          canModerate={canModerate}
-          onMute={handleMuteParticipant}
-          onRemove={handleRemoveParticipant}
-          onRole={handleChangeParticipantRole}
-        />
-      ) : panel === 'chat' ? (
-        <ChatPanel chat={chat} onSend={handleSendChat} onClose={handleCloseChat} />
-      ) : (
-        // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
-        // grille du web rend chaque visage illisible sur un écran de téléphone.
-        <CallStage
-          layout={layout}
-          onMeasureBox={setBox}
-          onPressStageTile={handlePressStageTile}
-          onPinTile={handlePinTile}
-          onUnpinTile={handleUnpinTile}
-          onExitFullscreen={handleExitFullscreen}
-          fullscreenTile={fullscreenTile}
-        />
-      )}
+      {/* Les trois corps qui s'excluent, et leur aiguillage. `panel` descend en
+          lecture seule : `openPanel` reste la seule porte qui l'écrit. */}
+      <CallPanels
+        panel={panel}
+        participants={participants}
+        canModerate={canModerate}
+        onMute={handleMuteParticipant}
+        onRemove={handleRemoveParticipant}
+        onRole={handleChangeParticipantRole}
+        chat={chat}
+        onSendChat={handleSendChat}
+        onCloseChat={handleCloseChat}
+        layout={layout}
+        onMeasureBox={setBox}
+        onPressStageTile={handlePressStageTile}
+        onPinTile={handlePinTile}
+        onUnpinTile={handleUnpinTile}
+        onExitFullscreen={handleExitFullscreen}
+        fullscreenTile={fullscreenTile}
+      />
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
           en croyant que c'est cassé, et raccroche alors que ça se rétablit. */}
@@ -1010,97 +859,33 @@ export function CallScreen(): React.ReactElement {
         </View>
       ) : null}
 
-      {/* Masquée en plein écran, sans exception : plus de commandes à
-          rappeler, puisqu'un appui n'importe où sur l'unique tuile plein
-          écran en sort directement (`handleExitFullscreen`, câblé par
-          `stage.tsx`) — la sortie est donc totale par construction, prouvée
-          par un test dans `call.spec.tsx` plutôt qu'affirmée ici. Revient dès
-          le premier appui sur cette même tuile : sept boutons, `leave-btn`
-          compris, qui reste un moyen de quitter la séance entière. */}
-      {fullscreenTile === null ? (
-        <View style={styles.controls}>
-          <IconButton
-            testID="mic-toggle"
-            icon={micOn ? 'microphone' : 'microphone-off'}
-            iconColor={BAR_ICON_COLOR}
-            rippleColor={BAR_RIPPLE_COLOR}
-            style={barStyles.button}
-            hitSlop={BAR_HIT_SLOP}
-            onPress={handleToggleMic}
-            accessibilityLabel={t('call.muted')}
-          />
-          {/* La paire caméra : la bascule et le chevron qui lui colle. */}
-          <View style={styles.cameraGroup}>
-            <IconButton
-              testID="camera-toggle"
-              icon={cameraOn ? 'video' : 'video-off'}
-              iconColor={BAR_ICON_COLOR}
-              rippleColor={BAR_RIPPLE_COLOR}
-              style={barStyles.button}
-              hitSlop={BAR_HIT_SLOP}
-              onPress={handleToggleCamera}
-              accessibilityLabel={t('prejoin.cameraOff')}
-            />
-            <CameraMenu
-              cameras={cameras}
-              activeDeviceId={activeCameraId}
-              onOpen={handleOpenCameraMenu}
-              onSelect={handleSelectCamera}
-            />
-          </View>
-          <AudioOutputControl
-            mode={routeControl}
-            outputs={outputs}
-            chosen={chosenOutput}
-            onOpen={handleOpenAudioOutput}
-            onSelect={handleSelectAudioOutput}
-            onSystemPicker={handleOpenSystemRoutePicker}
-          />
-          {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
-            demanderait 409. Le partage, seule commande de la barre qu'on
-            n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
-            porte aussi l'enregistrement et la main levée. Sept cibles avant,
-            sept après — et la commande d'enregistrement n'est jamais
-            adjacente au bouton quitter. */}
-          <MoreMenu
-            recording={recordingState}
-            canRecord={canRecord}
-            recordingBusy={recordingBusy}
-            handRaised={handRaised}
-            handBusy={handBusy}
-            hands={hands}
-            unread={chat.unread}
-            onShare={handleShare}
-            onStartRecording={handleStartRecording}
-            onStopRecording={handleStopRecording}
-            onToggleHand={handleToggleHand}
-            onSendReaction={handleSendReaction}
-            onOpenChat={handleOpenChat}
-          />
-          <IconButton
-            testID="participants-toggle"
-            icon="account-multiple"
-            iconColor={BAR_ICON_COLOR}
-            rippleColor={BAR_RIPPLE_COLOR}
-            style={barStyles.button}
-            hitSlop={BAR_HIT_SLOP}
-            onPress={handleToggleParticipants}
-            accessibilityLabel={t('participants.title')}
-          />
-          <IconButton
-            testID="leave-btn"
-            icon="phone-hangup"
-            // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
-            // seuil WCAG AA, et la scène est sombre dans les deux schémas.
-            iconColor={tokens.color.dangerDark}
-            rippleColor={BAR_RIPPLE_COLOR}
-            style={barStyles.button}
-            hitSlop={BAR_HIT_SLOP}
-            onPress={handleLeave}
-            accessibilityLabel={t('call.leave')}
-          />
-        </View>
-      ) : null}
+      {/* Toujours montée, `hidden` seul bascule : c'est la barre elle-même qui
+          rend `null` en plein écran. Une ternaire ici la démonterait, et avec
+          elle les quatre états de périphérique qu'elle porte — voir
+          `CallControlBarProps.hidden`. */}
+      <CallControlBar
+        hidden={fullscreenTile !== null}
+        room={session.getRoom()}
+        defaultMicOn={mic !== '0'}
+        defaultCameraOn={camera !== '0'}
+        onFacingChange={setFacing}
+        onNotice={setNotice}
+        recording={recordingState}
+        canRecord={canRecord}
+        recordingBusy={recordingBusy}
+        handRaised={handRaised}
+        handBusy={handBusy}
+        hands={hands}
+        unread={chat.unread}
+        onShare={handleShare}
+        onStartRecording={handleStartRecording}
+        onStopRecording={handleStopRecording}
+        onToggleHand={handleToggleHand}
+        onSendReaction={handleSendReaction}
+        onOpenChat={handleOpenChat}
+        onToggleParticipants={handleToggleParticipants}
+        onLeave={handleLeave}
+      />
 
       {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
           l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
