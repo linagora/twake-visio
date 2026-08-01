@@ -18,7 +18,15 @@ describe('buildAuthorizeUrl', () => {
     expect(url.origin + url.pathname).toBe('https://sso.linagora.com/oauth2/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('client_id')).toBe('twake-visio');
-    expect(url.searchParams.get('redirect_uri')).toBe('twakevisio://callback');
+    // HTTPS, et non le schéma personnalisé : Chrome ne dispatche pas d'intention
+    // applicative pour une redirection en schéma personnalisé qui répond à un
+    // POST de formulaire — donc la PREMIÈRE connexion, celle où l'on saisit son
+    // mot de passe, restait bloquée. Établi trois fois par comparaison
+    // contrôlée. La valeur est écrite en dur ici plutôt que lue depuis la
+    // constante : comparer le code à lui-même ne garderait rien.
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      'https://meet.twake-dev.maudet.cloud/auth/mobile-callback',
+    );
     expect(url.searchParams.get('code_challenge')).toBe('chal');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('state')).toBe('st4te');

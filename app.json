@@ -9,7 +9,14 @@
       "expo-router",
       "expo-secure-store",
       "@livekit/react-native-expo-plugin",
-      ["expo-build-properties", { "android": { "minSdkVersion": 24 } }]
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ]
     ],
     "android": {
       "package": "com.linagora.twakevisio",
@@ -18,7 +25,24 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "https", "host": "meet.linagora.com" }],
+          "data": [
+            {
+              "scheme": "https",
+              "host": "meet.linagora.com"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "meet.twake-dev.maudet.cloud",
+              "pathPrefix": "/auth/mobile-callback"
+            }
+          ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
