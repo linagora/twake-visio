@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconButton, Menu } from 'react-native-paper';
+import { IconButton } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
 import type { RecordingState } from 'src/call/recording';
+import { BottomSheet } from 'src/screens/room/bottomSheet';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
@@ -12,6 +13,7 @@ import {
 } from 'src/screens/room/controlBar';
 import { HandControl } from 'src/screens/room/handControl';
 import { RecordingControl } from 'src/screens/room/recordingControl';
+import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type MoreMenuProps = {
   readonly recording: RecordingState;
@@ -55,58 +57,55 @@ export function MoreMenu({
   const [visible, setVisible] = useState(false);
 
   return (
-    <Menu
-      visible={visible}
-      onDismiss={() => setVisible(false)}
-      // La barre est en bas de l'écran.
-      anchorPosition="top"
-      contentStyle={barStyles.menuContent}
-      anchor={
-        <IconButton
-          testID="more-btn"
-          icon="dots-vertical"
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={() => setVisible(true)}
-          accessibilityLabel={t('call.more')}
-        />
-      }
-    >
-      <Menu.Item
-        testID="share-btn"
-        title={t('call.share')}
-        titleStyle={barStyles.menuTitle}
+    <>
+      <IconButton
+        testID="more-btn"
+        icon="dots-vertical"
+        iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        accessibilityLabel={t('call.share')}
-        onPress={() => {
-          setVisible(false);
-          onShare();
-        }}
+        style={barStyles.button}
+        hitSlop={BAR_HIT_SLOP}
+        onPress={() => setVisible(true)}
+        accessibilityLabel={t('call.more')}
       />
-      <RecordingControl
-        state={recording}
-        canStart={canRecord}
-        busy={recordingBusy}
-        onStart={() => {
-          setVisible(false);
-          onStartRecording();
-        }}
-        onStop={() => {
-          setVisible(false);
-          onStopRecording();
-        }}
-      />
-      <HandControl
-        raised={handRaised}
-        busy={handBusy}
-        hands={hands}
-        onToggle={() => {
-          setVisible(false);
-          onToggleHand();
-        }}
-      />
-    </Menu>
+      <BottomSheet
+        testID="more-sheet"
+        visible={visible}
+        title={t('call.more')}
+        onDismiss={() => setVisible(false)}
+      >
+        <SheetRow
+          testID="share-btn"
+          title={t('call.share')}
+          accessibilityLabel={t('call.share')}
+          onPress={() => {
+            setVisible(false);
+            onShare();
+          }}
+        />
+        <RecordingControl
+          state={recording}
+          canStart={canRecord}
+          busy={recordingBusy}
+          onStart={() => {
+            setVisible(false);
+            onStartRecording();
+          }}
+          onStop={() => {
+            setVisible(false);
+            onStopRecording();
+          }}
+        />
+        <HandControl
+          raised={handRaised}
+          busy={handBusy}
+          hands={hands}
+          onToggle={() => {
+            setVisible(false);
+            onToggleHand();
+          }}
+        />
+      </BottomSheet>
+    </>
   );
 }
