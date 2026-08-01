@@ -44,7 +44,10 @@ function tile(key: string, overrides: Partial<Tile> = {}): Tile {
 }
 
 function layout(stage: Tile, filmstrip: readonly Tile[] = []): CallLayout {
-  return { stage, filmstrip };
+  // Aucun test de ce fichier ne fait varier l'épinglage : `CallStage` n'en tire
+  // pas encore de marqueur (voir `src/call/layout.ts`), donc une valeur fixe
+  // suffit à satisfaire le type sans rien affirmer de faux.
+  return { stage, pinned: false, filmstrip };
 }
 
 function propsFor(sid: string): Record<string, unknown> | undefined {

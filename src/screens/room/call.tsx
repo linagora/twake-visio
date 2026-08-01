@@ -199,7 +199,9 @@ export function CallScreen(): React.ReactElement {
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
-  const layout = useCallLayout(session.getRoom(), facing);
+  // Rien n'est encore épinglé depuis cet écran : le geste qui pose la clé
+  // arrive dans une tâche suivante. `null` retombe sur la règle ordinaire.
+  const layout = useCallLayout(session.getRoom(), facing, null);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans

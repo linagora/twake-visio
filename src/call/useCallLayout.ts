@@ -12,11 +12,17 @@ import { createRoomViewStore } from 'src/call/participants';
 // `useSyncExternalStore` plutôt qu'un `useEffect` qui poserait l'état : c'est
 // lui qui referme le trou entre la lecture faite pendant le rendu et l'attache
 // des gestionnaires, en relisant juste après l'abonnement.
-export function useCallLayout(room: Room, facing: FacingMode): CallLayout {
+export function useCallLayout(
+  room: Room,
+  facing: FacingMode,
+  // Une clé de tuile, ou `null` : relayée telle quelle à `selectLayout`, jamais
+  // décidée ici. Voir `src/call/layout.ts`.
+  pin: string | null,
+): CallLayout {
   // Le magasin ne retient rien tant que personne ne s'y abonne — c'est React
   // qui appelle `subscribe` et son nettoyage. Un `useMemo` jeté ne laisse donc
   // aucun gestionnaire derrière lui, contrairement à une session d'appel.
   const store = useMemo(() => createRoomViewStore(room), [room]);
   const view = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  return useMemo(() => selectLayout(view, facing), [view, facing]);
+  return useMemo(() => selectLayout(view, facing, pin), [view, facing, pin]);
 }
