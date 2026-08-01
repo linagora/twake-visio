@@ -1,7 +1,9 @@
 # Grille de participants et épinglage — conception
 
 **Date** : 2026-08-01
-**État** : conception, non implémentée
+**État** : ~~conception, non implémentée~~ — **implémentée**, en deux lots
+(`2026-08-01-pin-and-fullscreen.md` puis `2026-08-01-adaptive-grid.md`), avec des écarts consignés
+là où ce document se trompe — chaque fois **dans la section fautive**, jamais en tête.
 **Branche** : `design/grid`
 **Dépend de** : `2026-07-31-screen-share-reception-design.md` et son plan, **en cours
 d'implémentation**. Les types qu'il livre — `VideoTrackRef`, `ParticipantView.screen`,
@@ -176,6 +178,53 @@ participant distant. Deux fois payé.
 >   Un appui n'importe où ramène les commandes quelques secondes, à la manière d'un lecteur
 >   vidéo — la convention la plus répandue, et elle évite de viser une petite cible pour sortir.
 >
+> ### Corrigé une seconde fois, après le lot de la grille : UN geste par SURFACE, et plus aucun appui long
+>
+> Les deux gestes ci-dessus ne sont pas ce qui vit dans le dépôt, et les deux lignes sont fausses
+> chacune pour une raison différente. `grep -rn "onLongPress" src/` ne rend rien.
+>
+> **Ce qui a remplacé « deux gestes, deux portées » : une surface, un geste, et jamais deux sens
+> sous le même appui.**
+>
+> | Surface | Un appui simple y fait | Site |
+> | --- | --- | --- |
+> | vignette de **bande** | épingle celle qu'on touche — **le seul endroit qui épingle encore** | `stage.tsx:560` → `handlePinTile` |
+> | cellule de **grille** | ouvre le **plein écran** sur elle | `stage.tsx:448` → `handleFullscreenTile` |
+> | tuile de **scène** (mode `focus`) | ouvre le **plein écran** sur elle, épinglée ou non | `stage.tsx:526` → `handlePressStageTile` |
+> | badge **`pin-marker`** | **désépingle** — le seul geste qui le fasse | `stage.tsx:274` → `handleUnpinTile` |
+> | tuile en **plein écran** | en **sort**, où que l'appui porte | `stage.tsx:494` → `handleExitFullscreen` |
+>
+> **1. « Un second appui annule » a été retiré.** La bande ne peut jamais porter la tuile déjà
+> épinglée — une tuile épinglée force le mode `focus` et `selectLayout` la filtre hors de
+> `filmstrip` (`src/call/layout.ts:308`) — donc l'aller-retour ne pouvait pas se produire là où le
+> geste vit. Sur la SCÈNE, où il aurait pu, il est devenu le geste du plein écran ; désépingler a
+> reçu sa propre surface. `call.spec.tsx:2260` garde l'inverse de ce que ce document annonçait :
+> _« un second appui sur la tuile désormais en scène ne la désépingle pas : il bascule le plein
+> écran »_.
+>
+> **2. L'appui long n'a jamais été livré.** La grille l'a d'abord remplacé par un parcours en deux
+> appuis depuis une cellule, puis ce parcours est tombé le jour même — non par goût mais par
+> **géométrie** : épingler redispose l'écran sous le doigt, donc le second appui ne tombait plus sur
+> la même chose. À cinq en portrait il épinglait quelqu'un d'autre ; à trois ou moins il tombait sur
+> le badge et désépinglait, effet net nul. Un appui suffit désormais.
+>
+> **3. « Un appui n'importe où ramène les commandes quelques secondes » n'existe pas non plus.** La
+> sortie du plein écran est **immédiate** et porte sur la tuile entière, donc il n'y a plus d'état
+> intermédiaire à révéler ni de minuteur à désarmer : `chromeVisible`, son `useEffect` et son
+> `fullscreen-exit-btn` ont tous disparu du dépôt. L'encadré « Corrigé après implémentation »
+> ci-dessus, qui annonçait un bouton dédié, est donc lui aussi périmé — il décrivait l'état
+> intermédiaire, pas l'état final.
+>
+> **Conséquence produit, à dire tout haut parce qu'elle ne se déduit d'aucune de ces lignes : la
+> bande n'existe qu'en mode `focus`, donc épingler n'est atteignable que pendant qu'on partage un
+> écran.** C'est cohérent avec ce que l'épinglage sert à faire — ramener un visage que le partage a
+> chassé dans la bande — et la section « Pourquoi » plus haut le dit déjà : « dès que quelqu'un
+> partage son écran, tous les visages tombent dans la bande et rien ne permet d'en ramener un sur la
+> scène ». Hors partage, la grille montre déjà tout le monde et il n'y a rien à défaire. Mais cela
+> **retire** l'épinglage des cas que la première rédaction lui prêtait — geler le suivi de la parole
+> dans une grille qui remue au-delà de la capacité, notamment. Assumé, et c'est le prix payé pour
+> qu'une cellule de grille ne veuille dire qu'une seule chose.
+>
 > ### La rédaction précédente supprimait l'épinglage. Elle avait tort, et l'erreur est instructive.
 >
 > Elle le supprimait au motif que son geste — l'appui long — **ne se découvre pas**. Le motif
@@ -327,6 +376,13 @@ regarde ». La bande du mode `focus`, elle, garde son défilement : elle en a un
 `stage.tsx:115`, l'axe est unique, et une vignette de 128 dp n'est pas une cible d'appui
 long qu'on vise longuement.
 
+> **Corrigé** : le premier des trois motifs est tombé avec l'appui long, qui n'a jamais été livré
+> (voir l'encadré « UN geste par SURFACE » plus haut). **La décision, elle, tient sur les deux
+> autres**, qui n'ont pas bougé — et le conflit n'a pas disparu, il a changé de forme : un
+> défilement vertical dans la grille entrerait maintenant en concurrence avec l'appui simple qui
+> ouvre le plein écran sur une cellule, un geste bien plus facile à déclencher par accident pendant
+> qu'on fait défiler. Le troisième motif de la bande reste valable pour la même raison.
+
 Effet secondaire mesurable et favorable : la grille rend **au plus `capacité` tuiles**
 là où la bande actuelle en rend autant qu'il y a de participants (`stage.tsx:122-126`).
 Avec `adaptiveStream` désactivé (fait 7), c'est autant de décodages en moins. **La
@@ -386,6 +442,38 @@ le cas concret : deux personnes présentent, on veut rester sur la première.
 « garantir une cellule dans la grille » : deux sens, c'est deux choses à expliquer.
 
 ### 4. Le geste : appui long, et une sortie toujours visible
+
+> ### Corrigé après implémentation : toute cette section décrit un geste qui n'a jamais été livré
+>
+> **Ce qui survit de la section 4 :** les trois emplacements écartés (un bouton par tuile, une
+> entrée dans `MoreMenu`, une entrée dans `ParticipantsPanel`) le restent, et chacun pour le motif
+> écrit — celui de `ParticipantsPanel` en particulier, « il liste des `ParticipantView`, il ne peut
+> pas désigner `alice:screen` », reste exact contre HEAD. « Jamais `disabled` » survit aussi. Et le
+> marqueur permanent survit, en mieux : il est devenu un badge pressable à plancher tactile de
+> 44 dp (`stage.tsx:146-159`, `271-286`).
+>
+> **Ce qui ne survit pas**, et il faut le lire avant les quatre paragraphes ci-dessous :
+>
+> 1. **« Retenu : l'appui long sur n'importe quelle tuile »** — jamais livré. Le geste est un appui
+>    **simple**, et ce n'est pas le même partout : la bande épingle, la grille et la scène ouvrent
+>    le plein écran, le badge désépingle. Détail dans l'encadré « UN geste par SURFACE » de la
+>    section « Décisions ».
+> 2. **« Sémantique : bascule. `onTogglePin(key)` ⇒ `pin === key ? null : key` »** — il n'y a pas de
+>    bascule. `handlePinTile` est `setPin(key)`, une seule issue (`src/screens/room/call.tsx:321-323`),
+>    et `handleUnpinTile` est `setPin(null)` (`call.tsx:362-364`), atteignable depuis le seul badge.
+>    Le reste de la phrase tient : « épingler une autre tuile déplace l'épinglage ; il n'y a pas
+>    d'état intermédiaire ».
+> 3. **Le paragraphe « Accessibilité » et son `accessibilityActions`** — non livrés, et **le motif a
+>    disparu avec le geste**. Ce paragraphe existait parce qu'« un appui long est invisible pour un
+>    lecteur d'écran » ; un appui simple sur un `Pressable` est déjà offert par TalkBack et
+>    VoiceOver, donc une action personnalisée n'ajouterait qu'un doublon — dont ce même paragraphe
+>    admettait ne pas pouvoir vérifier l'effet réel. `grep -rn "accessibilityActions" src/` ne rend
+>    rien, et le plan de la grille écarte les trois clés explicitement, avec ce motif
+>    (`docs/superpowers/plans/2026-08-01-adaptive-grid.md`, « Ce que ce plan NE fait pas »).
+> 4. **Le seuil `DEFAULT_LONG_PRESS_DELAY_MS = 500`** et le constat « le dépôt n'a aucun
+>    `Pressable` ni `onLongPress` aujourd'hui » : le premier est sans objet, le second est
+>    doublement périmé — `stage.tsx` est plein de `Pressable`, et toujours sans un seul
+>    `onLongPress`.
 
 **Pas dans la barre.** Elle est pleine à 357 dp sur 360 (fait 5).
 
@@ -567,6 +655,13 @@ useCallLayout(room, facing, box, pin) ─────▶  layout: CallLayout | n
 setPin(toggle)             ◀───────────────  onTogglePin(key), appui long
 ```
 
+**Corrigé** : la dernière ligne est fausse deux fois. Il n'y a ni bascule ni appui long ; la
+coquille remonte **cinq** rappels distincts, un par surface — `onPinTile`, `onFullscreenTile`,
+`onPressStageTile`, `onUnpinTile`, `onExitFullscreen` (`src/screens/room/stage.tsx:293-337`). Le
+plein écran ne passe **pas** par `selectLayout` : c'est un état de rendu, tenu par `call.tsx`, qui
+le résout contre la disposition présente (`call.tsx:246-254`). Les trois premières lignes du schéma
+sont exactes.
+
 **La coquille reste bête** — c'est la doctrine de `stage.tsx:96-98`. Elle mesure, elle
 remonte, elle rend ce qu'on lui donne, elle relaie un appui long. Elle ne décide rien :
 ni le nombre de colonnes, ni la taille des tuiles, ni le mode, ni l'axe de la bande.
@@ -636,6 +731,17 @@ sur toute clé manquante) :
 - `call.moreParticipants` — le débordement, avec `{{count}}`, sur le précédent exact de
   `waiting.others` (`{{count}} more waiting`).
 
+> **Corrigé : deux clés sur quatre, pas quatre.** `call.pinned` et `call.moreParticipants` sont
+> dans les sept locales (`src/i18n/locales/*.json`, lignes 38-39). `call.pin` et `call.unpin` n'y
+> sont nulle part : elles n'existaient que pour l'`accessibilityActions` de l'appui long, écarté
+> avec lui — voir la correction en tête de la section 4. `src/i18n/index.spec.ts` ne peut pas le
+> signaler : il échoue sur une clé qui manque **quelque part**, jamais sur une clé qui manque
+> **partout**.
+>
+> `call.pinned` sert aujourd'hui deux fois sur le même badge — son `accessibilityLabel` et son
+> libellé visible (`stage.tsx:275`, `284`) — ce que la section 4 n'avait pas prévu : le marqueur y
+> était un glyphe seul, et un partenaire testant sur appareil ne l'a jamais vu.
+
 ### Style
 
 Aucun style en ligne, tout par `StyleSheet.create` — sauf les **dimensions calculées** des
@@ -678,6 +784,12 @@ quasi-noir en schéma clair (`AGENTS.md` ; deux composants livrés à 1,08:1).
 `*.spec.ts(x)` colocalisés, aucun instantané, `npm test` / `npm run typecheck` /
 `npm run lint` verts. Référence à la racine de cette branche : **625 tests, 51 suites**
 (`npm test`, 2026-08-01).
+
+> **Corrigé** : ces 625/51 ont été mesurés sur `design/grid`, avant que les lots des feuilles
+> inférieures, des réactions et de l'épinglage ne fusionnent. Le lot de la grille est parti de
+> `9fb635c` — **738 tests / 53 suites**, relevé et non estimé
+> (`docs/superpowers/plans/2026-08-01-adaptive-grid.md`, « Référence de départ »). C'est ce
+> nombre-là qui fait foi pour toute mesure de ce document.
 
 **`src/call/grid.spec.ts` — l'arithmétique, et c'est là que se trouve la valeur.**
 
@@ -730,6 +842,12 @@ quasi-noir en schéma clair (`AGENTS.md` ; deux composants livrés à 1,08:1).
     l'apparence.
 16. **L'appui long relaie la clé de la tuile pressée**, et pas une autre :
     `fireEvent(tuile, 'longPress')` sur la deuxième tuile de la grille.
+
+> **Corrigé** : `fireEvent(tuile, 'longPress')` n'atteindrait rien — aucun `onLongPress` n'est
+> câblé nulle part. La propriété qui a été gardée à la place est **l'appui simple relaie la clé de
+> la tuile pressée, vers le bon rappel selon la surface** : `onFullscreenTile` depuis une cellule de
+> grille, `onPinTile` depuis une vignette de bande. Les deux rappels ont la même signature à
+> dessein, pour qu'un site branché sur l'autre rougisse.
 17. **`objectFit` par surface**, sur la valeur de la prop et jamais sur l'aspect — le
     tableau de la section « Le cadrage » a un cas par ligne, avec des `trackSid` distincts
     pour qu'une implémentation rendant la même valeur partout échoue.
@@ -742,6 +860,25 @@ quasi-noir en schéma clair (`AGENTS.md` ; deux composants livrés à 1,08:1).
 19. **Le marqueur n'existe que quand `pinned` est vrai**, et son appui relaie la même clé
     que l'appui long.
 20. **La tuile porte `accessibilityActions`** — la présence de la prop, pas son effet.
+
+> **Corrigé, sur les points 18 à 20.**
+>
+> - **18** vise le mauvais nœud. `pin-marker` est le `Pressable` du badge : il porte le fond, le
+>   rayon et le plancher tactile, jamais une couleur de texte. La couleur explicite est gardée sur
+>   ses deux enfants, et deux fois — `stage.spec.tsx:385-386`,
+>   `getByTestId('pin-marker-icon')` et `getByTestId('pin-marker-text')`, chacun
+>   `toHaveStyle({ color: tokens.color.textDark })`. Le raisonnement du point 18 est juste, sa cible
+>   ne l'est pas : le glyphe rendu directement avec son propre `testID` est bien joignable, mais
+>   c'est `pin-marker-icon`. **Ce que le point 18 ne prévoyait pas et qui est gardé aussi** : le
+>   plancher tactile (`toHaveStyle({ minWidth: 44, minHeight: 44 })`, `stage.spec.tsx:409`) et le
+>   `accessibilityLabel` (`:400`).
+> - **19** reste vrai sur sa première moitié, et `stage.spec.tsx:347-375` la garde des quatre côtés
+>   — présent sur la scène épinglée, absent hors épinglage, absent dans la bande, absent en plein
+>   écran. Sa seconde moitié est fausse : le badge ne relaie **aucune clé**, son rappel
+>   (`onTileUnpin`) ne prend pas d'argument, et il ne fait pas la même chose qu'un appui sur la
+>   tuile — c'est justement le point.
+> - **20** est sans objet : `accessibilityActions` n'a pas été livré, et son motif a disparu avec
+>   l'appui long. Voir la correction en tête de la section 4.
 
 **`src/screens/room/call.spec.tsx`.**
 
@@ -780,6 +917,13 @@ droite. L'aire lui donne raison ; l'œil pourrait ne pas être d'accord. Un test
 l'entrée évidente. Mesurable seulement en observant quelqu'un qui ne connaît pas
 l'application.
 
+> **Corrigé** : il n'y a plus d'appui long. La question qui la remplace, et qui se mesure de la même
+> façon — en observant quelqu'un qui ne connaît pas l'application : **découvre-t-on qu'on peut
+> épingler**, sachant que le geste ne vit que sur la bande, et que la bande n'apparaît que pendant
+> qu'un écran est partagé ? Le partenaire de terrain avait proposé l'appui simple sur une vignette
+> spontanément ; personne n'a encore vérifié qu'on le trouve quand la vignette n'est là qu'une
+> partie du temps.
+
 **Que le contraste du marqueur et du compteur soit lisible.** RNTL ne rastérise rien
 (`AGENTS.md`). Le test garde que la couleur explicite n'a pas été retirée, ce qui est une
 propriété du code, pas de l'image.
@@ -794,6 +938,14 @@ un test pour cela ; le vérifier sur appareil, avec le reste.
 **Qu'une action d'accessibilité personnalisée soit réellement offerte par TalkBack ou
 VoiceOver** sous RN 0.86. Le test garde la prop ; le lecteur d'écran, lui, n'a pas été
 consulté.
+
+> **Corrigé, et c'est une inconnue en moins** : aucune action personnalisée n'a été livrée, donc il
+> n'y a rien à vérifier. Chaque geste est un appui simple sur un `Pressable` — ce que TalkBack et
+> VoiceOver offrent déjà — et le badge d'épinglage porte son `accessibilityLabel`
+> (`stage.spec.tsx:400`). Ce que le lecteur d'écran n'a toujours pas été consulté sur : que les
+> `accessibilityLabel` des tuiles, qui ne portent que le **nom** de la personne
+> (`stage.tsx:237`), suffisent à comprendre ce qu'un appui va faire — la même surface annonce le
+> même libellé qu'elle épingle ou qu'elle ouvre le plein écran.
 
 **Que la grille tienne le budget de décodage.** Elle borne le nombre de tuiles là où rien
 ne le bornait, donc elle ne peut pas dégrader — mais « ne peut pas dégrader » n'est pas
