@@ -79,9 +79,11 @@ export function AudioOutputControl({
             `tokens.color.muted` donne 3,88:1 sur `surfaceDark`, sous le seuil
             AA. C'est la seule occasion qu'a l'utilisateur d'apprendre qu'un
             choix manuel désarme la bascule automatique pour le reste de la
-            séance. Le `View` qui l'enveloppait n'a plus lieu d'être : il
-            n'existait que pour qu'un `Menu` ne prenne pas ce `Text` pour un
-            `Menu.Item`. */}
+            séance. Le `View` qui l'enveloppait sous `Menu` n'a plus lieu
+            d'être : ni `Menu.tsx` ni `BottomSheet` ne traitent leurs enfants
+            différemment selon leur type — `Menu` rend `{children}` tel quel
+            (`Menu.tsx:691,693`) — et ni le commit d'origine (6fb2087) ni aucun
+            commentaire n'expliquaient pourquoi il était là. */}
         <Text testID="audio-output-note" variant="labelSmall" style={sheetStyles.note}>
           {chosen === null ? t('call.outputFollowsDevice') : t('call.outputManualUntilEnd')}
         </Text>
