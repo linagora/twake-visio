@@ -119,6 +119,26 @@ participant distant. Deux fois payé.
 > +13 % en linéaire, +28 % en surface.** Sur du texte partagé, 13 % de hauteur de glyphe
 > sépare « lisible » de « confortable ».
 >
+> ### Correction mesurée le 2026-08-01 : le gain du plein écran est PAYSAGE, et nul en portrait
+>
+> Les +28 % ci-dessus valent en paysage, où l'image est limitée par la **hauteur**. En
+> portrait, elle est limitée par la **largeur**, et masquer la bande et la barre n'ajoute que
+> du noir :
+>
+> | | scène | image 16:9 en `contain` |
+> | --- | --- | --- |
+> | portrait, aujourd'hui | 443 × 821,8 dp | **443 × 249,2** |
+> | portrait, plein écran | 443 × 969,8 dp | **443 × 249,2 — identique** |
+> | paysage, aujourd'hui | 873,8 × 391 dp | 695 × 391 |
+> | paysage, plein écran | 969,8 × 443 dp | **787,6 × 443 — +28 % d'aire** |
+>
+> Constaté sur appareil puis vérifié par le calcul, et non l'inverse.
+>
+> **Conséquence produit, non traitée par ce lot :** pour lire un support partagé en portrait,
+> la bonne action est de **tourner l'appareil**, pas d'appuyer longuement — et rien dans
+> l'application ne le dit. L'image n'occupe alors que 30 % de la hauteur de la scène. Reste
+> ouvert : le signaler, le suggérer, ou laisser faire.
+
 > **Les deux gestes retenus :**
 >
 > - **Appui SIMPLE sur une tuile de la bande → elle passe sur la SCÈNE**, et l'occupant sortant
