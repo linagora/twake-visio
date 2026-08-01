@@ -72,6 +72,13 @@ forme et deux de ses arbitrages.
 erreur nouvelle (le seul avertissement est celui, pré-existant, de `src/i18n/index.ts:32`).
 Toute mesure de ce plan est relative à ces 625/51.
 
+> **Corrigé : ce n'est pas de là que le lot est parti.** Les 625/51 datent de `603f91a`, sur
+> `design/chat`, avant que les feuilles inférieures, l'épinglage et les réactions ne fusionnent. Le
+> lot C3 a réellement démarré de `870d56b` — la base commune est `9fb635c`, **738 tests / 53
+> suites** — et il a fusionné à `ffb357c`. Les totaux annoncés plus bas (696/55) portent donc le
+> mauvais point de départ ; ce sont les **deltas par tâche** qui restent utilisables, et ils sont
+> corrigés un par un à leur Step 3. Pour référence, HEAD est à **936 tests / 62 suites**.
+
 **Ce plan n'a pas été prototypé.** Contrairement au plan C1, dont chaque ligne avait tourné avant
 d'être écrite, le code littéral ci-dessous est **écrit contre les sources lues** — `call.tsx`,
 `moreMenu.tsx`, `controlBar.ts`, `participants.ts`, `recordingStore.ts`, les onze specs de
@@ -720,6 +727,12 @@ npx jest src/call/chat.spec.ts && npx tsc --noEmit
 
 20 tests verts, `tsc` propre. **Cette tâche n'a aucune interdépendance** : elle n'importe rien.
 
+> **Corrigé : 22, pas 20.** La Step 1 de cette tâche écrit **22** `it(...)` — les recompter dans son
+> propre extrait suffit — et c'est bien 22 qui ont été livrés à `85874d8`. Le récapitulatif de fin
+> de plan porte d'ailleurs `625 + 22 + …`, donc le seul nombre faux du document est celui-ci.
+> `src/call/chat.spec.ts` en compte 23 aujourd'hui, le vingt-troisième venant d'un lot ultérieur
+> (le fil borné). La barre à atteindre au moment de dérouler cette tâche est **22/22**.
+
 - [ ] **Step 4 : committer**
 
 `feat(call): Merge chat edits, count what is unread and bound the input`
@@ -1310,6 +1323,11 @@ npx jest src/call/chatStore.spec.ts && npx tsc --noEmit
 ```
 
 20 tests verts, `tsc` propre. Aucune autre suite n'est touchée : rien n'importe encore ce module.
+
+> **Corrigé : 19, pas 20.** La Step 1 en écrit 19, `2bd2372` en a livré 19, et le récapitulatif de
+> fin de plan porte `… + 19 + …`. `src/call/chatStore.spec.ts` en compte 22 aujourd'hui, les trois
+> de plus venant de lots ultérieurs (le fil borné, l'écoute idempotente, le suivi du lu par clé).
+> La barre au moment de dérouler cette tâche est **19/19**.
 
 - [ ] **Step 4 : committer**
 
@@ -2078,6 +2096,13 @@ npx jest src/screens/room/chatPanel.spec.tsx && npx tsc --noEmit && npx eslint s
 
 16 tests verts. **Aucune autre suite n'est touchée** : rien ne rend encore ce composant.
 
+> **Corrigé : 15, pas 16.** La Step 2 de cette tâche en écrit 15, `6ed993c` en a livré 15, et le
+> récapitulatif de fin de plan porte `… + 15 + …`. `src/screens/room/chatPanel.spec.tsx` en compte
+> 18 aujourd'hui, les trois de plus venant du commit qui a suivi immédiatement — `1a2ccf4`,
+> _« Close three holes the chat panel mutations found »_. Ce commit-là est la vraie leçon de cette
+> tâche : **trois trous sont sortis de la mutation, pas de la relecture**, et un compte annoncé à
+> l'unité près n'en dit rien.
+
 - [ ] **Step 4 : committer**
 
 `feat(call): Read and write the meeting chat in its own panel`
@@ -2209,6 +2234,12 @@ npx jest && npx tsc --noEmit && npx eslint . --ext .ts,.tsx
 
 **625 tests / 51 suites**, exactement comme avant.
 
+> **Corrigé : le nombre est faux, l'invariant est le bon — et c'est l'invariant qui compte ici.**
+> Le lot n'est pas parti de 625/51 (voir la correction du préambule), donc ne pas chercher ce
+> nombre-là : ce que cette tâche exige est **le même compte avant et après son commit, quel qu'il
+> soit**. Relever le compte au commit précédent, puis le recomparer. Le raisonnement de la Step 4
+> — « aucune assertion ajoutée, donc aucune mutation à éprouver » — n'en dépend pas.
+
 - [ ] **Step 3 : committer**
 
 `test(call): Let the Room double carry a text stream`
@@ -2228,6 +2259,29 @@ comportement observé par un test existant.
 > `docs/superpowers/specs/2026-08-01-bottom-sheets-design.md` existe au moment de la dérouler, la
 > relire d'abord et **ne réécrire que cette tâche** : les six précédentes ne présument rien de la
 > surface.
+
+> ### Corrigé après implémentation : cette tâche a bien été réécrite, et voici contre quoi
+>
+> **L'avertissement ci-dessus a joué, et il faut le lire au passé** : les feuilles inférieures
+> existaient déjà quand cette tâche a été déroulée. Tout ce qui suit décrit un `Menu` de Paper qui
+> n'est plus dans `src/` — `grep -rn "from 'react-native-paper'" src/ | grep Menu` ne rend rien.
+>
+> | Ce que la tâche écrit | Ce qui a été livré |
+> | --- | --- |
+> | `<Menu.Item testID="chat-btn" title=… titleStyle={barStyles.menuTitle} … />` | `<SheetRow testID="chat-btn" title=… onPress=… />` (`moreMenu.tsx:139-147`) |
+> | `barStyles.menuTitle` | n'existe plus (retiré par `9fc7552`) ; `SheetRow` pose `sheetStyles.rowTitle` lui-même |
+> | l'ancre passée en prop `anchor={…}` du `Menu` | un `<View style={barStyles.anchor}>` rendu **directement**, `IconButton` et `Badge` dedans (`moreMenu.tsx:81-106`) |
+> | l'entrée « entre `RecordingControl` et `HandControl` » | inchangé, et le motif écrit tient toujours |
+>
+> **`barStyles.anchor` et `barStyles.badge`, eux, ont survécu** : ils sont dans
+> `controlBar.ts:47-56`, à la lettre, commentaires compris. La Step 1 est donc juste telle quelle,
+> et le raisonnement sur la pastille — aucune couleur posée, Paper appaire `error` et `onError`, les
+> deux schémas passent AA — l'est aussi.
+>
+> **Et le `chat-btn-title` de la Step 2 fonctionne**, mais pas pour la raison écrite : ce n'est plus
+> `Menu.Item` qui pose `` `${testID}-title` ``, c'est `SheetRow` (`sheetRow.tsx:64`) — qui a été
+> écrit exactement pour rendre les deux `testID` que `Menu.Item` donnait gratuitement.
+> `moreMenu.spec.tsx:351-352` porte l'assertion.
 
 **Files:**
 - Modify: `src/screens/room/controlBar.ts`
@@ -2290,6 +2344,29 @@ Dans `src/screens/room/moreMenu.spec.tsx`, ajouter `unread` et `onOpenChat` au t
 ```
 
 et cinq tests, à la fin du `describe('MoreMenu')` :
+
+> ### Corrigé : deux de ces cinq tests sont VERTS CONTRE UNE IMPLÉMENTATION NULLE
+>
+> `expect(screen.getByTestId('chat-unread').props.visible)` — trois fois dans cette tâche, deux
+> ci-dessous et une dans le bloc d'écran de la Step 4 — **ne peut pas fonctionner**. `Badge` de
+> react-native-paper déstructure `visible = true` **avant** d'étaler `...rest`
+> (`node_modules/react-native-paper/src/components/Badge.tsx:54-61`) : la prop est consommée par le
+> composant et n'atteint jamais le nœud hôte que `getByTestId` rend. `props.visible` y vaut
+> `undefined` — donc `toBe(false)` échoue d'entrée, et `toBe(true)` aussi.
+>
+> C'est l'une des trois instances mesurées le 2026-08-01 et devenues une règle d'`AGENTS.md` : **une
+> prop qu'un composant CONSOMME lui-même n'atteint jamais l'élément hôte**, et une assertion dessus
+> est verte dans les deux états. Les deux autres instances sont `Snackbar` (même prop) et
+> `KeyboardAvoidingView` (`behavior`) — cette dernière touche la Tâche 4 de ce même plan.
+>
+> **Ce qu'il faut assertir, et ce qui a été livré : le rendu ou le non-rendu.** `moreMenu.tsx:101-105`
+> ne monte le `Badge` que si `unread > 0`, plutôt que de le laisser monté à `visible={false}`, et
+> `moreMenu.spec.tsx:362` interroge `expect(screen.queryByTestId('chat-unread')).toBe(null)`. Le
+> choix a un second bénéfice, écrit dans le code : une pastille masquée par la seule opacité laisse
+> quand même son « 0 » dans l'arbre d'accessibilité.
+>
+> **Comment le détecter avant d'écrire le test** : ouvrir le composant et lire sa destructuration.
+> Deux lignes. Le test, lui, ne le dira jamais.
 
 ```tsx
   it('ouvre le chat et referme le menu, comme ses trois voisines', async () => {
@@ -2508,6 +2585,17 @@ describe('CallScreen — le chat', () => {
 
     await openChat();
 
+    // CORRIGÉ : troisième occurrence de `props.visible`, même défaut que les
+    // deux de la Step 2 — verte contre une implémentation nulle, parce que
+    // `Badge` consomme `visible` avant d'étaler le reste. Assertir l'absence :
+    // `expect(screen.queryByTestId('chat-unread')).toBe(null)`.
+    //
+    // Et le comportement lui-même a bougé depuis : le compteur repart de zéro
+    // à l'ouverture **et à la fermeture** du panneau (`call.tsx:738-755`).
+    // §5.C19 lue à la lettre ne marquait qu'à l'ouverture, et sa conséquence
+    // n'était pas tenable — un message arrivé PENDANT que le panneau est
+    // ouvert restait compté non lu alors que son corps était à l'écran, et la
+    // pastille survivait à la fermeture.
     expect(screen.getByTestId('chat-unread').props.visible).toBe(false);
   });
 
@@ -2706,6 +2794,13 @@ nouvelles étant `chat.spec.ts`, `chatStore.spec.ts`, `keyboard.spec.ts`, `chatP
 
 **Si le compte diffère, ne pas ajuster le nombre : trouver quel test manque.**
 
+> **Corrigé : c'est `base + 71`, pas 696.** Les **sept deltas de cette somme sont exacts** — ce sont
+> eux qu'il faut vérifier, un par tâche — mais le point de départ ne l'est pas : le lot n'a pas
+> commencé à 625/51 (voir la correction du préambule). Les quatre suites nouvelles, elles, sont bien
+> celles-là. Et la consigne de la ligne suivante reste la bonne, à la lettre : **ne jamais ajuster
+> le nombre pour qu'il tombe juste — chercher quel test manque.** Les deux nombres périmés de ce
+> plan sont précisément ce qu'on obtient en écrivant un total sans le recompter.
+
 - [ ] **Step 7 : committer**
 
 `feat(call): Open the meeting chat from the more menu`
@@ -2715,9 +2810,17 @@ nouvelles étant `chat.spec.ts`, `chatStore.spec.ts`, `keyboard.spec.ts`, `chatP
 Dix mutations :
 
 1. dans `moreMenu.tsx`, supprimer `setVisible(false);` de `chat-btn`
-2. dans `moreMenu.tsx`, `visible={unread > 0}` → `visible={true}`
+2. dans `moreMenu.tsx`, `visible={unread > 0}` → `visible={true}` — **corrigé : il n'y a pas de prop
+   `visible` à muter. La pastille est montée conditionnellement, `{unread > 0 ? <Badge …/> : null}`
+   (`moreMenu.tsx:101-105`), justement parce que `visible` n'est joignable par aucune assertion. La
+   mutation équivalente est `unread > 0` → `true`, et elle rougit sur le test d'absence**
 3. dans `moreMenu.tsx`, `{unread}` → `{1}`
-4. dans `moreMenu.tsx`, retirer `titleStyle={barStyles.menuTitle}` de `chat-btn`
+4. dans `moreMenu.tsx`, retirer `titleStyle={barStyles.menuTitle}` de `chat-btn` — **corrigé : il
+   n'y a plus de `titleStyle` à retirer ici, `SheetRow` pose `sheetStyles.rowTitle` lui-même
+   (`sheetRow.tsx:64`) et `chat-btn` ne passe pas de surclassement. La mutation équivalente est de
+   retirer `sheetStyles.rowTitle` du tableau de styles de `SheetRow` — elle rougit alors sur
+   TOUTES les lignes de feuille, pas seulement sur celle du chat, et c'est un rouge plus large mais
+   au bon endroit**
 5. dans `call.tsx`, supprimer `chatStore.markRead();` de `handleOpenChat`
 6. dans `call.tsx`, `setNotice(ok ? null : 'chat.sendFailed');` →
    `if (!ok) setNotice('chat.sendFailed');` — le succès n'efface plus l'erreur d'un essai
@@ -2866,6 +2969,13 @@ et `npm run format:check` passent à chaque étape de la séquence, jamais seule
 | 7 | `feat(call): Open the meeting chat from the more menu` | `controlBar.ts`, `moreMenu.tsx(+spec)`, `call.tsx(+spec)` | +13 |
 
 **Total attendu : 696 tests / 55 suites**, contre 625 / 51 mesurés sur `design/chat` à `603f91a`.
+
+> **Corrigé : les sept deltas de ce tableau sont exacts et vérifiés commit par commit ; seul le
+> total ne l'est pas.** Le lot est parti de `9fb635c` (**738 / 53**) et non des 625 / 51 de
+> `design/chat` — voir la correction du préambule. Le total à attendre est **base + 71 tests et
+> + 4 suites**, ce qui est la seule forme utilisable puisque la base bouge à chaque lot fusionné.
+> C'est cette différence-là qu'il faut vérifier, jamais un nombre absolu recopié d'un autre point
+> de l'histoire.
 
 **Le seul commit qui touche plus d'un composant est le septième**, et il le doit à une raison
 nommée : `MoreMenuProps` gagne deux props requises, et `call.tsx` en est le seul constructeur.
