@@ -18,6 +18,33 @@ import {
 // une séance sans réaction ne réveille jamais le moteur JS pour rien.
 export const REACTION_PRUNE_INTERVAL_MS = 250;
 
+// `chatStore` évite le doublon de gestionnaire via `registerTextStreamHandler`,
+// qui JETTE si un gestionnaire existe déjà pour le topic — `unregister` d'abord
+// rend l'invariant « un seul enregistrement » vrai PAR CONSTRUCTION. `room.on`
+// n'a pas cette notion : il est ADDITIF, deux appels empilent deux
+// gestionnaires au lieu que le second remplace le premier, et rien ne jette
+// jamais. Un simple `room.off(RoomEvent.DataReceived, handleData)` juste avant
+// le `on`, comme le fait `chatStore` pour son propre gestionnaire, ne
+// suffirait pas : `handleData` est une fermeture NEUVE à chaque appel de
+// `createReactionStore`, donc `off` ne peut désigner que CELLE-CI, jamais
+// celle d'un appel précédent — elle n'a encore rien à retirer.
+//
+// Il faut donc une mémoire qui survit à l'appel, tenue ici plutôt que dans le
+// SDK : `activeHandlers` retient, par `Room`, la dernière fermeture posée par
+// ce module. Une construction qui en trouve une la détache avant de poser la
+// sienne — même invariant que `chatStore` (un seul gestionnaire actif),
+// obtenu par un mécanisme différent parce que l'API sous-jacente diffère. Même
+// hasard que lui, aussi : sans cela, le double appel de l'initialiseur d'un
+// `useState` en mode strict laisserait le gestionnaire de l'instance jetée
+// attaché à la Room pour toujours — capable, avec elle, de rearmer un
+// intervalle de purge que plus personne ne peut atteindre. Un `WeakMap`, pas
+// un `Map` : une Room qu'on ne revoit jamais ne doit pas retenir sa fermeture
+// indéfiniment.
+const activeHandlers = new WeakMap<
+  Room,
+  (payload: Uint8Array, participant?: RemoteParticipant) => void
+>();
+
 // Le contrat de `useSyncExternalStore` : `getSnapshot()` rend la MÊME
 // référence tant que rien n'a bougé.
 export type ReactionStore = {
@@ -38,6 +65,12 @@ export function createReactionStore(room: Room): ReactionStore {
   let recent: readonly number[] = [];
   let counter = 0;
   let pruneTimer: ReturnType<typeof setInterval> | null = null;
+  // Terminal, comme `chatStore.disposed` — pour une raison différente de la
+  // sienne : `getSnapshot()` ici rend `reactions` directement, sans
+  // instantané mis en cache à protéger d'une dérive de référence. Le seul
+  // gain est d'éviter du travail inutile dans `send()` (voir plus bas) pour
+  // un magasin que l'écran a déjà lâché.
+  let disposed = false;
 
   function notify(): void {
     // Copie de la liste : un abonné qui se désabonne en recevant l'avis ne
@@ -89,6 +122,12 @@ export function createReactionStore(room: Room): ReactionStore {
     notify();
   }
 
+  // Voir le commentaire au-dessus d'`activeHandlers`. Lire l'ancienne
+  // fermeture AVANT d'écrire la nôtre, jamais l'inverse : sinon
+  // `previousHandler` désignerait la nôtre, pas celle d'un appel précédent.
+  const previousHandler = activeHandlers.get(room);
+  if (previousHandler !== undefined) room.off(RoomEvent.DataReceived, previousHandler);
+  activeHandlers.set(room, handleData);
   room.on(RoomEvent.DataReceived, handleData);
 
   return {
@@ -116,6 +155,13 @@ export function createReactionStore(room: Room): ReactionStore {
         return false;
       }
 
+      // La publication a réussi : le message est bien parti, quoi qu'il
+      // arrive ensuite. Mais si `dispose()` s'est intercalé pendant l'attente,
+      // ajouter quand même l'écho ne servirait à personne — voir le
+      // commentaire sur `disposed` plus haut — donc `true` reste la bonne
+      // valeur de retour sans que le reste s'exécute.
+      if (disposed) return true;
+
       counter += 1;
       reactions = appendReaction(reactions, {
         id: `${room.localParticipant.identity}#${counter}`,
@@ -131,6 +177,7 @@ export function createReactionStore(room: Room): ReactionStore {
     },
 
     dispose(): void {
+      disposed = true;
       room.off(RoomEvent.DataReceived, handleData);
       if (pruneTimer !== null) {
         clearInterval(pruneTimer);

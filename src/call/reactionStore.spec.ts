@@ -82,6 +82,20 @@ describe('createReactionStore', () => {
     expect(probe.subscribedEvents()).toEqual([RoomEvent.DataReceived]);
   });
 
+  it('détache le gestionnaire de la construction précédente sur la même Room', () => {
+    // `room.on` est ADDITIF et ne jette jamais sur un doublon, contrairement
+    // à `registerTextStreamHandler` (`chatStore.ts`) : sans garde, une
+    // seconde construction sur la même Room — le double appel de
+    // l'initialiseur d'un `useState` en mode strict — empilerait un second
+    // gestionnaire au lieu de remplacer le premier.
+    const probe = fakeRoom('me', 'Me');
+    createReactionStore(probe.room);
+
+    createReactionStore(probe.room);
+
+    expect(probe.handlerCount(RoomEvent.DataReceived)).toBe(1);
+  });
+
   it('rend la même référence tant que rien ne bouge', () => {
     const store = createReactionStore(fakeRoom('me', 'Me').room);
     expect(store.getSnapshot()).toBe(store.getSnapshot());
@@ -284,6 +298,35 @@ describe('createReactionStore', () => {
 
       store.dispose();
 
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    // Drapeau terminal, comme `chatStore.ts`. `send()` peut être en vol au
+    // moment de la libération : sans lui, la résolution tardive de
+    // `publishData` ajouterait quand même son écho et rearmerait un
+    // intervalle de purge pour un magasin que l'écran a déjà lâché — du
+    // travail inutile, puisque `notify()` ne peut de toute façon plus avertir
+    // personne (`listeners` est déjà vidé par `dispose()`). `true` reste la
+    // bonne valeur de retour : la publication a réellement réussi, seul
+    // l'écho local est sauté.
+    it("n'ajoute plus d'écho ni ne rearme la purge quand publishData se résout après dispose", async () => {
+      const probe = fakeRoom('me', 'Me');
+      let resolvePublish: () => void = () => undefined;
+      probe.publishData.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePublish = resolve;
+          }),
+      );
+      const store = createReactionStore(probe.room);
+
+      const pending = store.send('thumbs-up');
+      store.dispose();
+      resolvePublish();
+      const sent = await pending;
+
+      expect(sent).toBe(true);
+      expect(store.getSnapshot()).toEqual([]);
       expect(jest.getTimerCount()).toBe(0);
     });
   });
