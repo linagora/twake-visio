@@ -1,10 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Menu, Text } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
-import { BAR_RIPPLE_COLOR, barStyles } from 'src/screens/room/controlBar';
+import { sheetStyles } from 'src/screens/room/controlBar';
+import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type HandControlProps = {
   readonly raised: boolean;
@@ -23,7 +24,7 @@ export type HandControlProps = {
 // surface sombre. La file, elle, reste : elle décrit l'état du salon, pas la
 // requête en cours.
 //
-// Les lignes de file ne sont pas des `Menu.Item` : on ne peut pas baisser la
+// Les lignes de file ne sont pas des `SheetRow` : on ne peut pas baisser la
 // main de quelqu'un d'autre, et un élément pressable promettrait une action
 // qui n'existe pas.
 export function HandControl({
@@ -38,11 +39,9 @@ export function HandControl({
   return (
     <View>
       {busy ? null : (
-        <Menu.Item
+        <SheetRow
           testID="hand-toggle"
           title={t(label)}
-          titleStyle={barStyles.menuTitle}
-          rippleColor={BAR_RIPPLE_COLOR}
           accessibilityLabel={t(label)}
           onPress={onToggle}
         />
@@ -51,8 +50,8 @@ export function HandControl({
         <View testID="hand-queue">
           {/* Secondaire par la taille (`labelSmall`), jamais par un gris :
               `tokens.color.muted` donne 3,88:1 sur `surfaceDark`, sous le
-              seuil AA. `barStyles.menuNote` porte `textDark`, 15,86:1. */}
-          <Text testID="hand-queue-title" variant="labelSmall" style={barStyles.menuNote}>
+              seuil AA. `sheetStyles.note` porte `textDark`, 15,86:1. */}
+          <Text testID="hand-queue-title" variant="labelSmall" style={sheetStyles.note}>
             {t('call.handQueue')}
           </Text>
           {hands.map((hand, index) => (
@@ -60,7 +59,7 @@ export function HandControl({
               key={hand.identity}
               testID={`hand-queue-row-${hand.identity}`}
               variant="labelSmall"
-              style={barStyles.menuNote}
+              style={sheetStyles.note}
             >
               {t('call.handQueueEntry', {
                 position: index + 1,
