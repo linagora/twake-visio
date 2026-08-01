@@ -12,6 +12,7 @@ import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
 import * as audioRoute from 'src/call/audioRoute';
+import { CHAT_TOPIC } from 'src/call/chat';
 import type { CameraChoice } from 'src/call/devices';
 import * as media from 'src/call/media';
 import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
@@ -235,6 +236,24 @@ const mockRoom: {
 async function emitRoom(event: string): Promise<void> {
   await act(async () => {
     for (const handler of Array.from(mockRoomHandlers.get(event) ?? [])) handler();
+  });
+}
+
+// Fait arriver un message entrant comme le fait le SDK : un lecteur dont
+// `info` porte l'identifiant de flux et l'horodatage, et dont `readAll()`
+// résout sur le texte COMPLET. Le gestionnaire lance une promesse sans
+// l'attendre, d'où le vidage à l'intérieur de l'`act`.
+async function receiveChat(
+  identity: string,
+  id: string,
+  body: string,
+  sentAt = 1_000,
+): Promise<void> {
+  const handler = mockTextStreamHandlers.get(CHAT_TOPIC);
+  if (handler === undefined) throw new Error('aucun gestionnaire lk.chat enregistré');
+  await act(async () => {
+    handler({ info: { id, timestamp: sentAt }, readAll: async () => body }, { identity });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -2393,5 +2412,131 @@ describe('CallScreen, plein écran, enfermement', () => {
       expect(screen.getByTestId('active-speaker')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
+  });
+});
+
+describe('CallScreen — le chat', () => {
+  async function openChat(): Promise<void> {
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('chat-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
+  }
+
+  it('remplace la scène par le chat, et la rend au retour', async () => {
+    // Le panneau remplace la scène plutôt que de se poser par-dessus : les
+    // deux se disputeraient la même vidéo. La barre, elle, reste en place.
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+
+    await openChat();
+
+    expect(screen.queryByTestId('active-speaker')).toBe(null);
+    expect(screen.getByTestId('leave-btn')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('chat-close'));
+
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    expect(screen.queryByTestId('chat-title')).toBe(null);
+  });
+
+  it("n'ouvre jamais deux panneaux à la fois", async () => {
+    // Trois états s'excluent ; deux booléens en autoriseraient quatre, dont un
+    // impossible.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getAllByTestId('participant-row').length).toBeGreaterThan(0));
+
+    await openChat();
+
+    expect(screen.queryByTestId('participant-row')).toBe(null);
+  });
+
+  it('affiche un message reçu du serveur', async () => {
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+
+    await receiveChat('u-bob', 's-1', 'bonjour');
+    await openChat();
+
+    expect(screen.getByTestId('chat-body-u-bob#s-1')).toHaveTextContent('bonjour');
+  });
+
+  it('compte les non-lus sans ouvrir le panneau, puis les efface à l’ouverture', async () => {
+    // Deux messages, jamais un seul : avec un seul, une pastille codée en dur
+    // à 1 passerait.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+
+    await receiveChat('u-bob', 's-1', 'bonjour', 1_000);
+    await receiveChat('u-bob', 's-2', 'la suite', 2_000);
+
+    expect(screen.getByTestId('chat-unread')).toHaveTextContent('2');
+
+    await openChat();
+
+    expect(screen.queryByTestId('chat-unread')).toBe(null);
+  });
+
+  it('envoie sur le topic du chat et vide la zone', async () => {
+    mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    await waitFor(() => expect(mockSendText).toHaveBeenCalledWith('bonjour', { topic: 'lk.chat' }));
+    expect(screen.getByTestId('chat-input').props.value).toBe('');
+    expect(screen.getByTestId('chat-body-me#s-local')).toHaveTextContent('bonjour');
+  });
+
+  it('signale un envoi échoué et garde le texte', async () => {
+    mockSendText.mockRejectedValue(new Error('canal fermé'));
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('chat.sendFailed'),
+    );
+    expect(screen.getByTestId('chat-input').props.value).toBe('bonjour');
+  });
+
+  it('efface l’avertissement quand un envoi suivant réussit', async () => {
+    // Le test que le périmètre B avait dû ajouter après coup : un succès doit
+    // effacer l'erreur d'un essai précédent.
+    mockSendText.mockRejectedValueOnce(new Error('canal fermé'));
+    mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('chat.sendFailed'),
+    );
+
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    // La `Snackbar` de Paper ne rend RIEN quand elle est masquée : le motif du
+    // dépôt est `queryByTestId(…).toBeNull()`, jamais un contenu vide.
+    await waitFor(() => expect(screen.queryByTestId('call-notice')).toBeNull());
+  });
+
+  it('enregistre lk.chat une seule fois, et le libère au démontage', async () => {
+    // Un gestionnaire laissé sur une Room vivante est une fuite qu'aucun écran
+    // ne rattrape ; deux enregistrements feraient jeter le SDK.
+    const view = await render(withPaper(<CallScreen />));
+
+    expect(mockTextStreamHandlers.has('lk.chat')).toBe(true);
+
+    await view.unmount();
+
+    expect(mockTextStreamHandlers.has('lk.chat')).toBe(false);
   });
 });

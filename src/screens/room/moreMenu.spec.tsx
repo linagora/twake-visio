@@ -49,10 +49,12 @@ type Overrides = {
   handRaised?: boolean;
   handBusy?: boolean;
   hands?: readonly RaisedHand[];
+  unread?: number;
   onShare?: () => void;
   onStartRecording?: () => void;
   onStopRecording?: () => void;
   onToggleHand?: () => void;
+  onOpenChat?: () => void;
 };
 
 function menu(overrides: Overrides = {}): React.ReactElement {
@@ -64,10 +66,12 @@ function menu(overrides: Overrides = {}): React.ReactElement {
       handRaised={overrides.handRaised ?? false}
       handBusy={overrides.handBusy ?? false}
       hands={overrides.hands ?? []}
+      unread={overrides.unread ?? 0}
       onShare={overrides.onShare ?? jest.fn()}
       onStartRecording={overrides.onStartRecording ?? jest.fn()}
       onStopRecording={overrides.onStopRecording ?? jest.fn()}
       onToggleHand={overrides.onToggleHand ?? jest.fn()}
+      onOpenChat={overrides.onOpenChat ?? jest.fn()}
     />,
   );
 }
@@ -287,5 +291,62 @@ describe('MoreMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     expect(screen.queryByTestId('hand-queue')).toBe(null);
+  });
+
+  it('ouvre le chat et referme la feuille, comme ses trois voisines', async () => {
+    // Rien ne garantit qu'une entrée referme la feuille parce que ses voisines
+    // le font : le `setVisible(false)` est écrit une fois par entrée.
+    const onOpenChat = jest.fn();
+    const onShare = jest.fn();
+    await render(menu({ onOpenChat, onShare }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
+    expect(screen.getByTestId('chat-btn')).toHaveTextContent('chat.title');
+    await fireEvent.press(screen.getByTestId('chat-btn'));
+
+    expect(onOpenChat).toHaveBeenCalledTimes(1);
+    expect(onShare).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('chat-btn')).toBe(null));
+  });
+
+  it('porte une couleur explicite sur le libellé du chat', async () => {
+    // Elle vient de `SheetRow`, qui pose toujours `sheetStyles.rowTitle` sous
+    // le surclassement optionnel : cette assertion garde donc que `chat-btn`
+    // passe bien par cette ligne partagée, et non par un `Text` nu.
+    await render(menu());
+
+    await open();
+
+    await waitFor(() => expect(screen.getByTestId('chat-btn-title')).toBeTruthy());
+    expect(screen.getByTestId('chat-btn-title')).toHaveStyle({ color: tokens.color.textDark });
+  });
+
+  it('ne montre aucune pastille sans non-lu', async () => {
+    // Rendue ou pas rendue, jamais `visible={false}` : `Badge` retire `visible`
+    // de ses props avant de les étaler (`Badge.tsx:59-60`), donc l'état ne
+    // serait joignable par aucune assertion — mesuré, `props.visible` vaut
+    // `undefined` dans les deux cas.
+    await render(menu({ unread: 0 }));
+
+    expect(screen.queryByTestId('chat-unread')).toBe(null);
+  });
+
+  it('montre le nombre de non-lus, feuille fermée', async () => {
+    // La pastille vit sur l'ANCRE, pas dans la feuille : elle doit être
+    // visible sans rien ouvrir, sinon elle n'avertit personne.
+    await render(menu({ unread: 3 }));
+
+    expect(screen.getByTestId('chat-unread')).toHaveTextContent('3');
+  });
+
+  it('rend un nombre transmis, pas une constante', async () => {
+    // Deux valeurs distinctes, jamais une seule.
+    const view = await render(menu({ unread: 3 }));
+    expect(screen.getByTestId('chat-unread')).toHaveTextContent('3');
+
+    await view.rerender(menu({ unread: 7 }));
+
+    expect(screen.getByTestId('chat-unread')).toHaveTextContent('7');
   });
 });
