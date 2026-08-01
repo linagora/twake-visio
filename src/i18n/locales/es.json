@@ -63,7 +63,6 @@
   "call.handFailed": "No se pudo cambiar el estado de su mano",
   "call.reactions": "Reacciones",
   "call.you": "Usted",
-  "call.reactionFailed": "No se pudo enviar la reacción",
   "reaction.thumbsUp": "Pulgar arriba",
   "reaction.thumbsDown": "Pulgar abajo",
   "reaction.clap": "Aplausos",

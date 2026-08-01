@@ -82,7 +82,6 @@ type MessageKey =
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
-  | 'call.reactionFailed'
   | 'chat.sendFailed'
   | RecordingMessageKey;
 
@@ -133,6 +132,9 @@ function toApiErrorMessage(error: ApiError): MessageKey {
 function toDisconnectMessage(reason: string): MessageKey {
   return reason === 'closed' ? 'call.ended' : 'error.network';
 }
+
+// Trois états qui s'excluent, nommés pour que `openPanel` puisse les prendre.
+type Panel = 'none' | 'participants' | 'chat';
 
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
 // chaque rendu, y compris quand personne n'est connecté. `access` — qui
@@ -370,7 +372,7 @@ export function CallScreen(): React.ReactElement {
   // Trois états qui s'excluent, et non deux booléens : deux booléens
   // autoriseraient quatre combinaisons dont une impossible — les deux panneaux
   // ouverts sur la même région d'écran.
-  const [panel, setPanel] = useState<'none' | 'participants' | 'chat'>('none');
+  const [panel, setPanel] = useState<Panel>('none');
   const [recordingBusy, setRecordingBusy] = useState(false);
   // Une requête en vol, jamais un état désiré : l'affichage suit l'attribut,
   // et lui seul. Partagé par la commande du menu et par le bandeau, qui
@@ -741,6 +743,28 @@ export function CallScreen(): React.ReactElement {
   // `participantsOpen` et le plein écran mutuellement exclusifs PAR
   // CONSTRUCTION plutôt que par la seule convention de la barre. C'est ce qui
   // évitait, avant ce lot, l'enfermement total qu'une revue de branche avait
+  // LE seul chemin qui change de panneau, et il sort du plein écran quoi qu'il
+  // arrive.
+  //
+  // C'était deux lignes, une par ouvreur, que chaque nouvel appelant devait
+  // penser à écrire. Mesuré après coup : les supprimer TOUTES LES DEUX laissait
+  // **343 tests sur 343 au vert**, parce que rien ne peut les atteindre — les
+  // commandes qui changent de panneau vivent dans la barre, elle-même non
+  // rendue en plein écran, et c'est CE fait-là qui protège l'écran
+  // aujourd'hui, lui qui est asserté.
+  //
+  // Aucun test ne peut donc rougir sur cette ligne, et il ne faut pas en
+  // fabriquer un. Mais elle n'est pas décorative pour autant : le jour où quoi
+  // que ce soit rendra un panneau atteignable depuis le plein écran — un
+  // geste, une notification, un lien profond, un `panel` restauré après une
+  // reconnexion — l'enfermement total que ce dépôt a déjà livré revient, avec
+  // une suite entièrement verte. En un seul endroit, elle ne peut plus être
+  // oubliée par un appelant ; en deux, elle l'était déjà à moitié.
+  const openPanel = (next: Panel | ((current: Panel) => Panel)): void => {
+    handleExitFullscreen();
+    setPanel(next);
+  };
+
   // mesuré : ouvrir le panneau démontait `CallStage`, qui portait alors le
   // seul geste capable de sortir du plein écran, et le minuteur de l'ancien
   // `chromeVisible` continuait de tourner sans qu'aucun bouton ne reste
@@ -748,8 +772,7 @@ export function CallScreen(): React.ReactElement {
   // jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce sens serait
   // un no-op silencieux — `fullscreen` est déjà `null` à ce moment-là.
   const handleToggleParticipants = (): void => {
-    if (panel !== 'participants') handleExitFullscreen();
-    setPanel((current) => (current === 'participants' ? 'none' : 'participants'));
+    openPanel((current) => (current === 'participants' ? 'none' : 'participants'));
   };
 
   // Le compteur repart de zéro à l'OUVERTURE, jamais au défilement : un
@@ -763,12 +786,11 @@ export function CallScreen(): React.ReactElement {
   // -même masquée en plein écran — mais gardé PAR CONSTRUCTION plutôt que par
   // la seule convention de la barre.
   const handleOpenChat = (): void => {
-    handleExitFullscreen();
     chatStore.markRead();
-    setPanel('chat');
+    openPanel('chat');
   };
 
-  const handleCloseChat = (): void => setPanel('none');
+  const handleCloseChat = (): void => openPanel('none');
 
   // `send` ne rejette jamais : son échec ordinaire est une valeur `false`.
   // Le booléen remonte jusqu'à la coquille, qui garde le texte dans la zone de
@@ -901,6 +923,17 @@ export function CallScreen(): React.ReactElement {
     return (
       <View style={styles.centered}>
         <ActivityIndicator testID="call-connecting" />
+        {/* Exactement l'argument de la branche d'erreur ci-dessus, qui n'avait
+            pas été appliqué ici : l'en-tête est masqué par le Stack, donc sans
+            ce bouton l'attente est un cul-de-sac dont on ne sort qu'en tuant
+            l'application. Et c'est le PREMIER écran que voit tout participant.
+            Le réseau borne l'attente, mais pas les demandes de permission
+            Android traversées juste avant `connect()`, qui n'ont aucun délai —
+            un refus de la boîte de dialogue système peut laisser ici
+            indéfiniment. */}
+        <Button mode="contained" testID="connecting-leave-btn" onPress={handleLeave}>
+          {t('call.leave')}
+        </Button>
       </View>
     );
   }

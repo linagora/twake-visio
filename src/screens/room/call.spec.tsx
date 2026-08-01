@@ -625,6 +625,23 @@ describe('CallScreen', () => {
     expect(mockConnect).not.toHaveBeenCalled();
   });
 
+  it("laisse la même porte de sortie pendant qu'on se connecte", async () => {
+    // Le MÊME argument que le test suivant, appliqué à l'écran d'à côté : il ne
+    // rendait qu'un indicateur d'activité, sans un seul bouton. C'est le
+    // premier écran que voit tout participant, et le recensement des sorties
+    // l'a relevé comme le seul état de l'écran d'appel dont on ne peut pas
+    // sortir. Borné par le réseau, sauf pendant les demandes de permission
+    // Android, qui n'ont aucun délai — et l'en-tête est masqué par le Stack.
+    mockCallState = { status: 'connecting' };
+
+    await renderCall();
+    expect(screen.getByTestId('call-connecting')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('connecting-leave-btn'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/home'));
+  });
+
   it('laisse une porte de sortie quand la séance a échoué', async () => {
     // L'en-tête est masqué par le Stack : sans ce bouton, un écran d'erreur est
     // un cul-de-sac dont on ne sort qu'en tuant l'application.

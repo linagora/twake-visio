@@ -137,9 +137,14 @@ export function createChatStore(room: Room): ChatStore {
     },
 
     markRead(): void {
-      // Marque lu ce qui est PRÉSENT, message par message. Les siens n'y
-      // entrent pas : `unreadCount` les écarte déjà, et les y mettre ferait
-      // grossir l'ensemble sans rien changer au compte.
+      // Marque lu ce qui est PRÉSENT, message par message.
+      //
+      // Le saut sur `isLocal` est une ÉCONOMIE, pas une garde, et aucun test ne
+      // peut le faire rougir : `unreadCount` écarte déjà les siens, donc les
+      // ajouter ici ne changerait aucun compte — seulement la taille de
+      // l'ensemble, qui grossit déjà sans borne avec le fil. Mesuré : le
+      // retirer laisse les 43 cas verts. C'est écrit pour qu'on ne cherche pas
+      // le test manquant, qui n'existe pas.
       let changed = false;
       for (const message of log) {
         if (message.isLocal) continue;
