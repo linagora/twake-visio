@@ -234,6 +234,17 @@ export function CallScreen(): React.ReactElement {
   // la pose.
   const [chromeVisible, setChromeVisible] = useState(false);
 
+  // I3 : un compteur, jamais lu pour sa VALEUR — seul son CHANGEMENT compte.
+  // `setChromeVisible(true)` sur une valeur déjà `true` est un no-op pour
+  // React : le rendu est court-circuité, et le `useEffect` plus bas — dont
+  // `chromeVisible` était l'unique dépendance — ne se rejouait donc jamais.
+  // Un second appui pendant que les commandes étaient déjà visibles ne
+  // réarmait rien : le minuteur du PREMIER appui continuait de courir,
+  // inchangé, et les commandes disparaissaient à SON échéance, pas quatre
+  // secondes après le second appui. Incrémenté à CHAQUE appui, premier compris
+  // — un seul mécanisme de réarmement, jamais un premier appui traité à part.
+  const [chromeRevealNonce, setChromeRevealNonce] = useState(0);
+
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
@@ -285,6 +296,9 @@ export function CallScreen(): React.ReactElement {
     (key: string): void => {
       if (inFullscreen) {
         setChromeVisible(true);
+        // I3 : réarme le minuteur ci-dessous même si `chromeVisible` valait
+        // déjà `true`, où la ligne du dessus seule ne changerait rien.
+        setChromeRevealNonce((n) => n + 1);
         return;
       }
       setPin((current) => (current === key ? null : key));
@@ -309,18 +323,24 @@ export function CallScreen(): React.ReactElement {
     setChromeVisible(false);
   }, []);
 
-  // E3 : afficher ET armer la disparition — deux instructions, une seule
-  // dépendance. E4 : la sortie du plein écran (ci-dessus) doit désarmer,
-  // sinon le minuteur se déclenche sur un composant démonté ou rallume les
-  // commandes après coup. C'est la ligne qu'on oublie, et le `return` de CE
-  // `useEffect` est ce qui la rend automatique plutôt que manuelle : il
-  // s'exécute à chaque changement de `chromeVisible`, qu'il vienne du
-  // minuteur lui-même ou de `handleExitFullscreen`.
+  // E3 : afficher ET armer la disparition. E4 : la sortie du plein écran
+  // (ci-dessus) doit désarmer, sinon le minuteur se déclenche sur un
+  // composant démonté ou rallume les commandes après coup. C'est la ligne
+  // qu'on oublie, et le `return` de CE `useEffect` est ce qui la rend
+  // automatique plutôt que manuelle : il s'exécute à chaque changement de
+  // `chromeVisible`, qu'il vienne du minuteur lui-même ou de
+  // `handleExitFullscreen`.
+  //
+  // `chromeRevealNonce` en seconde dépendance, pour I3 : sans lui, un appui
+  // répété pendant que `chromeVisible` est déjà `true` ne changerait aucune
+  // des deux dépendances de ce tableau, l'effet ne se rejouerait pas, et
+  // l'ancien `setTimeout` — jamais annulé — continuerait de courir vers SA
+  // propre échéance au lieu d'être repoussé par le nouvel appui.
   useEffect(() => {
     if (!chromeVisible) return undefined;
     const id = setTimeout(() => setChromeVisible(false), CHROME_REVEAL_MS);
     return () => clearTimeout(id);
-  }, [chromeVisible]);
+  }, [chromeVisible, chromeRevealNonce]);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans

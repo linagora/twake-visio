@@ -2088,6 +2088,52 @@ describe('CallScreen, plein écran, rappel des commandes', () => {
     ).toBeTruthy();
   });
 
+  // I3, reproduit par la revue de branche : `setChromeVisible(true)` sur une
+  // valeur déjà `true` est un no-op pour React, qui court-circuite le rendu —
+  // le `useEffect` dont c'est l'unique dépendance ne se rejoue donc pas, et le
+  // `setTimeout` qu'il porte n'est ni annulé ni réarmé. Un second appui
+  // pendant que les commandes sont déjà visibles doit pourtant prolonger leur
+  // présence de CHROME_REVEAL_MS de plus, comme le ferait tout lecteur vidéo.
+  // Mesuré sans le correctif : appui à t=0, appui à t=3500, les commandes
+  // disparaissent quand même à t=4000 — ce test avance le temps en deux fois
+  // pour le prouver.
+  it('réarme le minuteur à chaque appui, même quand les commandes sont déjà visibles', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Premier appui, à t=0 : échéance à t=4000 si rien ne la prolonge.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
+
+    await act(async () => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+
+    // Second appui, à t=3500, pendant que les commandes sont toujours là :
+    // doit réarmer le minuteur pour 4000 ms de PLUS, donc une échéance à
+    // t=7500, jamais à t=4000.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+
+    await act(async () => {
+      jest.advanceTimersByTime(3500);
+    });
+    // t=7000 : l'échéance du PREMIER cycle (t=4000) est largement dépassée —
+    // sans réarmement, les commandes auraient déjà disparu depuis longtemps.
+    // Celle du second cycle (t=7500) ne l'est pas encore.
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+    // t=7500 : l'échéance du second cycle, atteinte cette fois.
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+  });
+
   // E4. Un minuteur qui fire naturellement n'a besoin d'aucun nettoyage pour
   // se déclencher au bon moment — c'est pourquoi le test précédent, à lui
   // seul, ne mord pas sur un `useEffect` sans fonction de nettoyage. Ici, le
