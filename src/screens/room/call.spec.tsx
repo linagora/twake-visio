@@ -2002,4 +2002,37 @@ describe('CallScreen, plein écran', () => {
     // règle ordinaire qu'à la connexion.
     expect(within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera')).toBeTruthy();
   });
+
+  // Trou trouvé par la revue de la tâche 3 : muter la résolution de
+  // `fullscreenTile` de `[layout.stage, ...layout.filmstrip]` à
+  // `[layout.stage]` laissait les 688 tests de la branche verts, parce
+  // qu'aucun scénario existant n'avait plus d'un distant — la règle de scène
+  // n'en place jamais qu'un seul, donc toujours SUR la scène, jamais dans la
+  // bande. Deux distants, appui long sur celui resté dans la bande, ferme le
+  // trou.
+  it('résout la tuile plein écran même quand elle est restée dans la bande', async () => {
+    // Identités choisies pour que la règle de scène ordinaire (parole égale,
+    // `compareStable` départage par identité) place Ada sur la scène et Bob
+    // dans la bande — la précondition qui rend ce test capable de distinguer
+    // les deux résolutions.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+    });
+
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+  });
 });
