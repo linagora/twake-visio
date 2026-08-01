@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Share, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
 
 import { toggleHand } from 'src/api/hand';
@@ -21,6 +21,7 @@ import {
   openSystemRoutePicker,
   selectAudioOutput,
 } from 'src/call/audioRoute';
+import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
 import { handPosition, isHandRaised, raisedHands } from 'src/call/hands';
@@ -49,6 +50,7 @@ import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
 import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
+import { ChatPanel } from 'src/screens/room/chatPanel';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
@@ -62,6 +64,7 @@ import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { CallStage } from 'src/screens/room/stage';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
+import { keyboardMode } from 'src/ui/keyboard';
 import { tokens } from 'src/ui/tokens';
 
 // Les seules raisons que l'écran sait dire quand il n'y a pas de séance. Ce
@@ -79,6 +82,7 @@ type MessageKey =
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
   | 'call.reactionFailed'
+  | 'chat.sendFailed'
   | RecordingMessageKey;
 
 // Sert deux appelants : l'accès initial au salon, et les trois actions de
@@ -331,7 +335,10 @@ export function CallScreen(): React.ReactElement {
   // `RoomAccess`, et dupliquer l'effet de connexion pour chacune n'aurait
   // aucune raison d'être.
   const [access, setAccess] = useState<RoomAccess | null>(null);
-  const [participantsOpen, setParticipantsOpen] = useState(false);
+  // Trois états qui s'excluent, et non deux booléens : deux booléens
+  // autoriseraient quatre combinaisons dont une impossible — les deux panneaux
+  // ouverts sur la même région d'écran.
+  const [panel, setPanel] = useState<'none' | 'participants' | 'chat'>('none');
   const [recordingBusy, setRecordingBusy] = useState(false);
   // Une requête en vol, jamais un état désiré : l'affichage suit l'attribut,
   // et lui seul. Partagé par la commande du menu et par le bandeau, qui
@@ -384,6 +391,16 @@ export function CallScreen(): React.ReactElement {
   // a pas de second instant où le faire.
   const [reactionStore] = useState(() => createReactionStore(session.getRoom()));
   const reactions = useSyncExternalStore(reactionStore.subscribe, reactionStore.getSnapshot);
+  // `useState` et non `useMemo`, pour la raison exacte du magasin de réactions
+  // juste au-dessus — et non celle des deux premiers, qui peuvent relire la
+  // Room : celui-ci enregistre un gestionnaire de flux DÈS SA CONSTRUCTION, et React
+  // se réserve le droit de jeter un `useMemo`. Un magasin jeté laisserait
+  // derrière lui un gestionnaire `lk.chat` sur une Room vivante. Même raison
+  // que la session, plus haut. Un message est un ÉVÉNEMENT et non un état :
+  // rien ne le porte après son passage, donc une fenêtre sans écoute est une
+  // perte définitive, là où les deux autres magasins peuvent relire la Room.
+  const [chatStore] = useState(() => createChatStore(session.getRoom()));
+  const chat = useSyncExternalStore(chatStore.subscribe, chatStore.getSnapshot);
 
   // `Room.id` est `string | null` depuis le premier commit d'API : distinct
   // d'`access?.room.id`, dont les usages plus bas l'écrasaient en `''` — au
@@ -425,6 +442,12 @@ export function CallScreen(): React.ReactElement {
     roomId ?? '',
     canModerate && hasLobby,
   );
+
+  // Déclaré avant les deux effets de session, pour la même raison qu'eux : les
+  // nettoyages s'exécutent dans l'ordre de déclaration, et détacher le
+  // gestionnaire de flux avant de jeter la Room est la même précaution que le
+  // désabonnement ci-dessous.
+  useEffect(() => () => chatStore.dispose(), [chatStore]);
 
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
@@ -693,8 +716,37 @@ export function CallScreen(): React.ReactElement {
   // jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce sens serait
   // un no-op silencieux — `fullscreen` est déjà `null` à ce moment-là.
   const handleToggleParticipants = (): void => {
-    if (!participantsOpen) handleExitFullscreen();
-    setParticipantsOpen(!participantsOpen);
+    if (panel !== 'participants') handleExitFullscreen();
+    setPanel((current) => (current === 'participants' ? 'none' : 'participants'));
+  };
+
+  // Le compteur repart de zéro à l'OUVERTURE, jamais au défilement : un
+  // compteur qui dépendrait de la position de défilement demanderait
+  // d'instrumenter une `FlatList`. Conséquence assumée : un message reçu
+  // PENDANT que le panneau est ouvert reste compté non lu jusqu'à la
+  // réouverture — §5.C19 appliquée à la lettre.
+  //
+  // La sortie du plein écran est le même invariant défensif que ci-dessus :
+  // inatteignable par l'interface, puisque `more-btn` vit dans la barre, elle
+  // -même masquée en plein écran — mais gardé PAR CONSTRUCTION plutôt que par
+  // la seule convention de la barre.
+  const handleOpenChat = (): void => {
+    handleExitFullscreen();
+    chatStore.markRead();
+    setPanel('chat');
+  };
+
+  const handleCloseChat = (): void => setPanel('none');
+
+  // `send` ne rejette jamais : son échec ordinaire est une valeur `false`.
+  // Le booléen remonte jusqu'à la coquille, qui garde le texte dans la zone de
+  // saisie quand le message n'est pas parti — un message perdu qu'on doit
+  // retaper est une deuxième punition pour une panne de réseau. Un succès
+  // efface l'erreur d'un essai précédent, comme les cinq autres actions.
+  const handleSendChat = async (body: string): Promise<boolean> => {
+    const ok = await chatStore.send(body);
+    setNotice(ok ? null : 'chat.sendFailed');
+    return ok;
   };
 
   // `answer` a déjà retiré la personne de la file de façon optimiste (voir
@@ -822,7 +874,17 @@ export function CallScreen(): React.ReactElement {
   }
 
   return (
-    <View style={styles.root}>
+    // La racine, et non le seul panneau : sur iOS le clavier se superpose à la
+    // fenêtre entière, et rembourrer le panneau seul laisserait la barre de
+    // commandes — donc « quitter » — sous le clavier. Sans clavier ouvert, le
+    // rembourrage vaut zéro et cette vue se comporte exactement comme la `View`
+    // qu'elle remplace. `keyboardMode()` est une VALEUR : c'est ce qui permet à
+    // une spec de rendre les deux branches sans bouchonner `Platform`.
+    <KeyboardAvoidingView
+      testID="call-root"
+      style={styles.root}
+      behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
+    >
       {/* Au-dessus de la scène : ne rend rien tant que personne n'attend, donc
           toujours monté, jamais enveloppé d'une condition. */}
       <WaitingBanner
@@ -844,9 +906,12 @@ export function CallScreen(): React.ReactElement {
 
       {/* Le panneau remplace la scène plutôt que de se poser par-dessus : les
           deux se disputeraient la même vidéo, qui est la raison d'être de cet
-          écran. La barre de contrôle, elle, reste en place dans les deux cas —
-          le même bouton referme le panneau, et quitter reste toujours possible. */}
-      {participantsOpen ? (
+          écran. La barre de contrôle, elle, reste en place dans les trois cas —
+          quitter reste toujours possible. Les participants se referment par le
+          même bouton qui les ouvre ; le chat porte sa propre sortie, parce que
+          son point d'entrée est une ligne de feuille et non une bascule de
+          barre. */}
+      {panel === 'participants' ? (
         <ParticipantsPanel
           participants={participants}
           canModerate={canModerate}
@@ -854,6 +919,8 @@ export function CallScreen(): React.ReactElement {
           onRemove={handleRemoveParticipant}
           onRole={handleChangeParticipantRole}
         />
+      ) : panel === 'chat' ? (
+        <ChatPanel chat={chat} onSend={handleSendChat} onClose={handleCloseChat} />
       ) : (
         // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
         // grille du web rend chaque visage illisible sur un écran de téléphone.
@@ -936,11 +1003,13 @@ export function CallScreen(): React.ReactElement {
             handRaised={handRaised}
             handBusy={handBusy}
             hands={hands}
+            unread={chat.unread}
             onShare={handleShare}
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecording}
             onToggleHand={handleToggleHand}
             onSendReaction={handleSendReaction}
+            onOpenChat={handleOpenChat}
           />
           <IconButton
             testID="participants-toggle"
@@ -979,6 +1048,6 @@ export function CallScreen(): React.ReactElement {
       <Snackbar testID="call-notice" visible={notice !== null} onDismiss={() => setNotice(null)}>
         {notice !== null ? t(notice) : ''}
       </Snackbar>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

@@ -12,6 +12,7 @@ import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
 import * as audioRoute from 'src/call/audioRoute';
+import { CHAT_TOPIC } from 'src/call/chat';
 import type { CameraChoice } from 'src/call/devices';
 import * as media from 'src/call/media';
 import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
@@ -157,6 +158,22 @@ type RoomHandler = (...args: unknown[]) => void;
 const mockRoomHandlers = new Map<string, RoomHandler[]>();
 const mockPublishData = jest.fn().mockResolvedValue(undefined);
 
+// Le flux de chat, du côté du double. `registerTextStreamHandler` n'est pas
+// une émission d'événement : c'est une carte d'un seul gestionnaire par topic,
+// et le vrai JETTE sur un doublon. Le double jette aussi, sans quoi rien ne
+// garderait l'ordre `unregister` → `register` que le magasin respecte.
+type StreamHandler = (
+  reader: { info: { id: string; timestamp: number }; readAll: () => Promise<string> },
+  info: { identity: string },
+) => void;
+
+const mockTextStreamHandlers = new Map<string, StreamHandler>();
+const mockSendText = jest.fn();
+// Le nom LiveKit du participant local, celui que le magasin de chat recopie
+// dans l'écho d'un message émis. Un accesseur, pas un champ figé, pour la
+// même raison que `mockLocalAttributes` juste au-dessus.
+let mockLocalName: string | undefined;
+
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
@@ -165,11 +182,16 @@ const mockRoom: {
   getParticipantByIdentity: (identity: string) => unknown;
   on: (event: string, handler: RoomHandler) => unknown;
   off: (event: string, handler: RoomHandler) => unknown;
+  registerTextStreamHandler: (topic: string, handler: StreamHandler) => void;
+  unregisterTextStreamHandler: (topic: string) => void;
 } = {
   localParticipant: {
     identity: 'me',
     isLocal: true,
     isSpeaking: false,
+    get name(): string | undefined {
+      return mockLocalName;
+    },
     get attributes(): Record<string, string> {
       return mockLocalAttributes;
     },
@@ -182,6 +204,7 @@ const mockRoom: {
     getTrackPublication: (source: Track.Source) =>
       source === Track.Source.Camera ? mockCameraPublication : undefined,
     publishData: mockPublishData,
+    sendText: mockSendText,
   },
   remoteParticipants: new Map<string, unknown>(),
   get metadata(): string | undefined {
@@ -193,7 +216,6 @@ const mockRoom: {
   // Réutilise `remoteParticipants`, déjà rempli par les tests existants
   // (`remoteParticipant(...)`) : `reactionStore` n'a besoin d'aucune donnée
   // de plus pour résoudre un nom d'émetteur.
-  getParticipantByIdentity: (identity: string) => mockRoom.remoteParticipants.get(identity),
   on(event: string, handler: RoomHandler): unknown {
     mockRoomHandlers.set(event, [...(mockRoomHandlers.get(event) ?? []), handler]);
     return mockRoom;
@@ -205,6 +227,20 @@ const mockRoom: {
     if (attached.length === 0) mockRoomHandlers.delete(event);
     return mockRoom;
   },
+  registerTextStreamHandler(topic: string, handler: StreamHandler): void {
+    if (mockTextStreamHandlers.has(topic)) {
+      throw new Error(`handler already registered for ${topic}`);
+    }
+    mockTextStreamHandlers.set(topic, handler);
+  },
+  unregisterTextStreamHandler(topic: string): void {
+    mockTextStreamHandlers.delete(topic);
+  },
+  // Le magasin y résout le nom d'un émetteur ; `remoteParticipants` est déjà
+  // la carte que les tests de modération peuplent.
+  getParticipantByIdentity(identity: string): unknown {
+    return mockRoom.remoteParticipants.get(identity);
+  },
 };
 
 // Fait arriver un événement de Room comme le ferait le SDK, dans un `act` :
@@ -215,6 +251,24 @@ const mockRoom: {
 async function emitRoom(event: string, ...args: unknown[]): Promise<void> {
   await act(async () => {
     for (const handler of Array.from(mockRoomHandlers.get(event) ?? [])) handler(...args);
+  });
+}
+
+// Fait arriver un message entrant comme le fait le SDK : un lecteur dont
+// `info` porte l'identifiant de flux et l'horodatage, et dont `readAll()`
+// résout sur le texte COMPLET. Le gestionnaire lance une promesse sans
+// l'attendre, d'où le vidage à l'intérieur de l'`act`.
+async function receiveChat(
+  identity: string,
+  id: string,
+  body: string,
+  sentAt = 1_000,
+): Promise<void> {
+  const handler = mockTextStreamHandlers.get(CHAT_TOPIC);
+  if (handler === undefined) throw new Error('aucun gestionnaire lk.chat enregistré');
+  await act(async () => {
+    handler({ info: { id, timestamp: sentAt }, readAll: async () => body }, { identity });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -317,6 +371,9 @@ beforeEach(() => {
   // sans ce nettoyage, ils survivraient au test suivant.
   mockRoom.remoteParticipants.clear();
   mockRoomHandlers.clear();
+  mockTextStreamHandlers.clear();
+  mockSendText.mockReset().mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+  mockLocalName = 'Ada';
   mockLocalAttributes = {};
   mockRoomMetadata = undefined;
   mockRoomIsRecording = false;
@@ -2499,5 +2556,159 @@ describe('CallScreen, réactions', () => {
     await view.unmount();
 
     expect(mockRoomHandlers.get('dataReceived') ?? []).toHaveLength(0);
+  });
+});
+
+describe('CallScreen — le chat', () => {
+  async function openChat(): Promise<void> {
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('chat-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
+  }
+
+  it('remplace la scène par le chat, et la rend au retour', async () => {
+    // Le panneau remplace la scène plutôt que de se poser par-dessus : les
+    // deux se disputeraient la même vidéo. La barre, elle, reste en place.
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+
+    await openChat();
+
+    expect(screen.queryByTestId('active-speaker')).toBe(null);
+    expect(screen.getByTestId('leave-btn')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('chat-close'));
+
+    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    expect(screen.queryByTestId('chat-title')).toBe(null);
+  });
+
+  it("n'ouvre jamais deux panneaux à la fois", async () => {
+    // Trois états s'excluent ; deux booléens en autoriseraient quatre, dont un
+    // impossible.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getAllByTestId('participant-row').length).toBeGreaterThan(0));
+
+    await openChat();
+
+    expect(screen.queryByTestId('participant-row')).toBe(null);
+  });
+
+  it('affiche un message reçu du serveur', async () => {
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+
+    await receiveChat('u-bob', 's-1', 'bonjour');
+    await openChat();
+
+    expect(screen.getByTestId('chat-body-u-bob#s-1')).toHaveTextContent('bonjour');
+  });
+
+  it('compte les non-lus sans ouvrir le panneau, puis les efface à l’ouverture', async () => {
+    // Deux messages, jamais un seul : avec un seul, une pastille codée en dur
+    // à 1 passerait.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await render(withPaper(<CallScreen />));
+
+    await receiveChat('u-bob', 's-1', 'bonjour', 1_000);
+    await receiveChat('u-bob', 's-2', 'la suite', 2_000);
+
+    expect(screen.getByTestId('chat-unread')).toHaveTextContent('2');
+
+    await openChat();
+
+    expect(screen.queryByTestId('chat-unread')).toBe(null);
+  });
+
+  it('envoie sur le topic du chat et vide la zone', async () => {
+    mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    await waitFor(() => expect(mockSendText).toHaveBeenCalledWith('bonjour', { topic: 'lk.chat' }));
+    expect(screen.getByTestId('chat-input').props.value).toBe('');
+    expect(screen.getByTestId('chat-body-me#s-local')).toHaveTextContent('bonjour');
+  });
+
+  it('signale un envoi échoué et garde le texte', async () => {
+    mockSendText.mockRejectedValue(new Error('canal fermé'));
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('chat.sendFailed'),
+    );
+    expect(screen.getByTestId('chat-input').props.value).toBe('bonjour');
+  });
+
+  it('efface l’avertissement quand un envoi suivant réussit', async () => {
+    // Le test que le périmètre B avait dû ajouter après coup : un succès doit
+    // effacer l'erreur d'un essai précédent.
+    mockSendText.mockRejectedValueOnce(new Error('canal fermé'));
+    mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
+    await render(withPaper(<CallScreen />));
+    await openChat();
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('chat.sendFailed'),
+    );
+
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    // La `Snackbar` de Paper ne rend RIEN quand elle est masquée : le motif du
+    // dépôt est `queryByTestId(…).toBeNull()`, jamais un contenu vide.
+    await waitFor(() => expect(screen.queryByTestId('call-notice')).toBeNull());
+  });
+
+  // MESURÉ : sans ce test, figer `behavior={undefined}` sur la racine laissait
+  // les 105 autres verts. Aucun test de RNTL n'ouvre de clavier, et ce que
+  // `KeyboardAvoidingView` fait de cette prop SUR UN APPAREIL n'est donc pas
+  // prouvable ici — mais que le câblage n'ait pas été retiré, si. C'est la
+  // cause qu'on garde, pas le symptôme : sans elle, la zone de saisie et le
+  // bouton « quitter » passent sous le clavier sur iOS.
+  //
+  // Le préréglage Jest fixe `Platform.OS` à 'ios', donc c'est la branche
+  // 'padding' que ce fichier rend ; l'autre est gardée dans `keyboard.spec.ts`,
+  // et c'est précisément pourquoi `keyboardMode()` est une VALEUR.
+  it('rembourre la racine entière, et non le seul panneau', async () => {
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() => expect(screen.getByTestId('call-root')).toBeTruthy());
+    // `behavior` elle-même n'est joignable par aucune assertion :
+    // `KeyboardAvoidingView` la retire de ses props avant de les étaler sur sa
+    // `View` (`KeyboardAvoidingView.js:225-233`) — le même piège que le
+    // `visible` d'un `Badge`. Ce qui reste observable est ce que la branche
+    // 'padding' COMPOSE : `StyleSheet.compose(style, {paddingBottom:
+    // bottomHeight})` (`:279`), là où la branche par défaut passe `style` tel
+    // quel (`:291`). Clavier fermé, `bottomHeight` vaut 0 — et `styles.root`
+    // ne porte aucun `paddingBottom`, donc cette clé n'est là que si la
+    // branche de rembourrage est active. Convention INTERNE à React Native,
+    // pas un contrat d'API : une montée de version peut la changer, et le
+    // rouge de cette suite serait alors le seul signal.
+    expect(screen.getByTestId('call-root')).toHaveStyle({ paddingBottom: 0 });
+  });
+
+  it('enregistre lk.chat une seule fois, et le libère au démontage', async () => {
+    // Un gestionnaire laissé sur une Room vivante est une fuite qu'aucun écran
+    // ne rattrape ; deux enregistrements feraient jeter le SDK.
+    const view = await render(withPaper(<CallScreen />));
+
+    expect(mockTextStreamHandlers.has('lk.chat')).toBe(true);
+
+    await view.unmount();
+
+    expect(mockTextStreamHandlers.has('lk.chat')).toBe(false);
   });
 });

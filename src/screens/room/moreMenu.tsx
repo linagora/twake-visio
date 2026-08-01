@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconButton } from 'react-native-paper';
+import { View } from 'react-native';
+import { Badge, IconButton } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
 import type { ReactionKey } from 'src/call/reactions';
@@ -24,18 +25,22 @@ export type MoreMenuProps = {
   readonly handRaised: boolean;
   readonly handBusy: boolean;
   readonly hands: readonly RaisedHand[];
+  // Le chat est le seul producteur de pastille : elle est donc portée par un
+  // bouton générique et dit « quelque chose dans la feuille », pas « des
+  // messages ». C'est une indirection, elle est écrite plutôt que découverte.
+  readonly unread: number;
   readonly onShare: () => void;
   readonly onStartRecording: () => void;
   readonly onStopRecording: () => void;
   readonly onToggleHand: () => void;
-  // Facultatif, à l'inverse de tous les autres rappels — et c'est une
-  // dérogation délibérée, motivée par la barre de qualité elle-même : la
-  // rendre obligatoire romprait la compilation de `call.tsx`, qui construit
-  // encore ses props `<MoreMenu>` sans elle tant que la tâche qui l'y câble
-  // (le magasin de réactions) n'a pas atterri — et `tsc --noEmit` tourne sur
-  // tout le projet, jamais fichier par fichier, donc ce point rouge n'est pas
-  // local à cette tâche. Le repli interne ci-dessous couvre l'intervalle.
-  readonly onSendReaction?: (key: ReactionKey) => void;
+  // Obligatoire comme tous les autres rappels. Elle a été optionnelle le temps
+  // d'un lot — la rendre obligatoire cassait alors la compilation de
+  // `call.tsx`, qui ne la passait pas encore, et `tsc --noEmit` tourne sur tout
+  // le projet, jamais fichier par fichier. Ce câblage a atterri depuis
+  // (`handleSendReaction`), donc la dérogation n'a plus d'objet : la laisser
+  // optionnelle rendrait un site d'appel oublié silencieusement inerte.
+  readonly onSendReaction: (key: ReactionKey) => void;
+  readonly onOpenChat: () => void;
 };
 
 // La rangée de commandes est pleine : sept cibles de 44 dp tiennent sur 357 dp,
@@ -58,28 +63,47 @@ export function MoreMenu({
   handRaised,
   handBusy,
   hands,
+  unread,
   onShare,
   onStartRecording,
   onStopRecording,
   onToggleHand,
-  // Repli inerte : voir le commentaire sur `MoreMenuProps.onSendReaction`.
-  onSendReaction = () => undefined,
+  onSendReaction,
+  onOpenChat,
 }: MoreMenuProps): React.ReactElement {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   return (
     <>
-      <IconButton
-        testID="more-btn"
-        icon="dots-vertical"
-        iconColor={BAR_ICON_COLOR}
-        rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
-        hitSlop={BAR_HIT_SLOP}
-        onPress={() => setVisible(true)}
-        accessibilityLabel={t('call.more')}
-      />
+      {/* Un conteneur sans dimension propre : la pastille est hors flux, la
+          cible reste 44 dp, la rangée reste à 357 dp. */}
+      <View style={barStyles.anchor}>
+        <IconButton
+          testID="more-btn"
+          icon="dots-vertical"
+          iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
+          onPress={() => setVisible(true)}
+          accessibilityLabel={t('call.more')}
+        />
+        {/* Rendue seulement quand il y a du non-lu, jamais posée à `visible`
+            faux : `Badge` retire `visible` de ses props avant de les étaler
+            (`Badge.tsx:59-60`), donc l'état n'est joignable par aucune
+            assertion — et une pastille masquée par la seule opacité laisse
+            quand même son « 0 » dans l'arbre d'accessibilité. Aucune couleur
+            posée : Paper appaire lui-même `error` et `onError`, et les deux
+            schémas passent le seuil AA. En forcer un casserait l'autre. Posée
+            à CÔTÉ du bouton, jamais comme son enfant — un `IconButton` ne rend
+            que son icône. */}
+        {unread > 0 ? (
+          <Badge testID="chat-unread" style={barStyles.badge}>
+            {unread}
+          </Badge>
+        ) : null}
+      </View>
       <BottomSheet
         testID="more-sheet"
         visible={visible}
@@ -106,6 +130,19 @@ export function MoreMenu({
           onStop={() => {
             setVisible(false);
             onStopRecording();
+          }}
+        />
+        {/* Placée avant la main levée, dont le bloc de file n'est pas
+            pressable : les trois commandes restent groupées, et la file garde
+            le bas de la feuille où on ne la prendra pas pour une liste
+            d'actions. */}
+        <SheetRow
+          testID="chat-btn"
+          title={t('chat.title')}
+          accessibilityLabel={t('chat.title')}
+          onPress={() => {
+            setVisible(false);
+            onOpenChat();
           }}
         />
         <HandControl

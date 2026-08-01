@@ -15,6 +15,16 @@ import { tokens } from 'src/ui/tokens';
 // l'ondulation reste ronde.
 export const barStyles = StyleSheet.create({
   button: { margin: 0, width: 44, height: 44, borderRadius: 22 },
+  // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
+  // seul rôle est de donner à la pastille un parent positionné. La cible reste
+  // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 357 dp —
+  // le calcul ci-dessus n'a pas bougé d'un dp.
+  anchor: { position: 'relative' },
+  // Aucune couleur posée : Paper appaire lui-même `theme.colors.error` et
+  // `theme.colors.onError` (`Badge.tsx:88-100`). En schéma clair #C62828 sur
+  // blanc donne 5,62:1, en schéma sombre #FF8A80 sur son `onError` 5,73:1 :
+  // les deux passent, et en forcer un seul les casserait.
+  badge: { position: 'absolute', top: 2, right: 2 },
 });
 
 // 16,65:1 sur `backgroundDark`. Aucun `IconButton` de cette barre ne porte
