@@ -683,11 +683,9 @@ export function CallScreen(): React.ReactElement {
     openPanel((current) => (current === 'participants' ? 'none' : 'participants'));
   };
 
-  // Le compteur repart de zéro à l'OUVERTURE, jamais au défilement : un
-  // compteur qui dépendrait de la position de défilement demanderait
-  // d'instrumenter une `FlatList`. Conséquence assumée : un message reçu
-  // PENDANT que le panneau est ouvert reste compté non lu jusqu'à la
-  // réouverture — §5.C19 appliquée à la lettre.
+  // Le compteur repart de zéro à l'OUVERTURE **et à la fermeture**, jamais au
+  // défilement : un compteur qui dépendrait de la position de défilement
+  // demanderait d'instrumenter une `FlatList`.
   //
   // La sortie du plein écran est le même invariant défensif que ci-dessus :
   // inatteignable par l'interface, puisque `more-btn` vit dans la barre, elle
@@ -698,7 +696,19 @@ export function CallScreen(): React.ReactElement {
     openPanel('chat');
   };
 
-  const handleCloseChat = (): void => openPanel('none');
+  // La fermeture marque lu, elle aussi. §5.C19 lue à la lettre ne marquait qu'à
+  // l'ouverture, et sa conséquence n'était pas tenable : un message arrivé
+  // PENDANT que le panneau est ouvert était compté non lu **alors que son corps
+  // était à l'écran**, et la pastille survivait à la fermeture. Elle annonçait
+  // donc, sur un fil qu'on venait de lire, un message qu'on avait déjà lu.
+  //
+  // Ce n'est toujours pas « lu = affiché » — il faudrait la position de
+  // défilement pour cela — mais les deux instants où l'on SAIT que le fil a été
+  // sous les yeux sont désormais couverts tous les deux.
+  const handleCloseChat = (): void => {
+    chatStore.markRead();
+    openPanel('none');
+  };
 
   // `send` ne rejette jamais : son échec ordinaire est une valeur `false`.
   // Le booléen remonte jusqu'à la coquille, qui garde le texte dans la zone de

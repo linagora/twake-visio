@@ -2941,6 +2941,32 @@ describe('CallScreen — le chat', () => {
     expect(screen.queryByTestId('chat-unread')).toBe(null);
   });
 
+  // Le compteur repartait de zéro à la seule OUVERTURE. Un message arrivé
+  // PENDANT que le panneau est ouvert était donc compté non lu **alors que son
+  // corps était à l'écran**, et la pastille survivait à la fermeture : elle
+  // annonçait, sur un fil qu'on venait de lire, un message qu'on avait déjà lu.
+  //
+  // Deux messages, jamais un seul : avec un seul, une pastille codée en dur à
+  // 1 passerait la première assertion.
+  it('efface aussi les non-lus à la FERMETURE, et n’efface pas le fil', async () => {
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await renderCall();
+    await openChat();
+
+    // Reçus panneau OUVERT : leur corps est à l'écran, et c'est bien là que le
+    // compteur les tenait pour non lus.
+    await receiveChat('u-bob', 's-1', 'bonjour', 1_000);
+    await receiveChat('u-bob', 's-2', 'la suite', 2_000);
+    expect(screen.getByTestId('chat-body-u-bob#s-2')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('chat-close'));
+
+    // Les deux instructions de `handleCloseChat`, une assertion chacune : le
+    // panneau se referme, ET la pastille part avec lui.
+    await waitFor(() => expect(screen.getByTestId('stage-root')).toBeTruthy());
+    expect(screen.queryByTestId('chat-unread')).toBe(null);
+  });
+
   it('envoie sur le topic du chat et vide la zone', async () => {
     mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
     await renderCall();
