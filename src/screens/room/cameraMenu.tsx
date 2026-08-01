@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconButton, Menu } from 'react-native-paper';
+import { IconButton } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
+import { BottomSheet } from 'src/screens/room/bottomSheet';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
-import { MenuCheck } from 'src/screens/room/menuCheck';
+import { SheetCheck } from 'src/screens/room/sheetCheck';
+import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type CameraMenuProps = {
   readonly cameras: readonly CameraChoice[];
@@ -34,55 +36,54 @@ export function CameraMenu({
   const [visible, setVisible] = useState(false);
 
   return (
-    <Menu
-      visible={visible}
-      onDismiss={() => setVisible(false)}
-      // La barre est en bas de l'écran.
-      anchorPosition="top"
-      contentStyle={barStyles.menuContent}
-      anchor={
-        <IconButton
-          testID="camera-menu-btn"
-          icon="chevron-up"
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={() => {
-            setVisible(true);
-            // La liste est relue à l'ouverture, et à ce moment seulement :
-            // aucun événement de changement de périphérique n'existe sur
-            // mobile, et c'est le seul instant où quelqu'un regarde.
-            onOpen();
-          }}
-          accessibilityLabel={t('call.selectCamera')}
-        />
-      }
-    >
-      {cameras.map((camera) => (
-        <Menu.Item
-          key={camera.deviceId}
-          testID={`camera-option-${camera.deviceId}`}
-          titleStyle={barStyles.menuTitle}
-          rippleColor={BAR_RIPPLE_COLOR}
-          leadingIcon={
-            camera.deviceId === activeDeviceId
-              ? () => <MenuCheck testID={`camera-check-${camera.deviceId}`} />
-              : undefined
-          }
-          // Composé par i18next, jamais en JavaScript : une chaîne assemblée
-          // ici ne serait pas traduisible.
-          title={
-            camera.ordinal === null
-              ? t(camera.nameKey)
-              : t('call.cameraNumbered', { name: t(camera.nameKey), index: camera.ordinal })
-          }
-          onPress={() => {
-            setVisible(false);
-            onSelect(camera);
-          }}
-        />
-      ))}
-    </Menu>
+    <>
+      <IconButton
+        testID="camera-menu-btn"
+        icon="chevron-up"
+        iconColor={BAR_ICON_COLOR}
+        rippleColor={BAR_RIPPLE_COLOR}
+        style={barStyles.button}
+        hitSlop={BAR_HIT_SLOP}
+        onPress={() => {
+          setVisible(true);
+          // La liste est relue à l'ouverture, et à ce moment seulement : aucun
+          // événement de changement de périphérique n'existe sur mobile, et
+          // c'est le seul instant où quelqu'un regarde.
+          onOpen();
+        }}
+        accessibilityLabel={t('call.selectCamera')}
+      />
+      <BottomSheet
+        testID="camera-sheet"
+        visible={visible}
+        title={t('call.selectCamera')}
+        onDismiss={() => setVisible(false)}
+      >
+        {cameras.map((camera) => (
+          <SheetRow
+            key={camera.deviceId}
+            testID={`camera-option-${camera.deviceId}`}
+            // `SheetRow` applique `rowTitle` en dessous : plus de `titleStyle`
+            // à passer pour la couleur ordinaire.
+            leading={
+              camera.deviceId === activeDeviceId ? (
+                <SheetCheck testID={`camera-check-${camera.deviceId}`} />
+              ) : undefined
+            }
+            // Composé par i18next, jamais en JavaScript : une chaîne assemblée
+            // ici ne serait pas traduisible.
+            title={
+              camera.ordinal === null
+                ? t(camera.nameKey)
+                : t('call.cameraNumbered', { name: t(camera.nameKey), index: camera.ordinal })
+            }
+            onPress={() => {
+              setVisible(false);
+              onSelect(camera);
+            }}
+          />
+        ))}
+      </BottomSheet>
+    </>
   );
 }

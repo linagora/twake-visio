@@ -59,6 +59,7 @@
   "call.handQueue": "Поднятые руки",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "Не удалось изменить состояние вашей руки",
+  "call.closeSheet": "Закрыть",
   "participants.title": "Участники",
   "participants.mute": "Отключить микрофон",
   "participants.remove": "Удалить",

@@ -59,6 +59,7 @@
   "call.handQueue": "Những người giơ tay",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "Không thể thay đổi trạng thái tay của bạn",
+  "call.closeSheet": "Đóng",
   "participants.title": "Người tham gia",
   "participants.mute": "Tắt tiếng",
   "participants.remove": "Xóa",

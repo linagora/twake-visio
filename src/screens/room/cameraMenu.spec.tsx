@@ -1,5 +1,5 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
@@ -21,28 +21,24 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mockT }),
 }));
 
-// `Menu` monte son contenu dans un `Portal`, qui jette sans `PaperProvider`
-// ancêtre. Le double officiel de `react-native-safe-area-context` est requis
-// par ce `Provider`, comme dans `call.spec.tsx`.
+// `BottomSheet` monte sa feuille dans un `Portal`, et `Modal` (react-native-paper)
+// lit `useSafeAreaInsets()` (`Modal.tsx:118`). Pas strictement requis ici —
+// `SafeAreaProviderCompat`, que `PaperProvider` pose toujours, retombe déjà sur
+// des insets à zéro quand aucun fournisseur natif n'a répondu, ce qui couvre les
+// environnements de test (vérifié : les neuf tests de ce fichier restent verts
+// sans ce double). Il reste posé pour documenter l'intention plutôt que de
+// compter sur ce repli interne, comme dans `bottomSheet.spec.tsx` (tâche 1).
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
-// `animation.scale` à zéro ramène à zéro la durée de l'animation de fermeture
-// que `Menu` lance au montage — sans quoi son rappel de fin, qui remet
-// `rendered` à faux, tombe 250 ms plus tard et annule l'ouverture.
+// `animation.scale` à zéro ramène à zéro la durée des deux animations
+// d'opacité que `Modal` lance avec `Animated.timing` — à l'ouverture et à la
+// fermeture (`Modal.tsx:117-144`, `duration: scale * DEFAULT_DURATION`, sans
+// quoi chacune prendrait 220 ms).
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
-}
-
-// Même à durée nulle, ce rappel part sur un `requestAnimationFrame` : sous Jest,
-// `NativeAnimatedModule` est absent et `Animated` retombe sur son moteur
-// JavaScript. Mesuré : 39 ouvertures sur 40 sans ce vidage, 300 sur 300 avec.
-async function settleMenus(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 32));
-  });
 }
 
 // Le caractère que `MaterialCommunityIcons` dessine réellement pour "check",
@@ -105,7 +101,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     expect(onOpen).toHaveBeenCalledTimes(1);
@@ -127,7 +122,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
     await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
 
@@ -137,6 +131,32 @@ describe('CameraMenu', () => {
     // de `facing` pour le miroir de sa propre vignette.
     expect(onSelect).toHaveBeenCalledWith(BACK);
     expect(onSelect).not.toHaveBeenCalledWith(FRONT);
+  });
+
+  // Trouvé manquant par mutation (tâche 3) : retirer `setVisible(false)` du
+  // gestionnaire d'appui ne faisait rougir aucun test existant, alors qu'un
+  // `onPress` sans lui laisserait la feuille ouverte après un choix. `Modal`
+  // ne démonte qu'après sa propre animation de fermeture asynchrone
+  // (`hideModalAnimation`, `Modal.tsx:131-144` : le callback de fin de
+  // `Animated.timing` retarde `setVisibleInternal(false)`), d'où le `waitFor`
+  // plutôt qu'une assertion synchrone.
+  it('referme la feuille après un choix', async () => {
+    await render(
+      withPaper(
+        <CameraMenu
+          cameras={[FRONT, BACK]}
+          activeDeviceId={null}
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+    await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+
+    await waitFor(() => expect(screen.queryByTestId('camera-option-cam-back')).toBeNull());
   });
 
   it('coche la caméra active, et elle seule', async () => {
@@ -150,7 +170,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     await waitFor(() => expect(screen.getByTestId('camera-check-cam-back')).toBeTruthy());
@@ -175,7 +194,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     const check = await waitFor(() => screen.getByTestId('camera-check-cam-back'));
@@ -195,7 +213,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
     await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
 
@@ -214,7 +231,6 @@ describe('CameraMenu', () => {
       ),
     );
 
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     expect(screen.getByTestId('camera-menu-btn')).toBeTruthy();
@@ -236,7 +252,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     await waitFor(() => expect(screen.getByTestId('camera-option-cam-back-2')).toBeTruthy());
@@ -262,7 +277,6 @@ describe('CameraMenu', () => {
         />,
       ),
     );
-    await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
 
     await waitFor(() => expect(screen.getByText('call.cameraBack')).toBeTruthy());

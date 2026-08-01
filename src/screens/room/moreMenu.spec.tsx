@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
@@ -11,24 +11,24 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// `BottomSheet` monte sa feuille dans un `Portal`, et `Modal` (react-native-paper)
+// lit `useSafeAreaInsets()` (`Modal.tsx:118`). Pas strictement requis ici —
+// `SafeAreaProviderCompat`, que `PaperProvider` pose toujours, retombe déjà sur
+// des insets à zéro quand aucun fournisseur natif n'a répondu, ce qui couvre les
+// environnements de test. Gardé pour documenter l'intention plutôt que de
+// compter sur ce repli interne d'une bibliothèque tierce, comme dans
+// `cameraMenu.spec.tsx` et `audioOutputControl.spec.tsx`.
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
-// `Menu` monte son contenu dans un `Portal`, qui jette sans `Provider` ancêtre.
-// `animation.scale` à zéro ramène à zéro la durée de l'animation de fermeture
-// que `Menu` lance au montage.
+// `animation.scale` à zéro ramène à zéro la durée des deux animations
+// d'opacité que `Modal` lance avec `Animated.timing` — à l'ouverture et à la
+// fermeture (`Modal.tsx:117-144`, `duration: scale * DEFAULT_DURATION`, sans
+// quoi chacune prendrait 220 ms).
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
-}
-
-// Même à durée nulle, ce rappel part sur un `requestAnimationFrame` : un appui
-// qui arrive avant lui voit son ouverture annulée, définitivement.
-async function settleMenus(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 32));
-  });
 }
 
 const IDLE: RecordingState = { phase: 'idle', mode: null };
@@ -73,7 +73,6 @@ function menu(overrides: Overrides = {}): React.ReactElement {
 }
 
 async function open(): Promise<void> {
-  await settleMenus();
   await fireEvent.press(screen.getByTestId('more-btn'));
 }
 
@@ -93,16 +92,17 @@ describe('MoreMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.start');
-    // Surfaces de couleur propres à ce menu (voir `controlBar.ts` et le C1 de
-    // `recordingControl.spec.tsx` pour le même principe) : la surface du menu
-    // et le libellé de partage portent tous deux une couleur explicite issue
-    // des tokens, jamais celle que Paper calculerait depuis le thème — cette
-    // scène est sombre dans les deux schémas alors que le thème suit le
-    // schéma système. `Menu` par défaut n'a pas de `testID` propre ici (comme
-    // `audioOutputControl.tsx` et `cameraMenu.tsx`), donc sa surface porte le
-    // testID par défaut de la bibliothèque, `menu-surface` ; `Menu.Item`
-    // suffixe le sien de `-title` pour son `Text` interne.
-    expect(screen.getByTestId('menu-surface')).toHaveStyle({
+    // Surfaces de couleur propres à cette feuille (voir `controlBar.ts` et le
+    // C1 de `recordingControl.spec.tsx` pour le même principe) : la surface de
+    // la feuille et le libellé de partage portent tous deux une couleur
+    // explicite issue des tokens, jamais celle que Paper calculerait depuis le
+    // thème — cette scène est sombre dans les deux schémas alors que le thème
+    // suit le schéma système. `BottomSheet` passe `testID="more-sheet"` à
+    // `Modal`, qui expose sa `Surface` sous `` `${testID}-surface` ``
+    // (`Modal.tsx:219-220`) : la feuille porte donc le nôtre, jamais le testID
+    // par défaut de la bibliothèque. `SheetRow` suffixe le sien de `-title`
+    // pour son `Text` interne, exactement comme `Menu.Item`.
+    expect(screen.getByTestId('more-sheet-surface')).toHaveStyle({
       backgroundColor: tokens.color.surfaceDark,
     });
     expect(screen.getByTestId('share-btn-title')).toHaveStyle({ color: tokens.color.textDark });
@@ -184,6 +184,22 @@ describe('MoreMenu', () => {
     // Un menu qui reste ouvert masque la scène et invite au second appui, donc
     // au 409.
     await render(menu());
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() => expect(screen.queryByTestId('recording-toggle')).toBe(null));
+  });
+
+  // Trouvé manquant par mutation : `RecordingControl` reçoit deux rappels
+  // distincts, `onStart` et `onStop`, chacun avec son propre `setVisible(false)`
+  // dans `moreMenu.tsx`. Le test ci-dessus ne presse que la branche `onStart`
+  // (état `IDLE` par défaut) ; retirer le `setVisible(false)` du seul `onStop`
+  // ne faisait rougir aucun des quinze tests existants. `STARTING` fait
+  // basculer `stopping` à `true`, donc l'appui emprunte l'autre branche.
+  it('referme aussi le menu après un arrêt d’enregistrement', async () => {
+    await render(menu({ recording: STARTING }));
 
     await open();
     await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());

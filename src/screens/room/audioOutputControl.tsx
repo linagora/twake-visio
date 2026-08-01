@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
-import { IconButton, Menu, Text } from 'react-native-paper';
+import { IconButton, Text } from 'react-native-paper';
 
 import type { AudioRouteControl } from 'src/call/audioRoute';
 import { audioOutputNameKey, type AudioOutputKind } from 'src/call/devices';
+import { BottomSheet } from 'src/screens/room/bottomSheet';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
   BAR_RIPPLE_COLOR,
   barStyles,
+  sheetStyles,
 } from 'src/screens/room/controlBar';
-import { MenuCheck } from 'src/screens/room/menuCheck';
+import { SheetCheck } from 'src/screens/room/sheetCheck';
+import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type AudioOutputControlProps = {
   readonly mode: AudioRouteControl;
@@ -60,49 +62,46 @@ export function AudioOutputControl({
   if (mode === 'system') return button(onSystemPicker);
 
   return (
-    <Menu
-      visible={visible}
-      onDismiss={() => setVisible(false)}
-      // La barre est en bas de l'écran.
-      anchorPosition="top"
-      contentStyle={barStyles.menuContent}
-      anchor={button(() => {
+    <>
+      {button(() => {
         setVisible(true);
         // La liste est relue à l'ouverture, et à ce moment seulement : Android
         // n'émet aucun événement de changement de périphérique.
         onOpen();
       })}
-    >
-      <View>
+      <BottomSheet
+        testID="audio-output-sheet"
+        visible={visible}
+        title={t('call.audioOutput')}
+        onDismiss={() => setVisible(false)}
+      >
         {/* Secondaire par la taille (`labelSmall`), jamais par un gris :
             `tokens.color.muted` donne 3,88:1 sur `surfaceDark`, sous le seuil
-            AA (voir `controlBar.ts`). C'est la seule occasion qu'a
-            l'utilisateur d'apprendre qu'un choix manuel désarme la bascule
-            automatique pour le reste de la séance. */}
-        <Text testID="audio-output-note" variant="labelSmall" style={barStyles.menuNote}>
+            AA. C'est la seule occasion qu'a l'utilisateur d'apprendre qu'un
+            choix manuel désarme la bascule automatique pour le reste de la
+            séance. Le `View` qui l'enveloppait sous `Menu` n'a plus lieu
+            d'être : ni `Menu.tsx` ni `BottomSheet` ne traitent leurs enfants
+            différemment selon leur type — `Menu` rend `{children}` tel quel
+            (`Menu.tsx:691,693`) — et ni le commit d'origine (6fb2087) ni aucun
+            commentaire n'expliquaient pourquoi il était là. */}
+        <Text testID="audio-output-note" variant="labelSmall" style={sheetStyles.note}>
           {chosen === null ? t('call.outputFollowsDevice') : t('call.outputManualUntilEnd')}
         </Text>
-      </View>
-      {outputs.map((kind) => (
-        <Menu.Item
-          key={kind}
-          testID={`audio-output-option-${kind}`}
-          titleStyle={barStyles.menuTitle}
-          rippleColor={BAR_RIPPLE_COLOR}
-          // La coche : voir le commentaire de `barStyles.check`
-          // (`controlBar.ts`) pour pourquoi c'est `MenuCheck`, un glyphe rendu
-          // directement, plutôt qu'un `leadingIcon` chaîne résolu par
-          // `Menu.Item`.
-          leadingIcon={
-            kind === chosen ? () => <MenuCheck testID={`audio-output-check-${kind}`} /> : undefined
-          }
-          title={t(audioOutputNameKey(kind))}
-          onPress={() => {
-            setVisible(false);
-            onSelect(kind);
-          }}
-        />
-      ))}
-    </Menu>
+        {outputs.map((kind) => (
+          <SheetRow
+            key={kind}
+            testID={`audio-output-option-${kind}`}
+            leading={
+              kind === chosen ? <SheetCheck testID={`audio-output-check-${kind}`} /> : undefined
+            }
+            title={t(audioOutputNameKey(kind))}
+            onPress={() => {
+              setVisible(false);
+              onSelect(kind);
+            }}
+          />
+        ))}
+      </BottomSheet>
+    </>
   );
 }

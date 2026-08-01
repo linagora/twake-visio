@@ -59,6 +59,7 @@
   "call.handQueue": "Manos levantadas",
   "call.handQueueEntry": "{{position}}. {{name}}",
   "call.handFailed": "No se pudo cambiar el estado de su mano",
+  "call.closeSheet": "Cerrar",
   "participants.title": "Participantes",
   "participants.mute": "Silenciar",
   "participants.remove": "Expulsar",
