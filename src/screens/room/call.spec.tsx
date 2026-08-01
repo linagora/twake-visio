@@ -2176,4 +2176,48 @@ describe('CallScreen, plein écran, rappel des commandes', () => {
     });
     expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
   });
+
+  // Trou trouvé pendant la vérification par mutation de cette tâche, pas
+  // annoncé par le brief : muter `inFullscreen` de `fullscreenTile !== null`
+  // à `fullscreen !== null` (la clé BRUTE, jamais effacée par ce repli — K7,
+  // voir le describe précédent) laissait les 90 tests de ce fichier verts.
+  // Aucun scénario existant ne touchait une tuile APRÈS que sa cible plein
+  // écran ait disparu ; celui-ci le fait, avec un troisième distant pour
+  // qu'il en reste un dans la bande une fois la cible partie.
+  it('un appui redevient un épinglage ordinaire une fois la cible du plein écran disparue', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    mockRoom.remoteParticipants.set('u-carl', remoteParticipant('u-carl', 'Carl'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('filmstrip')).getByTestId('tile-u-carl:camera'),
+      ).toBeTruthy(),
+    );
+
+    // Carl, en plein écran, puis parti : `fullscreen` reste posé à
+    // `u-carl:camera` quand `fullscreenTile`, résolu, retombe à `null`.
+    await fireEvent(screen.getByTestId('tile-u-carl:camera'), 'longPress');
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-carl:camera'),
+      ).toBeTruthy(),
+    );
+    mockRoom.remoteParticipants.delete('u-carl');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Un appui ordinaire sur Bob, resté dans la bande : doit épingler, pas
+    // rappeler des commandes qui n'ont plus cours sur cet écran.
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
+      ).toBeTruthy();
+    });
+    // Et surtout pas la sortie de plein écran, qui n'a aucun sens ici.
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
 });
