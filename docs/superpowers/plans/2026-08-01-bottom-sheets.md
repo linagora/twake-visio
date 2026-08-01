@@ -221,9 +221,11 @@ export const sheetStyles = StyleSheet.create({
     paddingVertical: tokens.spacing.md,
   },
   rowTitle: { color: tokens.color.textDark },
-  // 8,21:1 sur `surfaceDark`. La seule couleur d'alerte de cette barre qui ne
-  // soit pas celle de « quitter » : elle vit dans une feuille, à deux appuis,
-  // donc jamais adjacente au combiné raccroché.
+  // 8,21:1 sur `surfaceDark` (8,62:1 est `dangerDark` sur `backgroundDark` —
+  // le fond de `call.tsx`, pas celui de cette feuille). La seule couleur
+  // d'alerte de cette barre qui ne soit pas celle de « quitter » : elle vit
+  // dans une feuille, à deux appuis, donc jamais adjacente au combiné
+  // raccroché.
   rowTitleDanger: { color: tokens.color.dangerDark },
   // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
   // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.
@@ -232,9 +234,32 @@ export const sheetStyles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.md,
     paddingVertical: tokens.spacing.sm,
   },
+  // La coche de la feuille : un glyphe `MaterialCommunityIcons` rendu
+  // directement par `SheetCheck` (`sheetCheck.tsx`), partagé par
+  // `cameraMenu.tsx` et `audioOutputControl.tsx`, jamais par la résolution
+  // habituelle d'un `Menu.Item`. Pour un `leadingIcon` fonction, `Icon.tsx`
+  // (react-native-paper) appelle `s({ color, size, direction, testID })`,
+  // mais rien n'oblige la fonction à lire cet argument — la nôtre ne le
+  // faisait pas, et un `View` vide n'a de toute façon ni contenu ni fond à
+  // colorer. La couleur est donc portée ici, explicitement, et jamais celle
+  // que Paper calculerait depuis le thème.
   check: { color: tokens.color.textDark },
 });
 ```
+
+> **CORRIGÉ APRÈS EXÉCUTION, ET C'EST LE PLUS SÉRIEUX DES ERRATA DE CE PLAN.** La première
+> rédaction de ce bloc omettait **deux** commentaires : l'aparté « 8,62:1 est `dangerDark`
+> sur `backgroundDark` », qui n'existe que pour qu'on ne le confonde pas avec le 8,21:1 de
+> la clé voisine, et **toute** la justification de `check`. La tâche 1 les a donc perdus en
+> transcrivant fidèlement ; la revue de la tâche 6 les a retrouvés et restaurés
+> (`controlBar.ts:96-100` et `:109-118`).
+>
+> **Rejouer la tâche 1 depuis la version d'origine de ce plan les reperdrait à
+> l'identique.** C'est exactement le mode de défaillance qu'`AGENTS.md` nomme : un document
+> versionné qui prescrit le défaut. Un ratio mesuré qu'aucun fichier ne porte plus est une
+> connaissance perdue, et rien ne la signale — ni `tsc`, ni les tests, ni la relecture.
+>
+> **Ce bloc est désormais celui qui est livré.** Ne le raccourcis pas.
 
 - [ ] **Step 3 : `bottomSheet.tsx`**
 
@@ -1111,7 +1136,9 @@ et s'arrêter, ne pas la corriger ici.
 ils décrivent la barre, qui n'a pas bougé d'un dp.
 
 Les commentaires de contraste attachés aux clés retirées **ne se suppriment pas** : ils
-portent des ratios mesurés (15,86:1, 8,21:1, 3,88:1) et des raisons qui n'ont pas changé de
+portent des ratios mesurés — **quatre, pas trois** : 15,86:1, 8,21:1, 8,62:1 et 3,88:1,
+le troisième n'existant que pour qu'on ne le confonde pas avec le deuxième — et des raisons
+qui n'ont pas changé de
 validité. Ils suivent leur clé vers `sheetStyles`, où la tâche 1 les a déjà posés — vérifier
 qu'aucun n'a été perdu en route, et le dire.
 

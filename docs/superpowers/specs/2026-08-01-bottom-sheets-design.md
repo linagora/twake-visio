@@ -562,6 +562,33 @@ un `Animated.timing` de durée `scale * DEFAULT_DURATION`, et `hideModalAnimatio
 
 ---
 
+## 6bis. Ce que la conversion a PERDU, et qu'il a fallu rendre
+
+Relevé en revue de branche, après implémentation. `Menu` faisait trois choses que `Modal` ne
+fait pas, et deux n'avaient été vues par personne avant la revue.
+
+**Un rôle d'accessibilité sur chaque ligne.** `MenuItem.tsx:194` posait
+`accessibilityRole="menuitem"` ; `TouchableRipple` n'en pose aucun. Toutes les lignes
+converties — partage, enregistrement, main levée, chaque caméra, chaque sortie audio —
+étaient donc annoncées comme du texte quelconque, sans rien qui dise qu'on peut appuyer.
+Rendu par `SheetRow` (`accessibilityRole="button"`), gardé, et la mutation mesurée à 1 rouge.
+**Aucun test préexistant n'aurait pu le signaler, et rien ne se voit à l'œil** : c'est une
+régression qui ne coûte qu'aux gens qui n'ont pas le choix de la contourner.
+
+**Une borne de hauteur, et un défilement au-delà.** `Menu.tsx:496-539` bornait ; `:687-693`
+enveloppait d'un `ScrollView` au-delà d'un seuil. `Modal` ne fait ni l'un ni l'autre.
+Calculé depuis les métriques MD3 de Paper (~240 dp fixes, ~32 dp par ligne), la feuille
+sortait de l'écran à environ **onze mains levées en portrait et trois en paysage** — en
+emportant son propre titre, sans moyen de le ramener. `handControl.tsx` mappe la file sans
+borne et rien n'en pose une en amont. Réglé dans la coquille (`maxHeight: '80%'` + un
+`ScrollView` qui laisse le titre dehors), pas chez les appelants.
+
+**Une fermeture au changement de dimensions.** `Menu.tsx:271-275` refermait la surface quand
+`Dimensions` changeait : plier l'appareil fermait donc le menu ouvert. `Modal` ne le fait
+pas, et §3 de ce document affirmait l'inverse. **Non traité** : le comportement souhaitable
+n'est pas évident — refermer une feuille au pliage peut aussi bien être une perte. À
+arbitrer, d'autant que le pliable est l'appareil sur lequel le bug d'origine a été signalé.
+
 ## 7. Ce qu'aucun test ne prouvera
 
 **RNTL ne rastérise rien.** Aucune des assertions de §6 ne prouve qu'un texte est lisible : un
@@ -589,6 +616,12 @@ quel repli la fait échouer.
    `testID` à l'icône-chaîne. Inchangé.
 6. **Que le bouton retour d'Android referme la feuille.** `Modal.tsx:160-180` pose un
    `BackHandler`, qu'aucun test de composant ne déclenche.
+
+**Trois mesures à faire sur appareil, nommées — et AUCUNE des trois n'a été prise à la
+fusion du lot.** C'est écrit ici parce que c'est le seul endroit versionné qui puisse le
+porter : les journaux d'exécution sont ignorés par git et disparaissent avec la branche. Une
+fonction dont la barre est verte et dont la mesure n'a jamais été faite se lit comme close ;
+elle ne l'est pas.
 
 **Trois mesures à faire sur appareil, nommées :**
 

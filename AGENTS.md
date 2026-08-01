@@ -45,18 +45,25 @@ appareils.
 **Tout composant posé sur cet écran doit donc poser une couleur explicite issue de
 `src/ui/tokens`.** Le périmètre B a livré deux composants sans le faire : **1,08:1** de
 contraste, du noir sur du noir, un bandeau d'admission dont on ne pouvait pas lire le nom
-de la personne qui frappait. Le précédent correct est `stage.tsx:45`.
+de la personne qui frappait. Le précédent correct est `stage.tsx:73`.
 
 Cela vaut pour `Text`, pour le `titleStyle` d'un `List.Item` — sa prop `style` ne colore
 pas le titre —, pour le `textColor` d'un `Button` en mode `text` ou `outlined`, pour
-l'`iconColor` d'un `IconButton`, pour le `contentStyle` d'un `Menu` — qui porte le fond de
-la feuille, sinon calculé depuis l'élévation du thème — et pour le `titleStyle` d'un
-`Menu.Item`, sa prop `style` ne colorant pas plus le titre que celle d'un `List.Item`.
+l'`iconColor` d'un `IconButton`, et pour le `contentContainerStyle` d'un `Modal` — qui
+porte le fond de la feuille, sinon **transparent** (`Modal.tsx:243-246`), donc pas seulement
+une précaution mais une obligation.
 
-**Et pour le `rippleColor` de tout `IconButton` ou `Menu.Item`.** Sans lui, Paper calcule
-l'ondulation depuis `theme.colors.onSurface` — le même quasi-noir en schéma clair, sur le
-même fond forcé sombre. Le périmètre A a livré ce défaut avec tous ses tests au vert :
-**1,13:1**, invisible. Ce n'est pas de l'illisibilité, c'est une affordance perdue — aucun
+_(Ce paragraphe citait le `contentStyle` d'un `Menu` et le `titleStyle` d'un `Menu.Item`.
+Plus aucun `Menu` de Paper ne survit dans `src/` : les trois menus de la barre sont devenus
+des feuilles inférieures. La règle est la même, le composant a changé.)_
+
+**Et pour le `rippleColor` de tout `IconButton` ou `TouchableRipple`.** Sans lui, Paper
+calcule l'ondulation depuis `theme.colors.onSurface` — le même quasi-noir en schéma clair,
+sur le même fond forcé sombre. Le périmètre A a livré ce défaut avec tous ses tests au
+vert : **1,13:1** sur `backgroundDark`, le fond de la barre, et **1,08:1** sur
+`surfaceDark`, celui d'une feuille. Deux fonds, deux ratios : les confondre est une erreur
+que ce dépôt a déjà commise et corrigée.
+Invisible dans les deux cas. Ce n'est pas de l'illisibilité, c'est une affordance perdue — aucun
 retour visuel à l'appui. Voir `controlBar.ts` → `BAR_RIPPLE_COLOR`, et son commentaire pour
 le détail : une couleur fournie ici est utilisée telle quelle par Paper (`IconButton/utils.ts`,
 `Menu/utils.ts`), sans l'alpha qu'il applique à sa valeur par défaut.
@@ -98,15 +105,15 @@ chaîne — RNTL compare la chaîne **entière** (`matches()`, `dist/matches.js:
 (`dist/utils.js:114-119`) aurait cherché une sous-chaîne par `includes()`. Seule une
 **regex** cherche un fragment sous RNTL 14.
 
-**Elle vaut aussi pour la surface**, pas seulement pour le texte posé dessus : un `Menu`
-expose son `Surface` sous le `testID` `` `${testID}-surface` `` (`Menu.tsx:680`), donc
-`toHaveStyle({ backgroundColor: tokens.color.surfaceDark })` s'y applique. Précédent :
-`moreMenu.spec.tsx`. On force la surface **et** le texte, ou ni l'un ni l'autre — une
+**Elle vaut aussi pour la surface**, pas seulement pour le texte posé dessus : un `Modal`
+expose sa `Surface` sous le `testID` `` `${testID}-surface` `` (`Modal.tsx:220`), donc
+`toHaveStyle({ backgroundColor: tokens.color.surfaceDark })` s'y applique. Précédents :
+`bottomSheet.spec.tsx`, `moreMenu.spec.tsx`, `audioOutputControl.spec.tsx`. On force la surface **et** le texte, ou ni l'un ni l'autre — une
 surface forcée sous un texte laissé au thème est le pire des trois cas.
 
 **Cette garde vaut pour le texte. Pour une icône, elle dépend de la façon dont l'icône
 atteint l'écran, pas de sa nature.** Un glyphe rendu directement avec son propre `testID`
-— le précédent est la coche de `menuCheck.tsx`, gardée par `cameraMenu.spec.tsx` et
+— le précédent est la coche de `sheetCheck.tsx`, gardée par `cameraMenu.spec.tsx` et
 `audioOutputControl.spec.tsx` — est un `Text` comme un autre, donc joignable. L'`iconColor`
 d'un `IconButton` à icône-chaîne (`icon="dots-vertical"`, le cas par défaut) ne l'est
 **jamais** : `IconButton.tsx:211` rend `<IconComponent color={iconColor} source={icon} />`
@@ -287,6 +294,33 @@ conditionnelles, exiger un test par conditionnelle dont la fixture rend la condi
 _et_ fausse, et dont l'assertion observe la valeur que cette condition sélectionne.**
 `stage.tsx` fait dépendre **cinq** endroits de `landscape` ; le plan proposait **une**
 mutation et deux tests. Le compte était faisable avant d'écrire la tâche.
+
+### Recenser aussi les EFFETS, pas seulement les branches
+
+Le recensement ci-dessus indexe les **décisions**. Le lot des panneaux a produit trois trous
+qu'il n'a pas vus, tous dans des **effets** : `onPress={() => { setVisible(false); onSelect(x); }}`
+ne contient aucune conditionnelle — ce sont deux instructions, et les tests n'en observaient
+qu'une. La feuille ne se refermait donc pas, et rien ne rougissait.
+
+> **Pour chaque rappel passé à un élément pressable, énumérer les INSTRUCTIONS de son corps :
+> chacune est une cible de mutation qui veut sa propre assertion. Si le nombre d'instructions
+> d'un gestionnaire dépasse le nombre d'assertions qui le nomment, il y a un trou par
+> construction.** Le test est mécanique, il ne demande aucun jugement.
+
+**Et une conditionnelle qui choisit entre des RAPPELS veut une ligne par fournisseur.** C'est
+le cas que le recensement rate le plus sûrement, parce qu'il a l'air couvert : le troisième
+trou vivait sous une conditionnelle marquée « gardée, et exemplairement » — et cette marque
+était juste. `recordingControl.spec.tsx` prouve que le bon _emplacement_ est appelé, avec des
+`jest.fn()`. Cela ne peut pas prouver ce que fait la fonction **fournie**. Le vrai `onStop`
+est une fermeture de `moreMenu.tsx`, et la fixture par défaut de ce fichier ne sélectionnait
+que `onStart`. Donc : une ligne par site d'appel, **nommant la fixture qui l'atteint**
+(`IDLE` → `onStart`, `STARTING` → `onStop`).
+
+**Enfin, écrire les tableaux de mutations par MOTIF, puis les multiplier par les fichiers qui
+l'instancient.** Écrits par fichier, ils omettent : la même mutation figurait au tableau d'une
+tâche et était purement absente de celui de la suivante, pour un code structurellement
+identique. Deux implémenteurs l'ont retrouvée par analogie ; le troisième trou, personne
+n'aurait pu.
 
 ### Muter la branche, jamais le prédicat qui l'alimente
 
