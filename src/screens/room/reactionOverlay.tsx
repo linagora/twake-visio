@@ -4,13 +4,39 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { reactionGlyph, type Reaction } from 'src/call/reactions';
+import { CHAT_FOOTER_HEIGHT } from 'src/screens/room/chatPanel';
+import { BAR_HEIGHT } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
+
+// Ce que la plus basse des bulles doit dégager, en dp. CALCULÉ à partir des
+// hauteurs réelles, jamais choisi à l'œil : ce calque recouvre l'écran entier
+// et s'ancre EN BAS À DROITE, c'est-à-dire exactement là où les commandes
+// finissent.
+//
+//     BAR_HEIGHT (52) + tokens.spacing.sm (8) = 60 dp
+//
+// Le pas d'écart est là pour que la bulle ne colle pas à la barre ; il vient de
+// l'échelle d'espacement, pas d'une appréciation.
+//
+// La valeur d'avant était `tokens.spacing.xl`, soit 32, quand la barre en
+// occupe 52 : la plus basse des bulles se posait donc 20 dp À L'INTÉRIEUR de la
+// barre, alignée à droite — sur `leave-btn`, le bouton pour raccrocher.
+const BOTTOM_GUARD = BAR_HEIGHT + tokens.spacing.sm;
+
+// La même garde, plus le bas du panneau de discussion quand il est ouvert :
+//
+//     60 + CHAT_FOOTER_HEIGHT (56 + 16) = 132 dp
+//
+// Sans elle, les bulles se posaient sur `chat-send` dès la deuxième — le
+// panneau occupe toute la région au-dessus de la barre, et sa zone de saisie en
+// tient le bas.
+const BOTTOM_GUARD_WITH_CHAT = BOTTOM_GUARD + CHAT_FOOTER_HEIGHT;
 
 const styles = StyleSheet.create({
   // Recouvre l'écran entier, scène ou panneau : `pointerEvents="none"` laisse
   // tout appui traverser jusqu'à ce qu'il y a en dessous — aucune bulle n'est
-  // pressable. Ancrée en bas à droite, au-dessus de la barre : position
-  // choisie, pas mesurée (voir le plan).
+  // pressable. Ancrée en bas à droite, au-dessus de la barre — et la garde qui
+  // l'y tient est calculée, voir `BOTTOM_GUARD` ci-dessus.
   root: {
     position: 'absolute',
     top: 0,
@@ -20,8 +46,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'flex-end',
     padding: tokens.spacing.md,
-    paddingBottom: tokens.spacing.xl,
+    paddingBottom: BOTTOM_GUARD,
   },
+  // Superposé à `root`, jamais à sa place : un seul `paddingBottom` change, et
+  // c'est la seule différence entre les deux états. Un style NOMMÉ plutôt qu'un
+  // objet en ligne, pour que la mutation « poser `root` ici » soit disponible
+  // et localise la garde.
+  rootWithChat: { paddingBottom: BOTTOM_GUARD_WITH_CHAT },
   bubble: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -41,7 +72,15 @@ const styles = StyleSheet.create({
   name: { color: tokens.color.textDark },
 });
 
-export type ReactionOverlayProps = { readonly reactions: readonly Reaction[] };
+export type ReactionOverlayProps = {
+  readonly reactions: readonly Reaction[];
+  // Vrai quand le panneau de discussion est ouvert. Ce calque ne connaît pas
+  // les panneaux — il reçoit un booléen et en tire une garde. Obligatoire
+  // plutôt qu'optionnelle à défaut `false` : le seul appelant doit décider, et
+  // un défaut silencieux redonnerait les bulles à `chat-send` le jour où un
+  // second appelant apparaît.
+  readonly chatOpen: boolean;
+};
 
 // Des bulles immobiles, jamais animées (§5.C12 de la conception) : sur une
 // grille vidéo de téléphone, une animation flottante masquerait des visages,
@@ -49,12 +88,19 @@ export type ReactionOverlayProps = { readonly reactions: readonly Reaction[] };
 // durée de vie de 3 s vivent dans `reactionStore` ; cette coquille pose la
 // liste qu'on lui donne, rien de plus — même division du travail que
 // `HandBanner`/`RecordingIndicator`.
-export function ReactionOverlay({ reactions }: ReactionOverlayProps): React.ReactElement | null {
+export function ReactionOverlay({
+  reactions,
+  chatOpen,
+}: ReactionOverlayProps): React.ReactElement | null {
   const { t } = useTranslation();
   if (reactions.length === 0) return null;
 
   return (
-    <View testID="reaction-overlay" pointerEvents="none" style={styles.root}>
+    <View
+      testID="reaction-overlay"
+      pointerEvents="none"
+      style={chatOpen ? [styles.root, styles.rootWithChat] : styles.root}
+    >
       {reactions.map((reaction) => {
         const trimmed = reaction.name.trim();
         const label = reaction.isLocal

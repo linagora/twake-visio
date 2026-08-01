@@ -19,6 +19,30 @@ import {
 } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
 
+// La hauteur de la rangée de saisie, en dp. 56 est le plancher que
+// `react-native-paper` donne lui-même à un `TextInput` `mode="outlined"` sous
+// MD3 (`TextInput/constants.tsx`, `MD3_MIN_HEIGHT`) ; posé ICI comme
+// `minHeight` de la rangée, il cesse d'être une valeur qu'on subit pour
+// devenir une valeur qu'on tient — et sur laquelle un calque extérieur peut
+// compter. `alignItems: 'center'` : le `IconButton` de 44 dp est le plus court
+// des deux, il ne décide donc jamais de la hauteur.
+const COMPOSER_HEIGHT = 56;
+
+// Ce que le bas de ce panneau occupe, depuis le haut de la barre de contrôle :
+// la rangée de saisie, plus le rembourrage bas de la racine.
+//
+//     56 (rangée) + 16 (rembourrage) = 72 dp
+//
+// Exporté pour `ReactionOverlay`, qui s'ancre en bas à droite — précisément là
+// où `chat-send` termine cette rangée. Il ne connaît pas ce panneau ; il reçoit
+// un booléen et ajoute ce nombre.
+//
+// **Ce que ce nombre ne couvre pas** : la zone de saisie est `multiline`, donc
+// elle GRANDIT au-delà de 56 dès le second paragraphe tapé. La garde est un
+// plancher, pas une garantie — et il n'y a pas de garantie possible sans
+// mesurer, ce que ni RNTL ni cette architecture ne permettent ici.
+export const CHAT_FOOTER_HEIGHT = COMPOSER_HEIGHT + tokens.spacing.md;
+
 const styles = StyleSheet.create({
   // Aucun fond propre : le panneau hérite du `backgroundDark` que `call.tsx`
   // force sur `styles.root` dans les deux schémas, comme `ParticipantsPanel`.
@@ -28,7 +52,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   log: { flex: 1 },
   row: { paddingVertical: tokens.spacing.xs },
-  composer: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+    minHeight: COMPOSER_HEIGHT,
+  },
   // La zone de saisie est la SEULE surface propre de ce panneau : elle porte
   // donc son fond ET ses quatre couleurs (voir les props ci-dessous).
   input: { flex: 1, backgroundColor: tokens.color.surfaceDark },

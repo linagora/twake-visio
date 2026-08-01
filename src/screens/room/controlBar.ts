@@ -13,8 +13,31 @@ import { tokens } from 'src/ui/tokens';
 //
 // `borderRadius` est relu depuis le `style` aplati par `IconButton`, donc
 // l'ondulation reste ronde.
+// La cible tactile d'un bouton de barre, en dp. Nommée plutôt qu'écrite trois
+// fois : `barStyles.button` la pose, `BAR_HEIGHT` s'en déduit, et les deux ne
+// peuvent plus diverger au premier changement de gabarit.
+export const BAR_BUTTON_SIZE = 44;
+
+// La hauteur RÉELLE de la rangée, celle qu'un calque posé par-dessus doit
+// dégager :
+//
+//     4 (padding) + 44 (bouton) + 4 (padding) = 52 dp
+//
+// Le rembourrage est celui de `styles.controls` dans `callControlBar.tsx`,
+// `tokens.spacing.xs` de part et d'autre. C'est le même 52 que cite
+// `src/call/layout.ts` à propos de la boîte offerte à la scène.
+//
+// Lue par `ReactionOverlay`, qui s'ancre en bas à droite — précisément là où
+// `leave-btn` termine cette rangée.
+export const BAR_HEIGHT = BAR_BUTTON_SIZE + 2 * tokens.spacing.xs;
+
 export const barStyles = StyleSheet.create({
-  button: { margin: 0, width: 44, height: 44, borderRadius: 22 },
+  button: {
+    margin: 0,
+    width: BAR_BUTTON_SIZE,
+    height: BAR_BUTTON_SIZE,
+    borderRadius: BAR_BUTTON_SIZE / 2,
+  },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
   // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 357 dp —

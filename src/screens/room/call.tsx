@@ -908,8 +908,13 @@ export function CallScreen(): React.ReactElement {
 
       {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
           l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
-          repos, donc toujours montée, jamais enveloppée d'une condition. */}
-      <ReactionOverlay reactions={reactions} />
+          repos, donc toujours montée, jamais enveloppée d'une condition.
+
+          `chatOpen` est la SEULE chose qu'elle sache de l'écran, et elle n'en
+          tire qu'une garde de bas : la zone de saisie du chat occupe le bas de
+          la région des panneaux, et les bulles s'y posaient. Voir
+          `BOTTOM_GUARD` dans `reactionOverlay.tsx` pour l'arithmétique. */}
+      <ReactionOverlay reactions={reactions} chatOpen={panel === 'chat'} />
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
           seul `visible` bascule. Une seule case pour cinq actions — modération

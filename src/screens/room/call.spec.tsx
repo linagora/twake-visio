@@ -2630,6 +2630,31 @@ describe('CallScreen, réactions', () => {
     await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
   });
 
+  // La garde du bas de `ReactionOverlay` dépend du panneau ouvert, et c'est
+  // ICI qu'elle se câble : le composant ne connaît que son booléen, et
+  // `reactionOverlay.spec.tsx` en garde déjà les deux valeurs. Un `false` posé
+  // en dur ici resterait invisible partout ailleurs — l'arithmétique et sa
+  // provenance sont dans `reactionOverlay.tsx`, à côté des constantes.
+  it('remonte les bulles au-dessus de la zone de saisie dès que le chat est ouvert', async () => {
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+
+    // Chat fermé : seule la barre est à dégager.
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 60 });
+
+    // Une réaction ne referme pas la feuille : `chat-btn` y est encore.
+    await fireEvent.press(screen.getByTestId('chat-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
+
+    // Chat ouvert : la zone de saisie s'ajoute à la garde.
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 132 });
+  });
+
   it("n'affiche aucune bulle et ne montre aucune Snackbar quand la publication échoue", async () => {
     mockPublishData.mockRejectedValueOnce(new Error('offline'));
     await renderCall();
