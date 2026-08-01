@@ -2220,4 +2220,28 @@ describe('CallScreen, plein écran, rappel des commandes', () => {
     // Et surtout pas la sortie de plein écran, qui n'a aucun sens ici.
     expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
   });
+
+  // Trou trouvé pendant la vérification par mutation, distinct du précédent :
+  // muter `inFullscreen && chromeVisible` en `chromeVisible` seul, pour la
+  // rangée de sortie, laissait les 91 tests de ce fichier verts. Une cible
+  // plein écran qui disparaît PENDANT que les commandes sont visibles laisse
+  // `chromeVisible` à `true` sans que `fullscreenTile` ne résolve plus (K7) :
+  // `fullscreen-exit-btn` resterait alors affiché, flottant au-dessus d'un
+  // écran pourtant redevenu normal.
+  it('efface le bouton de sortie si sa cible disparaît pendant que les commandes sont visibles', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy());
+
+    // Ada part alors que les commandes sont encore affichées.
+    mockRoom.remoteParticipants.delete('u-ada');
+    await emitRoom('participantDisconnected');
+
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
 });
