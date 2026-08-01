@@ -18,18 +18,24 @@ import { tokens } from 'src/ui/tokens';
 // peuvent plus diverger au premier changement de gabarit.
 export const BAR_BUTTON_SIZE = 44;
 
+// Le rembourrage de la rangée, de part et d'autre. Nommé et EXPORTÉ pour la
+// même raison que la taille du bouton : `callControlBar.tsx` le pose sur
+// `styles.controls`, et `BAR_HEIGHT` juste dessous en dépend. Écrit deux fois,
+// il divergerait au premier ajustement — et rien ne le dirait, puisque RNTL ne
+// dispose rien et qu'aucun test ne peut voir la hauteur qui en résulte.
+export const BAR_PADDING = tokens.spacing.xs;
+
 // La hauteur RÉELLE de la rangée, celle qu'un calque posé par-dessus doit
 // dégager :
 //
 //     4 (padding) + 44 (bouton) + 4 (padding) = 52 dp
 //
-// Le rembourrage est celui de `styles.controls` dans `callControlBar.tsx`,
-// `tokens.spacing.xs` de part et d'autre. C'est le même 52 que cite
-// `src/call/layout.ts` à propos de la boîte offerte à la scène.
+// C'est le même 52 que cite `src/call/layout.ts` à propos de la boîte offerte à
+// la scène.
 //
 // Lue par `ReactionOverlay`, qui s'ancre en bas à droite — précisément là où
 // `leave-btn` termine cette rangée.
-export const BAR_HEIGHT = BAR_BUTTON_SIZE + 2 * tokens.spacing.xs;
+export const BAR_HEIGHT = BAR_BUTTON_SIZE + 2 * BAR_PADDING;
 
 export const barStyles = StyleSheet.create({
   button: {

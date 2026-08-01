@@ -27,6 +27,7 @@ import { CameraMenu } from 'src/screens/room/cameraMenu';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
+  BAR_PADDING,
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
@@ -40,8 +41,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
     // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
+    //
+    // `BAR_PADDING` et non le token directement : `BAR_HEIGHT` en dépend, et
+    // `ReactionOverlay` en tire la garde qui empêche une bulle de se poser sur
+    // « raccrocher ». Écrit deux fois, ce nombre divergerait sans que rien ne
+    // le dise.
     gap: tokens.spacing.sm,
-    padding: tokens.spacing.xs,
+    padding: BAR_PADDING,
   },
   // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
   // le web obtient avec `gap: '1px'`.
