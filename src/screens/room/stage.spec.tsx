@@ -13,8 +13,15 @@ import { CallStage } from './stage';
 // cadrage chaque surface réclame — et jamais qu'une image est apparue. Aucun
 // test de ce fichier ne prouve quoi que ce soit de visible.
 
+// Le double rend la clé nue, et la clé SUIVIE DU COMPTE dès qu'on lui en
+// passe un : sans cela, aucun test ne pourrait distinguer « le compteur
+// s'affiche » de « le compteur affiche le bon nombre » — la clé seule est la
+// même dans les deux cas.
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { readonly count?: number }) =>
+      options?.count === undefined ? key : `${key}:${options.count}`,
+  }),
 }));
 
 function fakeCamera(sid: string): VideoTrackRef {
@@ -750,5 +757,61 @@ describe('mode grille', () => {
 
     expect(screen.getByTestId('grid')).toHaveStyle({ padding: GRID_GAP, gap: GRID_GAP });
     expect(screen.getByTestId('grid-row-0')).toHaveStyle({ gap: GRID_GAP });
+  });
+});
+
+// Le débordement : au-delà de la capacité, les tuiles restantes ne sont pas
+// rendues et un compteur les représente. `selectLayout` a déjà fait le compte ;
+// cette coquille ne fait que le poser.
+describe('compteur de débordement', () => {
+  it('ne pose aucun compteur quand tout le monde tient', async () => {
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1, 0));
+
+    expect(screen.queryByTestId('grid-overflow')).toBeNull();
+  });
+
+  it('pose le compteur dès qu’une personne manque à l’appel', async () => {
+    await renderStage(gridLayout([tile('me:camera')], 1, 1));
+
+    expect(screen.getByTestId('grid-overflow')).toBeTruthy();
+  });
+
+  it('annonce le nombre exact de personnes non montrées, jamais un libellé nu', async () => {
+    // Deux comptes distincts, dans deux assertions : un composant qui
+    // afficherait un texte fixe — ou qui passerait le nombre de tuiles au lieu
+    // du débordement — passerait un seul de ces deux tests.
+    await renderStage(gridLayout([tile('me:camera')], 1, 4));
+
+    expect(screen.getByTestId('grid-overflow-text')).toHaveTextContent('call.moreParticipants:4');
+  });
+
+  it('suit le compte que la sélection lui donne, sans le recalculer', async () => {
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1, 2));
+
+    expect(screen.getByTestId('grid-overflow-text')).toHaveTextContent('call.moreParticipants:2');
+  });
+
+  it('porte une couleur explicite issue des tokens', async () => {
+    // `Text` vient de `react-native-paper`, et cet écran est sombre dans les
+    // deux schémas alors que Paper l'ignore (`AGENTS.md`) : sans cette couleur
+    // le compteur retomberait sur `onSurface`, quasi noir en schéma clair —
+    // sur un fond quasi noir. Aucun test ne peut prouver qu'il est LISIBLE ;
+    // celui-ci prouve que la couleur explicite n'a pas été retirée, et
+    // l'égalité stricte fait échouer n'importe quel repli.
+    await renderStage(gridLayout([tile('me:camera')], 1, 1));
+
+    expect(screen.getByTestId('grid-overflow-text')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+
+  it('pose un fond opaque, jamais une pastille posée à même la vidéo', async () => {
+    // La grille est PLEINE dès que ce compteur existe : il se pose forcément
+    // sur une image dont personne ici ne connaît la couleur.
+    await renderStage(gridLayout([tile('me:camera')], 1, 1));
+
+    expect(screen.getByTestId('grid-overflow')).toHaveStyle({
+      backgroundColor: tokens.color.surfaceDark,
+    });
   });
 });

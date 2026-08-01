@@ -96,6 +96,26 @@ const styles = StyleSheet.create({
   // height }]` — un objet de style CALCULÉ, jamais un littéral figé, la seule
   // forme possible pour une taille qui dépend de la boîte mesurée.
   gridTile: { borderRadius: tokens.radius.md },
+  // Le compteur de débordement. Posé en bas à droite de la page — coin opposé
+  // au badge d'épinglage (en haut à gauche de sa tuile) : les deux ne peuvent
+  // pas se recouvrir. Un fond OPAQUE, jamais translucide : la grille est pleine
+  // dès qu'il apparaît, donc il se pose forcément sur une vidéo dont la couleur
+  // n'est connue de personne ici.
+  overflowBadge: {
+    position: 'absolute',
+    right: tokens.spacing.sm,
+    bottom: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xs,
+    backgroundColor: tokens.color.surfaceDark,
+    borderRadius: tokens.radius.pill,
+  },
+  // Même doctrine que `pinBadgeText` : cet écran est sombre dans les deux
+  // schémas et `react-native-paper` l'ignore (`AGENTS.md`). Ce `Text` vient de
+  // Paper, donc sans cette couleur explicite il retomberait sur `onSurface` —
+  // un quasi-noir en schéma clair, qui est le défaut de la plupart des
+  // appareils, sur un fond quasi noir.
+  overflowText: { color: tokens.color.textDark },
   thumbnailTile: { width: tokens.spacing.xl * 4, borderRadius: tokens.radius.md },
   // Le pendant de `thumbnailTile` en paysage : la dimension fixe passe de la
   // largeur à la hauteur, pour tenir dans la colonne plutôt que dans la
@@ -395,6 +415,7 @@ function rowsOf(tiles: readonly Tile[], columns: number): readonly (readonly Til
 // presque rien et ne laisse JAMAIS de noir à l'intérieur d'une tuile — c'est
 // tout le principe : le vide devient de la marge de page.
 function TileGrid({ layout, onPinTile }: TileGridProps): React.ReactElement {
+  const { t } = useTranslation();
   const size = [styles.gridTile, { width: layout.tileWidth, height: layout.tileHeight }];
 
   return (
@@ -422,6 +443,18 @@ function TileGrid({ layout, onPinTile }: TileGridProps): React.ReactElement {
           ))}
         </View>
       ))}
+
+      {/* Le débordement est un COMPTE, jamais un défilement : un défilement
+          vertical dans la grille n'a aucune position de repos naturelle, et
+          `ParticipantsPanel` est déjà la surface qui répond à « qui est là »,
+          distincte de « ce que je regarde ». */}
+      {layout.overflow > 0 ? (
+        <View testID="grid-overflow" style={styles.overflowBadge}>
+          <Text testID="grid-overflow-text" style={styles.overflowText}>
+            {t('call.moreParticipants', { count: layout.overflow })}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

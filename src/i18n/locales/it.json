@@ -36,6 +36,7 @@
   "call.more": "Altro",
   "call.muted": "Microfono disattivato",
   "call.pinned": "Fissato",
+  "call.moreParticipants": "+{{count}} non mostrati",
   "call.permissionsDenied": "Per partecipare serve l'accesso a fotocamera e microfono",
   "call.reconnecting": "Riconnessione…",
   "call.ended": "La riunione è terminata",

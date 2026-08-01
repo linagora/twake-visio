@@ -36,6 +36,7 @@
   "call.more": "Thêm",
   "call.muted": "Đã tắt tiếng",
   "call.pinned": "Đã ghim",
+  "call.moreParticipants": "+{{count}} không hiển thị",
   "call.permissionsDenied": "Cần quyền truy cập máy ảnh và micrô để tham gia",
   "call.reconnecting": "Đang kết nối lại…",
   "call.ended": "Cuộc họp đã kết thúc",

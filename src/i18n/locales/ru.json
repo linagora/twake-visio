@@ -36,6 +36,7 @@
   "call.more": "Ещё",
   "call.muted": "Микрофон выключен",
   "call.pinned": "Закреплено",
+  "call.moreParticipants": "ещё {{count}} не показаны",
   "call.permissionsDenied": "Для подключения нужен доступ к камере и микрофону",
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",

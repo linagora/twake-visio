@@ -36,6 +36,7 @@
   "call.more": "More",
   "call.muted": "Muted",
   "call.pinned": "Pinned",
+  "call.moreParticipants": "+{{count}} not shown",
   "call.permissionsDenied": "Camera and microphone access is required to join",
   "call.reconnecting": "Reconnecting…",
   "call.ended": "The meeting has ended",
