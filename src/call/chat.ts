@@ -63,10 +63,28 @@ export function appendMessage(
   return log.map((message) => (message === existing ? merged : message));
 }
 
-// Les siens ne sont jamais non lus : on vient de les écrire. La borne est
-// stricte, sans quoi le message qu'on vient de marquer lu redeviendrait non lu.
-export function unreadCount(log: readonly ChatMessage[], lastReadAt: number): number {
-  return log.filter((message) => !message.isLocal && message.sentAt > lastReadAt).length;
+// Le point de lecture est un ENSEMBLE DE CLÉS, et surtout pas un horodatage.
+//
+// `sentAt` vient de l'horloge de l'ÉMETTEUR : livekit-client le prend du
+// `Date.now()` du pair dans `streamText`. Un repère temporel devait donc être
+// le maximum du fil — prendre `Date.now()` local aurait laissé non lu, pour
+// toujours, le message d'un pair en avance. Mais ce maximum se fait empoisonner
+// par ce même pair, dans l'autre sens : un seul message daté d'une heure devant
+// hissait le repère au-dessus de toutes les horloges honnêtes, et le compte
+// tombait définitivement à zéro — pour tout le monde, pour le reste de la
+// séance. Mesuré : dix messages attendus, zéro obtenu. Les deux directions ne
+// pouvaient pas être fermées ensemble, parce qu'aucune borne temporelle n'est
+// comparable entre deux horloges qu'on ne contrôle pas.
+//
+// Une clé ne dépend d'aucune horloge, et elle est stable à l'édition —
+// `appendMessage` fusionne en place sans toucher à `id` ni à `identity` — donc
+// un message relu ne redevient pas non lu parce que son auteur l'a corrigé.
+// C'est exactement ce que la borne stricte sur `sentAt` obtenait, sans le
+// prix.
+//
+// Les siens ne sont jamais non lus : on vient de les écrire.
+export function unreadCount(log: readonly ChatMessage[], readKeys: ReadonlySet<string>): number {
+  return log.filter((message) => !message.isLocal && !readKeys.has(messageKey(message))).length;
 }
 
 // Vrai quand la ligne doit porter son en-tête d'auteur : premier message, ou

@@ -101,36 +101,54 @@ describe('appendMessage', () => {
 });
 
 describe('unreadCount', () => {
-  it('compte les messages distants postérieurs au dernier point de lecture', () => {
-    const log = [
-      message({ id: 's-1', sentAt: 1_000 }),
-      message({ id: 's-2', sentAt: 2_000 }),
-      message({ id: 's-3', sentAt: 3_000 }),
-    ];
+  const keys = (...ms: ChatMessage[]): ReadonlySet<string> => new Set(ms.map(messageKey));
 
-    expect(unreadCount(log, 1_000)).toBe(2);
+  it('compte les messages distants que le point de lecture ne couvre pas', () => {
+    const lu = message({ id: 's-1' });
+    const log = [lu, message({ id: 's-2' }), message({ id: 's-3' })];
+
+    expect(unreadCount(log, keys(lu))).toBe(2);
   });
 
   it('ne compte jamais les siens', () => {
     // On vient de les écrire : les compter ferait clignoter la pastille sur
     // son propre message.
-    const log = [
-      message({ id: 's-1', sentAt: 2_000, isLocal: true, identity: 'me' }),
-      message({ id: 's-2', sentAt: 3_000 }),
-    ];
+    const log = [message({ id: 's-1', isLocal: true, identity: 'me' }), message({ id: 's-2' })];
 
-    expect(unreadCount(log, 1_000)).toBe(1);
+    expect(unreadCount(log, new Set())).toBe(1);
   });
 
-  it('exclut un message posté exactement au point de lecture', () => {
-    // La borne est stricte : `>`, jamais `>=`. Sinon le message qui vient
-    // d'être marqué lu redeviendrait non lu.
-    expect(unreadCount([message({ sentAt: 2_000 })], 2_000)).toBe(0);
-    expect(unreadCount([message({ sentAt: 2_001 })], 2_000)).toBe(1);
+  it("ne dépend d'AUCUNE horloge : un pair en avance ne masque pas les autres", () => {
+    // LE défaut que ce point de lecture corrige. `sentAt` vient de l'horloge de
+    // l'ÉMETTEUR — livekit-client le prend du `Date.now()` du pair dans
+    // `streamText`. Un repère TEMPOREL prenait le maximum du fil, donc un seul
+    // pair en avance d'une heure le hissait au-dessus de toutes les horloges
+    // honnêtes et rendait le compte définitivement nul, pour tout le monde et
+    // pour le reste de la séance. Mesuré : dix messages attendus, zéro obtenu.
+    //
+    // DEUX émetteurs, jamais un seul : l'ancienne fixture n'en avait qu'un, et
+    // c'est précisément ce qui a laissé passer le défaut.
+    const now = 1_700_000_000_000;
+    const enAvance = message({ id: 's-1', identity: 'u-derive', sentAt: now + 3_600_000 });
+    const honnetes = Array.from({ length: 10 }, (_, i) =>
+      message({ id: `h-${i}`, identity: 'u-bob', sentAt: now + i * 1_000 }),
+    );
+
+    // On a lu le message du pair en avance, et lui seul.
+    expect(unreadCount([enAvance, ...honnetes], keys(enAvance))).toBe(10);
+  });
+
+  it("garde lu un message que son auteur a corrigé, l'édition ne changeant pas sa clé", () => {
+    // `appendMessage` fusionne en place : `id` et `identity` survivent, donc la
+    // clé aussi. C'est ce qui remplace l'ancienne borne stricte sur `sentAt`.
+    const original = message({ id: 's-1', body: 'bonjur' });
+    const corrige = { ...original, body: 'bonjour', editedAt: 2_000 };
+
+    expect(unreadCount([corrige], keys(original))).toBe(0);
   });
 
   it('rend zéro sur un fil vide', () => {
-    expect(unreadCount([], 0)).toBe(0);
+    expect(unreadCount([], new Set())).toBe(0);
   });
 });
 

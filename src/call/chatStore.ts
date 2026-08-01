@@ -1,6 +1,12 @@
 import type { Room, TextStreamReader } from 'livekit-client';
 
-import { appendMessage, CHAT_TOPIC, unreadCount, type ChatMessage } from 'src/call/chat';
+import {
+  appendMessage,
+  CHAT_TOPIC,
+  messageKey,
+  unreadCount,
+  type ChatMessage,
+} from 'src/call/chat';
 
 export type ChatSnapshot = {
   readonly log: readonly ChatMessage[];
@@ -25,7 +31,9 @@ export type ChatStore = {
 export function createChatStore(room: Room): ChatStore {
   const listeners = new Set<() => void>();
   let log: readonly ChatMessage[] = [];
-  let lastReadAt = 0;
+  // Les clés des messages déjà lus, jamais un horodatage : `sentAt` vient de
+  // l'horloge de l'émetteur et n'est comparable à rien. Voir `unreadCount`.
+  const readKeys = new Set<string>();
   let snapshot: ChatSnapshot | null = null;
   let disposed = false;
 
@@ -100,7 +108,7 @@ export function createChatStore(room: Room): ChatStore {
     },
 
     getSnapshot(): ChatSnapshot {
-      if (snapshot === null) snapshot = { log, unread: unreadCount(log, lastReadAt) };
+      if (snapshot === null) snapshot = { log, unread: unreadCount(log, readKeys) };
       return snapshot;
     },
 
@@ -129,15 +137,20 @@ export function createChatStore(room: Room): ChatStore {
     },
 
     markRead(): void {
-      // Le plus grand horodatage PRÉSENT dans le fil, jamais `Date.now()` :
-      // `sentAt` vient de l'horloge de l'émetteur, et un pair en avance de
-      // deux secondes laisserait son message non lu pour toujours.
-      const newest = log.reduce(
-        (max, message) => (message.sentAt > max ? message.sentAt : max),
-        lastReadAt,
-      );
-      if (newest === lastReadAt) return;
-      lastReadAt = newest;
+      // Marque lu ce qui est PRÉSENT, message par message. Les siens n'y
+      // entrent pas : `unreadCount` les écarte déjà, et les y mettre ferait
+      // grossir l'ensemble sans rien changer au compte.
+      let changed = false;
+      for (const message of log) {
+        if (message.isLocal) continue;
+        const key = messageKey(message);
+        if (readKeys.has(key)) continue;
+        readKeys.add(key);
+        changed = true;
+      }
+      // Rien de neuf : ne pas périmer l'instantané, sans quoi
+      // `useSyncExternalStore` reçoit un avis pour une valeur identique.
+      if (!changed) return;
       invalidate();
     },
 
