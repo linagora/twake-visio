@@ -266,6 +266,28 @@ export function CallScreen(): React.ReactElement {
       ? null
       : ([layout.stage, ...layout.filmstrip].find((t) => t.key === fullscreen) ?? null);
 
+  // I4 : sans cet ajustement, `fullscreen` reste posé indéfiniment même quand
+  // sa cible ne résout plus — le même principe de résolution que l'épinglage
+  // (`src/call/layout.ts:198-201` : « si elle revient, l'épinglage reprend
+  // tout seul »). Bénin pour l'épinglage, où une tuile qui revient se
+  // déplace, sous les yeux de la personne. Pas bénin ici : si la cible
+  // revient — reconnexion, ou simplement une personne qui repart puis
+  // rejoint sous la même identité —, la clé PÉRIMÉE résoudrait de nouveau
+  // exactement de la même façon, et rejetterait l'écran dans un plein écran
+  // sans commandes, sans que personne n'ait rien demandé.
+  //
+  // Corrigé PENDANT le rendu, jamais dans un effet : `react-hooks/set-state-in-effect`
+  // l'interdit, et un effet aurait de toute façon laissé peindre un rendu
+  // intermédiaire, périmé, avant de se corriger. React documente cet appel
+  // direct à `setState` pendant le rendu comme la façon de « réinitialiser
+  // un état quand quelque chose change » ; il ne boucle pas, puisque cette
+  // même condition redevient fausse dès que `fullscreen` repasse à `null`,
+  // ce que cet appel fait à l'instant même où il s'exécute.
+  if (fullscreen !== null && fullscreenTile === null) {
+    setFullscreen(null);
+    setChromeVisible(false);
+  }
+
   // La tuile résolue, jamais la clé brute `fullscreen` : la clé reste posée
   // même quand elle ne résout plus (une personne mise en plein écran qui
   // quitte la séance), et l'écran retombe alors sur la disposition normale —

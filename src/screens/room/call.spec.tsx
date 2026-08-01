@@ -2003,6 +2003,40 @@ describe('CallScreen, plein écran', () => {
     expect(within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera')).toBeTruthy();
   });
 
+  // I4, reproduit par la revue : la clé `fullscreen` elle-même n'est JAMAIS
+  // effacée par ce retour à la normale — seule sa RÉSOLUTION
+  // (`fullscreenTile`) retombe à `null`, exactement comme le fait
+  // l'épinglage (`src/call/layout.ts:198-201` : « si elle revient,
+  // l'épinglage reprend tout seul »). Bénin pour l'épinglage, où une tuile
+  // qui revient se déplace, sous les yeux de la personne. Pas bénin ici : si
+  // Bob revient avec la MÊME identité — donc la MÊME clé de tuile —, elle
+  // résout de nouveau, et rejetterait l'écran dans un plein écran sans
+  // commandes sans que personne n'ait rien demandé.
+  it('ne ressuscite pas le plein écran quand la cible revient sans le moindre geste', async () => {
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Bob part : la disposition normale revient, par la résolution ordinaire.
+    mockRoom.remoteParticipants.delete('u-bob');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Bob revient, avec la MÊME identité, donc la MÊME clé de tuile — sans
+    // que personne n'ait pressé quoi que ce soit sur cet écran entre-temps.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await emitRoom('participantConnected');
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+
+    // La disposition normale doit tenir : bande et barre restent là.
+    expect(screen.getByTestId('filmstrip')).toBeTruthy();
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+
   // Trou trouvé par la revue de la tâche 3 : muter la résolution de
   // `fullscreenTile` de `[layout.stage, ...layout.filmstrip]` à
   // `[layout.stage]` laissait les 688 tests de la branche verts, parce
