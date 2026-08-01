@@ -62,9 +62,8 @@ calcule l'ondulation depuis `theme.colors.onSurface` — le même quasi-noir en 
 sur le même fond forcé sombre. Le périmètre A a livré ce défaut avec tous ses tests au
 vert : **1,13:1** sur `backgroundDark`, le fond de la barre, et **1,08:1** sur
 `surfaceDark`, celui d'une feuille. Deux fonds, deux ratios : les confondre est une erreur
-que ce dépôt a déjà commise et corrigée.
-Invisible dans les deux cas. Ce n'est pas de l'illisibilité, c'est une affordance perdue — aucun
-retour visuel à l'appui. Voir `controlBar.ts` → `BAR_RIPPLE_COLOR`, et son commentaire pour
+que ce dépôt a déjà commise et corrigée. Invisible dans les deux cas — et ce n'est pas de
+l'illisibilité, c'est une affordance perdue : aucun retour visuel à l'appui. Voir `controlBar.ts` → `BAR_RIPPLE_COLOR`, et son commentaire pour
 le détail : une couleur fournie ici est utilisée telle quelle par Paper (`IconButton/utils.ts`,
 `Menu/utils.ts`), sans l'alpha qu'il applique à sa valeur par défaut.
 
