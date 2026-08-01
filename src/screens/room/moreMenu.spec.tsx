@@ -192,6 +192,22 @@ describe('MoreMenu', () => {
     await waitFor(() => expect(screen.queryByTestId('recording-toggle')).toBe(null));
   });
 
+  // Trouvé manquant par mutation : `RecordingControl` reçoit deux rappels
+  // distincts, `onStart` et `onStop`, chacun avec son propre `setVisible(false)`
+  // dans `moreMenu.tsx`. Le test ci-dessus ne presse que la branche `onStart`
+  // (état `IDLE` par défaut) ; retirer le `setVisible(false)` du seul `onStop`
+  // ne faisait rougir aucun des quinze tests existants. `STARTING` fait
+  // basculer `stopping` à `true`, donc l'appui emprunte l'autre branche.
+  it('referme aussi le menu après un arrêt d’enregistrement', async () => {
+    await render(menu({ recording: STARTING }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('recording-toggle'));
+
+    await waitFor(() => expect(screen.queryByTestId('recording-toggle')).toBe(null));
+  });
+
   // Le pendant du test ci-dessus, côté partage : rien ne garantit qu'une seule
   // des deux entrées referme le menu avant d'appeler son rappel. Sans ce test,
   // retirer le `setVisible(false)` du seul bouton de partage passerait la
