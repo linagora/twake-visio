@@ -7,21 +7,23 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  useWindowDimensions,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 
+import { GRID_GAP, type Box } from 'src/call/grid';
 import type { CallLayout, Tile } from 'src/call/layout';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  // En paysage, la bande cesse d'être un ÉTAGE sous la scène pour devenir une
-  // COLONNE à côté : c'est ce qui lui rend la hauteur, précisément ce qui
-  // devient rare quand la fenêtre s'élargit plus qu'elle ne s'allonge.
-  rootLandscape: { flexDirection: 'row' },
+  // Quand la bande se range sur le côté, elle cesse d'être un ÉTAGE sous la
+  // scène pour devenir une COLONNE à côté : c'est ce qui lui rend la hauteur,
+  // précisément ce qui devient rare quand la boîte s'élargit plus que le
+  // gabarit ne le demande.
+  rootRow: { flexDirection: 'row' },
   stage: { flex: 1, backgroundColor: tokens.color.surfaceDark },
   // `flexGrow: 0` : sans lui, un ScrollView réclame toute la place restante et
   // la scène disparaît.
@@ -68,6 +70,52 @@ const styles = StyleSheet.create({
     borderColor: tokens.color.surfaceDark,
   },
   stageTile: { flex: 1 },
+  // La page de la grille. `padding` et `gap` valent la MÊME constante, et
+  // c'est exactement celle que `selectLayout` retire de la boîte mesurée avant
+  // d'appeler `packGrid` : « le vide appartient à la marge de la page, jamais
+  // à l'intérieur d'une tuile ». Les deux ne peuvent pas diverger — un test de
+  // `grid.spec.ts` garde `GRID_GAP === tokens.spacing.xs`, et celui-ci est le
+  // seul autre endroit qui pose ce nombre.
+  //
+  // Centrée dans les deux sens : ce qui reste après l'empaquetage est du fond,
+  // et du fond centré se lit comme une mise en page voulue plutôt que comme
+  // une vidéo cassée.
+  gridPage: {
+    flex: 1,
+    padding: GRID_GAP,
+    justifyContent: 'center',
+    gap: GRID_GAP,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: GRID_GAP,
+  },
+  // Aucune dimension ici : elles descendent de `Packing` et ne peuvent pas
+  // être statiques. Elles arrivent par un tableau `[styles.gridTile, { width,
+  // height }]` — un objet de style CALCULÉ, jamais un littéral figé, la seule
+  // forme possible pour une taille qui dépend de la boîte mesurée.
+  gridTile: { borderRadius: tokens.radius.md },
+  // Le compteur de débordement. Posé en bas à droite de la page — coin opposé
+  // au badge d'épinglage (en haut à gauche de sa tuile) : les deux ne peuvent
+  // pas se recouvrir. Un fond OPAQUE, jamais translucide : la grille est pleine
+  // dès qu'il apparaît, donc il se pose forcément sur une vidéo dont la couleur
+  // n'est connue de personne ici.
+  overflowBadge: {
+    position: 'absolute',
+    right: tokens.spacing.sm,
+    bottom: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xs,
+    backgroundColor: tokens.color.surfaceDark,
+    borderRadius: tokens.radius.pill,
+  },
+  // Même doctrine que `pinBadgeText` : cet écran est sombre dans les deux
+  // schémas et `react-native-paper` l'ignore (`AGENTS.md`). Ce `Text` vient de
+  // Paper, donc sans cette couleur explicite il retomberait sur `onSurface` —
+  // un quasi-noir en schéma clair, qui est le défaut de la plupart des
+  // appareils, sur un fond quasi noir.
+  overflowText: { color: tokens.color.textDark },
   thumbnailTile: { width: tokens.spacing.xl * 4, borderRadius: tokens.radius.md },
   // Le pendant de `thumbnailTile` en paysage : la dimension fixe passe de la
   // largeur à la hauteur, pour tenir dans la colonne plutôt que dans la
@@ -243,17 +291,30 @@ function VideoTile({
 }
 
 export type CallStageProps = {
-  readonly layout: CallLayout;
-  // Scène, en disposition ordinaire : un appui bascule le plein écran SUR la
-  // tuile qui s'y trouve, épinglée ou non — `call.tsx` ne distingue plus les
-  // deux à ce geste, voir `handlePressStageTile`. Zéro argument : il n'y a
-  // jamais qu'une tuile sur la scène, et `call.tsx` connaît déjà sa clé par
-  // `layout.stage.key`.
+  // `null` tant que la boîte n'a pas été mesurée : la coquille ne rend alors
+  // aucune tuile. Une trame, jamais plus — et elle passe inaperçue à côté des
+  // secondes de négociation WebRTC qui la précèdent.
+  readonly layout: CallLayout | null;
+  // La boîte que cette coquille vient de mesurer. Elle la REMONTE et ne s'en
+  // sert jamais : c'est `selectLayout` qui en tire le nombre de tuiles, leur
+  // taille et l'axe de la bande. La coquille reste bête.
+  readonly onMeasureBox: (box: Box) => void;
+  // Scène du mode `focus` : un appui bascule le plein écran SUR la tuile qui
+  // s'y trouve, épinglée ou non — `call.tsx` ne distingue plus les deux à ce
+  // geste, voir `handlePressStageTile`. Zéro argument : il n'y a jamais qu'une
+  // tuile sur la scène, et `call.tsx` connaît déjà sa clé par `layout.focus.key`.
   readonly onPressStageTile: () => void;
-  // Bande : un appui épingle la vignette touchée. La clé de la tuile visée,
-  // `${identity}:${source}` — c'est `call.tsx` seul qui décide ce que
-  // « épingler » produit, cette coquille ne fait que le rapporter.
-  readonly onPressFilmstripTile: (key: string) => void;
+  // Un appui sur une tuile qui n'est PAS la scène — vignette de bande en mode
+  // `focus`, cellule en mode `grid` — épingle celle qu'on touche. La clé de la
+  // tuile visée, `${identity}:${source}` ; c'est `call.tsx` seul qui décide ce
+  // que « épingler » produit, cette coquille ne fait que le rapporter.
+  //
+  // Nommé par ce qu'il VEUT DIRE et non par la surface d'où il part : les deux
+  // sites d'appel disent exactement la même chose, et un nom qui citerait la
+  // bande mentirait au site de la grille. C'est aussi ce qui rend le mauvais
+  // câblage détectable — un site branché sur `onPressStageTile` par erreur
+  // rougit, puisque les deux rappels restent distincts.
+  readonly onPinTile: (key: string) => void;
   // Badge d'épinglage, sur la scène : c'est lui, et lui seul, qui désépingle
   // — voir `onTileUnpin` de `VideoTile`.
   readonly onUnpinTile: () => void;
@@ -278,67 +339,178 @@ export type CallStageProps = {
 // et se redimensionnerait sous une vidéo en cours de lecture.
 export function CallStage({
   layout,
+  onMeasureBox,
   onPressStageTile,
-  onPressFilmstripTile,
+  onPinTile,
   onUnpinTile,
   onExitFullscreen,
   fullscreenTile,
 }: CallStageProps): React.ReactElement {
-  const { width, height } = useWindowDimensions();
-  // Les dimensions de la fenêtre, jamais une API d'orientation : sur un
-  // pliable elles changent SANS rotation — Pixel 10 Pro Fold, couverture
-  // 1080×2364, écran interne 2076×2152.
-  //
-  // Un prédicat binaire suffit ici : il ne fait que choisir entre une bande en
-  // rangée et une bande en colonne, sans rien connaître des tuiles qu'elle
-  // contient. Il ne suffira plus le jour où la refonte de la grille comparera
-  // le rapport de la fenêtre à celui des tuiles plutôt qu'à 1 — l'écran interne
-  // de ce même pliable donne 2076÷2152 ≈ 0,965 (calculé ici, pas cité d'une
-  // fiche produit), où ce prédicat binaire retourne toute la disposition sur
-  // 3,5 % de géométrie.
-  const landscape = width > height;
+  // La boîte est MESURÉE, jamais déduite de `useWindowDimensions()`. Trois
+  // motifs, et le premier suffit : la fenêtre ignore les 52 dp de la barre de
+  // contrôle, les encoches de `SafeAreaView` (`app/_layout.tsx`) et les trois
+  // bandeaux qui peuvent apparaître à tout instant au-dessus de la scène. Une
+  // disposition calculée sur la fenêtre placerait une rangée derrière la barre
+  // dès qu'une main se lève. `onLayout` coûte une trame et supprime la classe
+  // entière.
+  const handleLayout = React.useCallback(
+    (event: LayoutChangeEvent): void => {
+      const { width, height } = event.nativeEvent.layout;
+      onMeasureBox({ width, height });
+    },
+    [onMeasureBox],
+  );
 
+  // Un seul `onLayout`, sur la racine, valable pour les trois dispositions
+  // ci-dessous : le plein écran, l'attente de la mesure et la disposition
+  // ordinaire ne changent pas la boîte que le parent nous donne. Le poser dans
+  // chaque branche le ferait disparaître dans celle qu'on oublierait.
+  return (
+    <View style={[styles.root, axisStyle(layout)]} onLayout={handleLayout} testID="stage-root">
+      {renderContent({
+        layout,
+        onPressStageTile,
+        onPinTile,
+        onUnpinTile,
+        onExitFullscreen,
+        fullscreenTile,
+      })}
+    </View>
+  );
+}
+
+// La racine passe en rangée quand la bande se range SUR LE CÔTÉ : c'est ce qui
+// rend sa hauteur à la scène plutôt que de la lui prendre. Jamais en plein
+// écran, où il n'y a pas de bande, ni avant la mesure, où il n'y a rien.
+function axisStyle(layout: CallLayout | null): StyleProp<ViewStyle> {
+  if (layout === null || layout.mode === 'grid') return null;
+  return layout.stripAxis === 'column' ? styles.rootRow : null;
+}
+
+type TileGridProps = {
+  readonly layout: Extract<CallLayout, { mode: 'grid' }>;
+  readonly onPinTile: (key: string) => void;
+};
+
+// Les tuiles découpées en rangées de `columns`. Le découpage est EXPLICITE et
+// non un `flexWrap` : à deux colonnes bornées par la largeur, la somme des
+// tuiles et de leur écart vaut exactement la largeur offerte, et le moindre
+// arrondi flottant ferait retomber la dernière cellule à la ligne. `columns`
+// arrive déjà calculé, il n'y a rien à redécouvrir.
+//
+// `Math.max(1, …)` est une garde de TERMINAISON, pas une règle : `packGrid` ne
+// rend jamais moins d'une colonne, mais un pas de zéro boucle indéfiniment, et
+// une boucle infinie dans un rendu ne se diagnostique pas.
+function rowsOf(tiles: readonly Tile[], columns: number): readonly (readonly Tile[])[] {
+  const step = Math.max(1, columns);
+  const rows: Tile[][] = [];
+  for (let index = 0; index < tiles.length; index += step) {
+    rows.push(tiles.slice(index, index + step));
+  }
+  return rows;
+}
+
+// La grille : aucune scène, aucune bande, des cellules toutes de la même
+// taille. Chacune est déjà au rapport du gabarit, donc `cover` ne rogne
+// presque rien et ne laisse JAMAIS de noir à l'intérieur d'une tuile — c'est
+// tout le principe : le vide devient de la marge de page.
+function TileGrid({ layout, onPinTile }: TileGridProps): React.ReactElement {
+  const { t } = useTranslation();
+  const size = [styles.gridTile, { width: layout.tileWidth, height: layout.tileHeight }];
+
+  return (
+    <View style={styles.gridPage} testID="grid">
+      {rowsOf(layout.tiles, layout.columns).map((row, index) => (
+        <View key={row[0]?.key ?? index} testID={`grid-row-${index}`} style={styles.gridRow}>
+          {row.map((tile) => (
+            <VideoTile
+              key={tile.key}
+              tile={tile}
+              fitWhenCamera="cover"
+              size={size}
+              // Un appui sur une cellule ÉPINGLE, exactement comme un appui sur
+              // une vignette de bande : c'est la seule échappatoire depuis la
+              // grille vers une grande surface, et le seul moyen de figer ce
+              // qu'on regarde quand il y a plus de monde que de cellules.
+              onTilePress={() => onPinTile(tile.key)}
+              // Jamais de badge dans la grille : une tuile épinglée force le
+              // mode `focus`, donc aucune tuile qui atteint ce site d'appel
+              // n'est jamais celle qui est épinglée.
+              pinned={false}
+              // Jamais invoqué : `pinned` vaut toujours `false` à ce site.
+              onTileUnpin={() => undefined}
+            />
+          ))}
+        </View>
+      ))}
+
+      {/* Le débordement est un COMPTE, jamais un défilement : un défilement
+          vertical dans la grille n'a aucune position de repos naturelle, et
+          `ParticipantsPanel` est déjà la surface qui répond à « qui est là »,
+          distincte de « ce que je regarde ». */}
+      {layout.overflow > 0 ? (
+        <View testID="grid-overflow" style={styles.overflowBadge}>
+          <Text testID="grid-overflow-text" style={styles.overflowText}>
+            {t('call.moreParticipants', { count: layout.overflow })}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+type StageContentProps = Omit<CallStageProps, 'onMeasureBox'>;
+
+function renderContent({
+  layout,
+  onPressStageTile,
+  onPinTile,
+  onUnpinTile,
+  onExitFullscreen,
+  fullscreenTile,
+}: StageContentProps): React.ReactElement | null {
   // Le plein écran remplace la disposition entière : une tuile, aucune bande.
-  // Appelé avant le `return` normal, jamais après : `useWindowDimensions`
-  // ci-dessus doit s'exécuter à chaque rendu, plein écran ou non, pour ne
-  // jamais changer le nombre de Hooks appelés d'un rendu à l'autre — même si
-  // `landscape` ne sert à rien dans cette branche.
   if (fullscreenTile !== null) {
     return (
-      <View style={styles.root}>
-        <View style={styles.stage} testID="active-speaker">
-          <VideoTile
-            tile={fullscreenTile}
-            fitWhenCamera="contain"
-            size={styles.stageTile}
-            onTilePress={onExitFullscreen}
-            // I5 : jamais ici. Le plein écran n'affiche jamais le badge,
-            // épinglée ou non : un badge y suggérerait qu'un appui sur la
-            // tuile désépingle, alors qu'il en sort — voir le commentaire sur
-            // `pinned` de `VideoTileProps`.
-            pinned={false}
-            // Jamais invoqué : `pinned` vaut toujours `false` à ce site.
-            onTileUnpin={() => undefined}
-          />
-        </View>
+      <View style={styles.stage} testID="active-speaker">
+        <VideoTile
+          tile={fullscreenTile}
+          fitWhenCamera="contain"
+          size={styles.stageTile}
+          onTilePress={onExitFullscreen}
+          // I5 : jamais ici. Le plein écran n'affiche jamais le badge,
+          // épinglée ou non : un badge y suggérerait qu'un appui sur la
+          // tuile désépingle, alors qu'il en sort — voir le commentaire sur
+          // `pinned` de `VideoTileProps`.
+          pinned={false}
+          // Jamais invoqué : `pinned` vaut toujours `false` à ce site.
+          onTileUnpin={() => undefined}
+        />
       </View>
     );
   }
 
+  // Rien tant que la boîte n'est pas connue. Poser une tuile « en attendant »
+  // sur une taille inventée la ferait sauter d'une taille à l'autre une trame
+  // plus tard, sous une vidéo en cours de lecture.
+  if (layout === null) return null;
+
+  if (layout.mode === 'grid') return <TileGrid layout={layout} onPinTile={onPinTile} />;
+
   return (
-    <View style={[styles.root, landscape ? styles.rootLandscape : null]}>
+    <>
       <View style={styles.stage} testID="active-speaker">
         {/* `contain` pour une caméra : `cover` agrandirait une source 16:9 sur un
             écran en portrait jusqu'à n'en montrer que 26 % — mesuré sur
             1080×2364. Aucune des deux valeurs n'est bonne ; les bandes noires
-            sont un défaut de MISE EN PAGE, que la refonte de la grille traitera. */}
+            sont un défaut de MISE EN PAGE, que la grille traite. */}
         <VideoTile
-          tile={layout.stage}
+          tile={layout.focus}
           fitWhenCamera="contain"
           size={styles.stageTile}
           onTilePress={onPressStageTile}
           // I5 : la SEULE des trois instanciations de `VideoTile` où ce badge
-          // peut apparaître — voir `src/call/layout.ts:213`, dont le filtre
+          // peut apparaître — voir `src/call/layout.ts`, dont le filtre
           // garantit qu'une tuile épinglée ne peut jamais se trouver dans la
           // bande juste en dessous.
           pinned={layout.pinned}
@@ -348,15 +520,18 @@ export function CallStage({
 
       {/* Une bande de longueur inconnue : au-delà de trois vignettes, les
           suivantes sortent de l'écran et seraient inatteignables sans
-          défilement. En paysage, elle bascule de rangée en colonne : c'est ce
-          qui rend sa hauteur à la scène plutôt que de la lui prendre. */}
+          défilement. Quand la boîte est plus large que le gabarit ne le
+          demande, elle bascule de rangée en colonne : c'est ce qui rend sa
+          hauteur à la scène plutôt que de la lui prendre. */}
       <ScrollView
         testID="filmstrip"
-        horizontal={!landscape}
+        horizontal={layout.stripAxis === 'row'}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
-        style={landscape ? styles.filmstripColumn : styles.filmstrip}
-        contentContainerStyle={landscape ? styles.filmstripContentColumn : styles.filmstripContent}
+        style={layout.stripAxis === 'column' ? styles.filmstripColumn : styles.filmstrip}
+        contentContainerStyle={
+          layout.stripAxis === 'column' ? styles.filmstripContentColumn : styles.filmstripContent
+        }
       >
         {layout.filmstrip.map((tile) => (
           // `cover` pour une caméra en vignette : elle est trop petite pour
@@ -366,9 +541,9 @@ export function CallStage({
             key={tile.key}
             tile={tile}
             fitWhenCamera="cover"
-            size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
-            onTilePress={() => onPressFilmstripTile(tile.key)}
-            // I5 : jamais dans la bande, par construction — `layout.ts:213`
+            size={layout.stripAxis === 'column' ? styles.thumbnailTileColumn : styles.thumbnailTile}
+            onTilePress={() => onPinTile(tile.key)}
+            // I5 : jamais dans la bande, par construction — `layout.ts`
             // filtre systématiquement la tuile épinglée hors de `filmstrip`,
             // donc aucune tuile qui atteint ce site d'appel n'est jamais
             // elle. Explicite plutôt qu'omis, pour que ce site d'appel décide
@@ -379,6 +554,6 @@ export function CallStage({
           />
         ))}
       </ScrollView>
-    </View>
+    </>
   );
 }

@@ -36,6 +36,7 @@
   "call.more": "Plus",
   "call.muted": "Micro coupé",
   "call.pinned": "Épinglé",
+  "call.moreParticipants": "+{{count}} non affiché(s)",
   "call.permissionsDenied": "L'accès à la caméra et au micro est nécessaire pour rejoindre",
   "call.reconnecting": "Reconnexion…",
   "call.ended": "La réunion est terminée",
