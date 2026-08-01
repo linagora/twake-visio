@@ -147,15 +147,24 @@ let mockLocalAttributes: Record<string, string> = {};
 // L'ancien double rendait `on`/`off` inertes : aucun test ne pouvait alors
 // distinguer une vue relue d'une vue figée au montage. `emitRoom` est la seule
 // façon de faire arriver un changement d'attributs comme le fait le serveur.
-const mockRoomHandlers = new Map<string, (() => void)[]>();
+//
+// Variadique depuis C2 : `reactionStore` reçoit `(payload, participant)` sur
+// `dataReceived`, là où les autres magasins n'attendaient rien. Un handler à
+// zéro argument reste assignable à `RoomHandler` — une fonction qui ignore
+// des arguments supplémentaires l'est toujours — donc aucun appelant existant
+// n'a besoin d'être touché.
+type RoomHandler = (...args: unknown[]) => void;
+const mockRoomHandlers = new Map<string, RoomHandler[]>();
+const mockPublishData = jest.fn().mockResolvedValue(undefined);
 
 const mockRoom: {
   localParticipant: unknown;
   remoteParticipants: Map<string, unknown>;
   readonly metadata: string | undefined;
   readonly isRecording: boolean;
-  on: (event: string, handler: () => void) => unknown;
-  off: (event: string, handler: () => void) => unknown;
+  getParticipantByIdentity: (identity: string) => unknown;
+  on: (event: string, handler: RoomHandler) => unknown;
+  off: (event: string, handler: RoomHandler) => unknown;
 } = {
   localParticipant: {
     identity: 'me',
@@ -172,6 +181,7 @@ const mockRoom: {
     // mauvaise raison, avant ce correctif.
     getTrackPublication: (source: Track.Source) =>
       source === Track.Source.Camera ? mockCameraPublication : undefined,
+    publishData: mockPublishData,
   },
   remoteParticipants: new Map<string, unknown>(),
   get metadata(): string | undefined {
@@ -180,11 +190,15 @@ const mockRoom: {
   get isRecording(): boolean {
     return mockRoomIsRecording;
   },
-  on(event: string, handler: () => void): unknown {
+  // Réutilise `remoteParticipants`, déjà rempli par les tests existants
+  // (`remoteParticipant(...)`) : `reactionStore` n'a besoin d'aucune donnée
+  // de plus pour résoudre un nom d'émetteur.
+  getParticipantByIdentity: (identity: string) => mockRoom.remoteParticipants.get(identity),
+  on(event: string, handler: RoomHandler): unknown {
     mockRoomHandlers.set(event, [...(mockRoomHandlers.get(event) ?? []), handler]);
     return mockRoom;
   },
-  off(event: string, handler: () => void): unknown {
+  off(event: string, handler: RoomHandler): unknown {
     const attached = mockRoomHandlers.get(event) ?? [];
     const index = attached.indexOf(handler);
     if (index !== -1) attached.splice(index, 1);
@@ -194,10 +208,13 @@ const mockRoom: {
 };
 
 // Fait arriver un événement de Room comme le ferait le SDK, dans un `act` :
-// les magasins invalident, React relit, l'écran se réaffiche.
-async function emitRoom(event: string): Promise<void> {
+// les magasins invalident, React relit, l'écran se réaffiche. Les arguments
+// supplémentaires sont transmis tels quels — les appels existants
+// (`emitRoom('participantAttributesChanged')`, sans argument) continuent de
+// fonctionner sans modification.
+async function emitRoom(event: string, ...args: unknown[]): Promise<void> {
   await act(async () => {
-    for (const handler of Array.from(mockRoomHandlers.get(event) ?? [])) handler();
+    for (const handler of Array.from(mockRoomHandlers.get(event) ?? [])) handler(...args);
   });
 }
 
@@ -292,6 +309,7 @@ beforeEach(() => {
   mockDisconnect.mockReset().mockResolvedValue(undefined);
   mockDispose.mockReset();
   mockUnsubscribed.mockReset();
+  mockPublishData.mockReset().mockResolvedValue(undefined);
   mockListeners.clear();
   mockCallState = { status: 'connected' };
   mockCameraPublication = undefined;
@@ -2353,5 +2371,133 @@ describe('CallScreen, plein écran, enfermement', () => {
       expect(screen.getByTestId('active-speaker')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
+  });
+});
+
+describe('CallScreen, réactions', () => {
+  it('envoie une réaction depuis le menu, sans jamais fermer celui-ci', async () => {
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+
+    await waitFor(() => expect(mockPublishData).toHaveBeenCalledTimes(1));
+    const [bytes, options] = mockPublishData.mock.calls[0] as [Uint8Array, { reliable: boolean }];
+    expect(new TextDecoder().decode(bytes)).toBe(
+      '{"type":"reactionReceived","data":{"emoji":"thumbs-up"}}',
+    );
+    expect(options).toEqual({ reliable: true });
+    // À l'inverse de `hand-toggle`, une réaction ne referme pas le menu.
+    expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy();
+  });
+
+  it('affiche sa propre bulle après un envoi accepté', async () => {
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
+
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+  });
+
+  it("n'affiche aucune bulle et ne montre aucune Snackbar quand la publication échoue", async () => {
+    mockPublishData.mockRejectedValueOnce(new Error('offline'));
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+
+    await waitFor(() => expect(mockPublishData).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('reaction-overlay')).toBeNull();
+    // `Snackbar` (react-native-paper) ne rend rien tant que `visible` n'est
+    // jamais devenu vrai (`hidden` part de `!visible` et `handleSendReaction`
+    // n'appelle jamais `setNotice` ici) : la surface n'existe donc pas du
+    // tout dans l'arbre, pas seulement masquée. `visible` est d'ailleurs
+    // déstructuré hors de `...rest` par `Snackbar` lui-même (node_modules/
+    // react-native-paper/src/components/Snackbar.tsx) et n'atteint jamais le
+    // noeud hôte — `.props.visible` sur l'élément trouvé par testID ne
+    // lirait donc rien d'utile, à supposer même que l'élément existe.
+    expect(screen.queryByTestId('call-notice')).toBeNull();
+  });
+
+  it('affiche une bulle avec le nom quand un autre participant réagit', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await emitRoom(
+      'dataReceived',
+      new TextEncoder().encode('{"type":"reactionReceived","data":{"emoji":"party-popper"}}'),
+      { identity: 'u-ada' },
+    );
+
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+    // `getByText` seul est ambigu : Ada est aussi un participant distant de la
+    // séance, dont la tuile (caméra coupée) affiche déjà son nom en carton —
+    // un second « Ada » dans l'arbre, distinct de la bulle. Scoper la
+    // recherche à l'incrustation lève l'ambiguïté sans dépendre du schéma
+    // interne d'identifiant que `reactionStore` fabrique pour chaque bulle.
+    expect(within(screen.getByTestId('reaction-overlay')).getByText('Ada')).toBeTruthy();
+  });
+
+  it("ignore un paquet de données qui n'est pas une réaction", async () => {
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await emitRoom(
+      'dataReceived',
+      new TextEncoder().encode('{"type":"participantMuted","data":{}}'),
+      { identity: 'u-ada' },
+    );
+
+    expect(screen.queryByTestId('reaction-overlay')).toBeNull();
+  });
+
+  // Le plan proposait d'atteindre cet état par le menu (`more-btn`, puis
+  // `settleMenus`), avec des horloges déjà truquées. Vérifié : ça bloque le
+  // test entier jusqu'à expiration du délai de 5 s. `settleMenus` attend un
+  // VRAI `setTimeout(32)` pour laisser l'animation JS de `Modal` se stabiliser
+  // (voir son commentaire) ; sous `jest.useFakeTimers()`, posé ici AVANT cet
+  // appel, ce minuteur ne s'écoule jamais puisque rien ne l'avance. La voie
+  // par `emitRoom('dataReceived', …)` déjà éprouvée par le test voisin
+  // (« affiche une bulle avec le nom… ») n'a pas ce problème : elle n'ouvre
+  // aucun menu, donc ne dépend d'aucun minuteur réel.
+  it('efface une bulle après sa durée de vie', async () => {
+    jest.useFakeTimers();
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await emitRoom(
+      'dataReceived',
+      new TextEncoder().encode('{"type":"reactionReceived","data":{"emoji":"thumbs-up"}}'),
+      { identity: 'u-ghost' },
+    );
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(screen.queryByTestId('reaction-overlay')).toBeNull();
+    jest.useRealTimers();
+  });
+
+  it('détache le canal de données au démontage', async () => {
+    const view = await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    expect(mockRoomHandlers.get('dataReceived')?.length ?? 0).toBeGreaterThan(0);
+
+    await view.unmount();
+
+    expect(mockRoomHandlers.get('dataReceived') ?? []).toHaveLength(0);
   });
 });
