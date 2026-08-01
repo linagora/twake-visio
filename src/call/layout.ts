@@ -1,5 +1,6 @@
 import type { VideoTrackProps } from '@livekit/react-native';
 
+import { GRID_GAP, TILE_ASPECT, gridCapacity, packGrid, type Box } from 'src/call/grid';
 import type { FacingMode } from 'src/call/media';
 
 // La référence de piste que `VideoTrack` accepte. Elle est prise sur les props
@@ -85,13 +86,62 @@ export type Tile = {
   readonly mirror: boolean;
 };
 
-export type CallLayout = {
-  readonly stage: Tile;
-  // Vrai quand c'est l'épinglage qui a produit cette scène, faux quand c'est un
-  // partage d'écran ou la parole. La coquille en tire un marqueur, pas une règle.
-  readonly pinned: boolean;
-  readonly filmstrip: readonly Tile[];
-};
+// Deux modes, et c'est le CONTENU qui tranche, jamais la géométrie :
+//
+//   1. un épinglage résout vers une tuile présente  ⇒ `focus` sur elle ;
+//   2. sinon, un partage d'écran existe             ⇒ `focus` sur cet écran ;
+//   3. sinon                                        ⇒ `grid`.
+//
+// Une union discriminée plutôt qu'un objet à champs facultatifs : `tsc` trouve
+// alors tout consommateur qui aurait oublié un mode, et une grille n'a pas de
+// scène — un `stage` toujours présent mais parfois dénué de sens serait un
+// mensonge que le prochain lecteur paierait.
+export type CallLayout =
+  | {
+      readonly mode: 'grid';
+      readonly columns: number;
+      // Les dimensions calculées d'UNE cellule, identiques pour toutes. Elles
+      // ne peuvent pas être statiques : elles descendent de la boîte mesurée.
+      readonly tileWidth: number;
+      readonly tileHeight: number;
+      readonly tiles: readonly Tile[];
+      // Combien de participants la boîte n'a pas pu montrer. 0 le plus souvent.
+      // Un COMPTE, jamais un défilement : un défilement vertical n'a pas de
+      // position de repos naturelle, et `ParticipantsPanel` est déjà la surface
+      // qui répond à « qui est là », distincte de « ce que je regarde ».
+      readonly overflow: number;
+    }
+  | {
+      readonly mode: 'focus';
+      readonly focus: Tile;
+      // Vrai quand c'est l'épinglage qui a produit ce focus, faux quand c'est
+      // un partage d'écran. La coquille en tire un badge, pas une règle.
+      readonly pinned: boolean;
+      // Où la bande se range : `'row'` sous la scène, `'column'` à côté d'elle.
+      // Décidé ici et jamais dans la coquille — c'est une décision de
+      // disposition, et `stage.tsx` ne décide rien.
+      readonly stripAxis: StripAxis;
+      readonly filmstrip: readonly Tile[];
+    };
+
+export type StripAxis = 'row' | 'column';
+
+// Ce qui décide n'est pas « la boîte est-elle plus large que haute », c'est
+// « est-elle plus large que le contenu ne le demande ». Le comparatif juste
+// est donc `W / H` contre `TILE_ASPECT`, jamais contre 1 :
+//
+//   - `W / H < TILE_ASPECT` : la tuile de focus est bornée par la largeur, le
+//     mou est vertical, la bande passe DESSOUS ;
+//   - `W / H > TILE_ASPECT` : le mou est horizontal, la bande passe SUR LE CÔTÉ.
+//
+// Un seuil binaire posé à 1,000 serait placé exactement là où il ne faut pas :
+// l'écran interne du Pixel 10 Pro Fold fait 2076 × 2152, soit un rapport de
+// 0,965, et 1,037 une fois tourné — `width > height` retournerait toute la
+// disposition sur 3,5 % de géométrie. Le seuil de 1,778 est loin de la zone où
+// cet appareil vit, et les deux postures y répondent pareil.
+function pickStripAxis(box: Box): StripAxis {
+  return box.width / box.height > TILE_ASPECT ? 'column' : 'row';
+}
 
 // L'ordre de la bande de vignettes. Il ne dépend ni de la parole ni des pistes :
 // une bande triée par le locuteur se réorganise sous le pouce, et l'on appuie
@@ -109,15 +159,20 @@ function compareStable(a: ParticipantView, b: ParticipantView): number {
   return a.identity < b.identity ? -1 : 1;
 }
 
-// Qui mérite la grande surface. Trois règles, dans cet ordre :
+// Le classement par la parole. Trois règles, dans cet ordre :
 //
 //   1. celui qui parle passe devant celui qui s'est tu, même récemment — sans
 //      quoi l'on regarde quelqu'un qui vient de finir sa phrase pendant qu'un
 //      autre parle ;
 //   2. à parole égale, le plus récent — c'est ce qui garde le dernier locuteur
-//      en place au lieu de vider la scène ou de la faire sauter au silence ;
+//      en place au lieu de vider la place ou de la faire sauter au silence ;
 //   3. à défaut, l'ordre stable, pour que deux entrants muets ne se disputent
-//      pas la scène à chaque rendu.
+//      pas la même cellule à chaque rendu.
+//
+// Il a changé d'office avec la grille, pas de contenu : il ne choisit plus LA
+// scène — il n'y en a plus quand personne ne partage — il DÉPARTAGE. Et ce
+// départage ne sert qu'à décider qui obtient une cellule quand il y a plus de
+// monde que de cellules.
 function compareForStage(a: ParticipantView, b: ParticipantView): number {
   if (a.isSpeaking !== b.isSpeaking) return a.isSpeaking ? -1 : 1;
   const spokeA = a.lastSpokeAt ?? Number.NEGATIVE_INFINITY;
@@ -126,21 +181,39 @@ function compareForStage(a: ParticipantView, b: ParticipantView): number {
   return compareStable(a, b);
 }
 
-// La scène revient toujours à un distant s'il y en a un, jamais à soi : on tient
-// le téléphone, on n'a pas besoin de se voir en grand. Le participant local ne
-// prend la scène que lorsqu'il est seul — un rectangle noir ferait croire à une
-// panne à celui qui arrive le premier.
+// Les distants du plus « méritant » au moins, jamais soi : sa propre tuile a
+// une place réservée en tête de grille, hors classement — même motif que la
+// bande, « la chercher parmi des vignettes qui bougent, c'est ne jamais savoir
+// si l'on est cadré ».
 //
-// La sélection porte sur la *personne*, pas sur la piste : un locuteur dont la
-// caméra est coupée garde la scène. La faire dépendre de la présence d'une
-// image, ce serait changer de scène chaque fois que quelqu'un coupe sa caméra,
-// et finir par regarder quelqu'un qui se tait.
-function pickStage(view: RoomView): ParticipantView {
-  let stage: ParticipantView | null = null;
-  for (const remote of view.remotes) {
-    if (stage === null || compareForStage(remote, stage) < 0) stage = remote;
-  }
-  return stage ?? view.local;
+// Le classement porte sur la *personne*, pas sur la piste : quelqu'un qui parle
+// caméra coupée garde son rang. Le faire dépendre de la présence d'une image,
+// ce serait perdre une cellule chaque fois que quelqu'un coupe sa caméra, et
+// finir par regarder quelqu'un qui se tait.
+function rankBySpeech(view: RoomView): readonly ParticipantView[] {
+  return [...view.remotes].sort(compareForStage);
+}
+
+// Qui obtient une cellule, et dans quel ordre elles s'affichent — deux
+// questions distinctes, et c'est tout l'objet de cette fonction.
+//
+// L'APPARTENANCE se décide au classement par la parole : au-delà de la
+// capacité, ce sont ceux qui parlent qui restent à l'écran. L'ORDRE, lui, reste
+// l'ordre stable — une cellule qui change de place sous le pouce est pire
+// qu'une cellule absente, exactement le motif que la bande porte déjà.
+//
+// Conséquence voulue : tant que tout le monde tient, la grille ne bouge JAMAIS.
+// C'est le cas courant. Au-delà, seule l'appartenance change.
+function pickGridMembers(view: RoomView, capacity: number): readonly ParticipantView[] {
+  // À une seule cellule, elle va au premier distant et jamais à soi : on tient
+  // le téléphone, on n'a pas besoin de se voir en grand. C'est mot pour mot
+  // l'ancienne règle de `pickStage`, généralisée au lieu d'être contredite — et
+  // le repli sur soi vaut pour la même raison qu'avant : un rectangle noir
+  // ferait croire à une panne à celui qui arrive le premier.
+  if (capacity <= 1) return [rankBySpeech(view)[0] ?? view.local];
+
+  const kept = rankBySpeech(view).slice(0, capacity - 1);
+  return [view.local, ...[...kept].sort(compareStable)];
 }
 
 // Traduit un participant et une source de piste en tuile prête pour l'affichage.
@@ -191,6 +264,11 @@ function pickScreen(view: RoomView): ParticipantView | null {
 export function selectLayout(
   view: RoomView,
   facing: FacingMode,
+  // La boîte réellement offerte à la scène, en dp, telle que `onLayout` l'a
+  // mesurée — jamais les dimensions de la fenêtre. Celles-ci ignorent les 52 dp
+  // de la barre de contrôle, les encoches de `SafeAreaView`, et les trois
+  // bandeaux qui peuvent apparaître à tout instant.
+  box: Box,
   // Une clé de tuile, `${identity}:${source}`. `null` = rien d'épinglé.
   pin: string | null,
 ): CallLayout {
@@ -209,15 +287,47 @@ export function selectLayout(
   const pinnedTile = pin === null ? undefined : candidates.find((t) => t.key === pin);
 
   const presenter = pickScreen(view);
-  // Un partage ne se DISPUTE pas la scène avec la parole : il la prend. Mais un
-  // épinglage passe devant lui : c'est une demande explicite, et elle gagne.
-  const stage: Tile =
-    pinnedTile ??
-    (presenter === null
-      ? toTile(pickStage(view), 'camera', facing)
-      : toTile(presenter, 'screen', facing));
+  // Un partage ne se DISPUTE pas la scène : il la prend, et la garde tant qu'il
+  // dure. La règle vient du produit, mais elle vient aussi de la géométrie
+  // depuis la grille : une tuile n'est jamais letterboxée à l'intérieur, or un
+  // écran ne peut pas être rogné — « un texte coupé est un texte perdu ». Un
+  // écran est donc le seul contenu qui exige un `contain`, donc une boîte à
+  // lui, donc le seul qui ne peut pas entrer dans une cellule de grille.
+  //
+  // Un épinglage passe devant lui : c'est une demande explicite, et elle gagne.
+  // Un épinglage qu'un partage pourrait renverser n'épingle pas.
+  const focus: Tile | undefined =
+    pinnedTile ?? (presenter === null ? undefined : toTile(presenter, 'screen', facing));
 
-  const filmstrip = candidates.filter((tile) => tile.key !== stage.key);
+  if (focus !== undefined) {
+    return {
+      mode: 'focus',
+      focus,
+      pinned: pinnedTile !== undefined,
+      stripAxis: pickStripAxis(box),
+      filmstrip: candidates.filter((tile) => tile.key !== focus.key),
+    };
+  }
 
-  return { stage, pinned: pinnedTile !== undefined, filmstrip };
+  // La marge de page vaut le MÊME écart que celui entre deux cellules : « le
+  // vide appartient à la marge de la page, jamais à l'intérieur d'une tuile ».
+  // Retirée ici plutôt que dans `src/call/grid`, qui ne connaît que des
+  // cellules — mais `stage.tsx` pose exactement le même `GRID_GAP` en
+  // `padding`, et un test garde l'égalité des deux.
+  const inner: Box = {
+    width: box.width - 2 * GRID_GAP,
+    height: box.height - 2 * GRID_GAP,
+  };
+  const members = pickGridMembers(view, gridCapacity(inner, GRID_GAP));
+  const packing = packGrid(members.length, inner, GRID_GAP);
+
+  return {
+    mode: 'grid',
+    columns: packing.columns,
+    tileWidth: packing.tileWidth,
+    tileHeight: packing.tileHeight,
+    // Jamais d'écran ici : un partage aurait forcé le mode `focus` au-dessus.
+    tiles: members.map((p) => toTile(p, 'camera', facing)),
+    overflow: everyone.length - members.length,
+  };
 }

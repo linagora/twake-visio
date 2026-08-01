@@ -53,6 +53,49 @@ function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
 }
 
+// La boîte de contenu de l'écran de couverture du Pixel 10 Pro Fold tenu en
+// portrait, marge de page comprise : 1080 × 2364 px à densité 390.
+const PORTRAIT_BOX = { width: 443, height: 900 };
+
+// **La mesure n'existe pas sous Jest.** RNTL ne dispose aucune vue, donc le
+// `onLayout` de `CallStage` ne part jamais tout seul — et sans boîte,
+// `useCallLayout` rend `null` et l'écran ne pose AUCUNE tuile. Ce rendu-ci
+// déclenche la mesure une fois, exactement comme la première trame le ferait
+// sur appareil.
+//
+// Toléré absent : les écrans d'erreur et d'attente de connexion sortent avant
+// de monter `CallStage`, et le panneau des participants la démonte. Un test
+// qui traverse l'un de ces états remesure lui-même après coup.
+async function measureStage(box = PORTRAIT_BOX): Promise<void> {
+  const root = screen.queryByTestId('stage-root');
+  if (root === null) return;
+  await fireEvent(root, 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: box.width, height: box.height } },
+  });
+}
+
+// **La grille est la disposition par défaut** : tant que rien n'est épinglé et
+// que personne ne partage, il n'y a plus de scène du tout. Or le plein écran ne
+// s'ouvre que depuis la scène du mode `focus`. Le chemin y passe donc par un
+// épinglage, en deux appuis sur la MÊME tuile : le premier l'épingle et la
+// porte sur la scène, le second bascule le plein écran.
+//
+// Ce n'est pas un artifice de test : c'est le parcours réel, et il est la
+// conséquence assumée de la grille — un appui direct sur une cellule ne peut
+// pas vouloir dire deux choses.
+async function enterFullscreen(key: string): Promise<void> {
+  await fireEvent.press(screen.getByTestId(`tile-${key}`));
+  await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId(`tile-${key}`));
+  await waitFor(() => expect(screen.queryByTestId('mic-toggle')).toBeNull());
+}
+
+async function renderCall(box = PORTRAIT_BOX): Promise<Awaited<ReturnType<typeof render>>> {
+  const view = await render(withPaper(<CallScreen />));
+  await measureStage(box);
+  return view;
+}
+
 // Même à durée nulle, ce rappel part sur un `requestAnimationFrame` : sous Jest,
 // `NativeAnimatedModule` est absent et `Animated` retombe sur son moteur
 // JavaScript. Appelé avant chaque appui qui **ouvre** un menu — après le rendu
@@ -344,7 +387,7 @@ describe('CallScreen', () => {
     // ouverte. Seule une lecture de `getState()` au montage le sauve.
     mockCallState = { status: 'connected' };
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     expect(screen.getByTestId('mic-toggle')).toBeTruthy();
     expect(screen.queryByTestId('call-connecting')).toBeNull();
@@ -353,14 +396,15 @@ describe('CallScreen', () => {
   });
 
   it('expose la barre de contrôle une fois connecté', async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => {
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
       expect(screen.getByTestId('camera-toggle')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
-      expect(screen.getByTestId('active-speaker')).toBeTruthy();
-      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      // La grille, et non plus une scène : tant que personne ne partage et que
+      // rien n'est épinglé, c'est elle la disposition par défaut.
+      expect(screen.getByTestId('grid')).toBeTruthy();
     });
   });
 
@@ -369,7 +413,7 @@ describe('CallScreen', () => {
     // ignore trois caméras sur cinq sur un iPhone Pro, et sans ce retrait la
     // rangée porterait huit cibles — ce qui ne tient sur aucun téléphone
     // supporté.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     expect(screen.queryByTestId('switch-camera')).toBeNull();
@@ -379,7 +423,7 @@ describe('CallScreen', () => {
     // Le seul bout de chaîne que cet écran peut montrer : la Room est lue, la
     // sélection tranche, la coquille pose une vignette. Ce que cette vignette
     // affiche vraiment, personne ici ne peut le vérifier.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => expect(screen.getByTestId('tile-me:camera')).toBeTruthy());
     expect(screen.getByTestId('tile-placeholder-me:camera')).toBeTruthy();
@@ -388,7 +432,7 @@ describe('CallScreen', () => {
   it("suit les transitions publiées après l'abonnement", async () => {
     mockCallState = { status: 'connecting' };
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     expect(screen.getByTestId('call-connecting')).toBeTruthy();
 
     await publish({ status: 'connected' });
@@ -399,7 +443,7 @@ describe('CallScreen', () => {
   it('annonce la reconnexion sans masquer la séance', async () => {
     // Sans cet état visible, la personne regarde une image figée en croyant que
     // c'est cassé, alors que le transport est en train de se rétablir.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await publish({ status: 'reconnecting' });
 
@@ -408,7 +452,7 @@ describe('CallScreen', () => {
   });
 
   it("traduit le motif de coupure et n'affiche jamais le texte brut du SDK", async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await publish({ status: 'disconnected', reason: 'could not establish signal connection' });
 
@@ -417,7 +461,7 @@ describe('CallScreen', () => {
   });
 
   it("distingue une séance fermée par le serveur d'une panne de connexion", async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await publish({ status: 'disconnected', reason: 'closed' });
 
@@ -425,7 +469,7 @@ describe('CallScreen', () => {
   });
 
   it("applique les choix du pré-écran à l'entrée en séance", async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => {
       expect(media.setMicrophoneEnabled).toHaveBeenCalledWith(mockRoom, true);
@@ -436,7 +480,7 @@ describe('CallScreen', () => {
   it("coupe réellement le micro, et ne fait pas que changer l'icône", async () => {
     // Un bouton qui bascule son apparence sans agir sur la session est le pire
     // défaut possible ici : la personne se croit coupée et ne l'est pas.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
     jest.mocked(media.setMicrophoneEnabled).mockClear();
 
@@ -455,7 +499,7 @@ describe('CallScreen', () => {
     // L'ordre compte : naviguer d'abord démonte le composant et le nettoyage
     // peut ne jamais atteindre le serveur, laissant un participant fantôme
     // dans la réunion pour les autres.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('leave-btn'));
@@ -473,7 +517,7 @@ describe('CallScreen', () => {
     // `subscribe` rend une fonction de désabonnement, et `dispose()` est
     // terminal : sans lui la Room survit à l'écran, et avec elle le micro, la
     // caméra et le transport.
-    const view = await render(withPaper(<CallScreen />));
+    const view = await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await view.unmount();
@@ -486,7 +530,7 @@ describe('CallScreen', () => {
   it('dit que la session a expiré sans tenter de rejoindre', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     expect(screen.getByTestId('call-error')).toHaveTextContent('error.unauthorized');
     expect(rooms.fetchRoomAccess).not.toHaveBeenCalled();
@@ -498,7 +542,7 @@ describe('CallScreen', () => {
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => {
       expect(screen.getByTestId('call-error')).toHaveTextContent('error.unauthorized');
@@ -509,7 +553,7 @@ describe('CallScreen', () => {
   it('laisse une porte de sortie quand la séance a échoué', async () => {
     // L'en-tête est masqué par le Stack : sans ce bouton, un écran d'erreur est
     // un cul-de-sac dont on ne sort qu'en tuant l'application.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await publish({ status: 'disconnected', reason: 'closed' });
 
     await fireEvent.press(screen.getByTestId('error-leave-btn'));
@@ -525,7 +569,7 @@ describe('CallScreen, partage du lien', () => {
     // la réunion vit ailleurs.
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
@@ -543,7 +587,7 @@ describe('CallScreen, partage du lien', () => {
   it("ne fait pas tomber l'écran quand le partage est annulé", async () => {
     jest.spyOn(Share, 'share').mockRejectedValue(new Error('annulé'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
@@ -582,7 +626,7 @@ describe('CallScreen, salle d’attente', () => {
     const list = jest.spyOn(participants, 'listWaitingParticipants');
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('public', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -593,7 +637,7 @@ describe('CallScreen, salle d’attente', () => {
     const list = jest.spyOn(participants, 'listWaitingParticipants');
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -617,7 +661,7 @@ describe('CallScreen, salle d’attente', () => {
       },
     });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -634,7 +678,7 @@ describe('CallScreen, salle d’attente', () => {
       .mockResolvedValue({ ok: true, value: [] });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -654,7 +698,7 @@ describe('CallScreen, salle d’attente', () => {
     });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -674,7 +718,7 @@ describe('CallScreen, salle d’attente', () => {
     });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
 
@@ -698,7 +742,7 @@ describe('CallScreen, salle d’attente', () => {
       .mockResolvedValue({ ok: true, value: undefined });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
     await waitFor(() => expect(screen.getByTestId('waiting-admit')).toBeTruthy());
@@ -723,7 +767,7 @@ describe('CallScreen, salle d’attente', () => {
       .mockResolvedValue({ ok: true, value: undefined });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
     await waitFor(() => expect(screen.getByTestId('waiting-refuse')).toBeTruthy());
@@ -747,7 +791,7 @@ describe('CallScreen, salle d’attente', () => {
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await tick();
     await waitFor(() => expect(screen.getByTestId('waiting-admit')).toBeTruthy());
@@ -762,18 +806,22 @@ describe('CallScreen, salle d’attente', () => {
 
 describe('CallScreen, panneau des participants', () => {
   it('ouvre et referme le panneau des participants depuis la barre de contrôle', async () => {
-    await render(withPaper(<CallScreen />));
-    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('participants-toggle'));
 
     await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
     // Le panneau remplace la scène plutôt que de se poser par-dessus.
-    expect(screen.queryByTestId('active-speaker')).toBeNull();
+    expect(screen.queryByTestId('grid')).toBeNull();
 
     await fireEvent.press(screen.getByTestId('participants-toggle'));
 
-    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    // La boîte mesurée vit dans `call.tsx`, pas dans `CallStage` : elle
+    // SURVIT au démontage du panneau, donc la grille revient sans attendre une
+    // seconde mesure. Sur appareil, `onLayout` repart quand même à la trame
+    // suivante et repose la même valeur.
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
     expect(screen.queryByText('participants.title')).toBeNull();
   });
 
@@ -789,7 +837,7 @@ describe('CallScreen, panneau des participants', () => {
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: true, value: undefined });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     // La SECONDE ligne : `openParticipantActions(0)` donnerait Alice, et le
@@ -827,7 +875,7 @@ describe('CallScreen, panneau des participants', () => {
       .spyOn(participants, 'updateParticipantRole')
       .mockResolvedValue({ ok: true, value: undefined });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     // Une action referme la feuille : on la rouvre entre les deux, toujours
@@ -846,7 +894,7 @@ describe('CallScreen, panneau des participants', () => {
     // `isAdministrable: false` : rien à surcharger ici.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
 
@@ -871,7 +919,7 @@ describe('CallScreen, panneau des participants', () => {
       },
     });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
 
@@ -895,7 +943,7 @@ describe('CallScreen, échec de modération', () => {
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -920,7 +968,7 @@ describe('CallScreen, échec de modération', () => {
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -951,7 +999,7 @@ describe('CallScreen, échec de modération', () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     jest.spyOn(participants, 'muteParticipant').mockResolvedValue({ ok: false, error });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -977,7 +1025,7 @@ describe('CallScreen, échec de modération', () => {
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -998,7 +1046,7 @@ describe('CallScreen, échec de modération', () => {
       .spyOn(participants, 'removeParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -1017,7 +1065,7 @@ describe('CallScreen, échec de modération', () => {
       .spyOn(participants, 'updateParticipantRole')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -1036,7 +1084,7 @@ describe('CallScreen, échec de modération', () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     jest.spyOn(participants, 'muteParticipant').mockRejectedValue(new Error('boom'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -1062,7 +1110,7 @@ describe('CallScreen, échec de modération', () => {
         }),
     );
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -1086,7 +1134,7 @@ describe('CallScreen, échec de modération', () => {
     const muteSpy = jest.spyOn(participants, 'muteParticipant');
     muteSpy.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await openParticipantActions();
@@ -1114,7 +1162,7 @@ describe('CallScreen, choix de la caméra', () => {
     // instant où une lecture est utile.
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     expect(media.listCameras).not.toHaveBeenCalled();
     expect(media.readActiveCameraId).not.toHaveBeenCalled();
@@ -1133,7 +1181,7 @@ describe('CallScreen, choix de la caméra', () => {
     // (l'identité LiveKit locale).
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
@@ -1152,7 +1200,7 @@ describe('CallScreen, choix de la caméra', () => {
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
     jest.spyOn(media, 'readActiveCameraId').mockReturnValue('cam-back');
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
 
@@ -1170,7 +1218,7 @@ describe('CallScreen, choix de la caméra', () => {
     mockCameraPublication = { trackSid: 'ts-me', source: 'camera', isMuted: false, track: {} };
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
     // Un double aveugle à `Track.Source` (voir le commentaire sur
     // `mockRoom.localParticipant.getTrackPublication` plus haut) rendrait
@@ -1197,7 +1245,7 @@ describe('CallScreen, choix de la caméra', () => {
     mockCameraPublication = { trackSid: 'ts-me', source: 'camera', isMuted: false, track: {} };
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, UNKNOWN_CAMERA]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(VideoTrack).toHaveBeenCalled());
     // Le pendant du test précédent, et pour exactement la même raison : ce
     // test-ci lit `mock.lastCall` deux fois, donc un partage local fantôme le
@@ -1222,7 +1270,7 @@ describe('CallScreen, choix de la caméra', () => {
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
     jest.spyOn(media, 'selectCamera').mockResolvedValue(false);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
@@ -1242,7 +1290,7 @@ describe('CallScreen, choix de la caméra', () => {
     jest.spyOn(media, 'listCameras').mockResolvedValue([FRONT_CAMERA, BACK_CAMERA]);
     jest.spyOn(media, 'selectCamera').mockRejectedValue(new Error('contrainte impossible'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
@@ -1263,7 +1311,7 @@ describe('CallScreen, choix de la caméra', () => {
     const select = jest.spyOn(media, 'selectCamera');
     select.mockResolvedValueOnce(false);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
@@ -1288,7 +1336,7 @@ describe('CallScreen, choix de la caméra', () => {
     // désactivé.
     jest.spyOn(media, 'listCameras').mockRejectedValue(new Error('énumération refusée'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
 
     await settleMenus();
@@ -1313,7 +1361,7 @@ describe('CallScreen, choix de la caméra', () => {
       .spyOn(media, 'listCameras')
       .mockResolvedValueOnce([FRONT_CAMERA, BACK_CAMERA]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('camera-menu-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('camera-menu-btn'));
@@ -1335,7 +1383,7 @@ describe('CallScreen, sortie audio', () => {
     // d'où sort le son, seulement ce qui est disponible.
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
     expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
 
@@ -1349,7 +1397,7 @@ describe('CallScreen, sortie audio', () => {
     // Deux catégories, jamais une seule, et la seconde visée.
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
@@ -1367,7 +1415,7 @@ describe('CallScreen, sortie audio', () => {
     // automatique vient d'être désarmée pour le reste de la séance.
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
@@ -1389,7 +1437,7 @@ describe('CallScreen, sortie audio', () => {
     // afficher un échec serait une invention.
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
@@ -1406,7 +1454,7 @@ describe('CallScreen, sortie audio', () => {
     // des catégories : il n'y a rien à peupler et rien à relire.
     jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('system');
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
 
     await settleMenus();
@@ -1420,7 +1468,7 @@ describe('CallScreen, sortie audio', () => {
   it("n'ouvre pas le sélecteur système en mode menu", async () => {
     // L'autre borne du mode : sans elle, un écran qui appellerait les deux
     // rappels passerait le test précédent.
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
 
     await settleMenus();
@@ -1438,7 +1486,7 @@ describe('CallScreen, sortie audio', () => {
     // mutation, seul ce test pouvait le distinguer.
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue([]);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
 
     await settleMenus();
@@ -1456,7 +1504,7 @@ describe('CallScreen, sortie audio', () => {
   it("n'affiche rien quand l'énumération échoue, et ouvre un menu vide", async () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockRejectedValue(new Error('énumération refusée'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
 
     await settleMenus();
@@ -1476,7 +1524,7 @@ describe('CallScreen, sortie audio', () => {
       .spyOn(audioRoute, 'listAudioOutputs')
       .mockResolvedValueOnce(['bluetooth', 'speaker']);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
@@ -1504,7 +1552,7 @@ describe('CallScreen, indicateur d’enregistrement', () => {
     mockRoomMetadata = STARTED_METADATA;
     mockRoomIsRecording = true;
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() =>
       expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.active'),
@@ -1512,7 +1560,7 @@ describe('CallScreen, indicateur d’enregistrement', () => {
   });
 
   it('n’affiche rien quand aucun enregistrement ne tourne', async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     expect(screen.queryByTestId('recording-indicator')).toBe(null);
@@ -1528,7 +1576,7 @@ describe('CallScreen, indicateur d’enregistrement', () => {
     });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() =>
       expect(screen.getByTestId('recording-indicator')).toHaveTextContent('recording.saving'),
@@ -1546,7 +1594,7 @@ describe('CallScreen, commande d’enregistrement', () => {
   it('n’offre pas la commande sans droit d’administration', async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
@@ -1565,7 +1613,7 @@ describe('CallScreen, commande d’enregistrement', () => {
     } as never);
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
@@ -1588,7 +1636,7 @@ describe('CallScreen, commande d’enregistrement', () => {
       },
     });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('recording-toggle'));
@@ -1606,7 +1654,7 @@ describe('CallScreen, commande d’enregistrement', () => {
       .mockResolvedValue({ ok: false, error: { kind: 'server', status: 409 } });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('recording-toggle'));
@@ -1624,7 +1672,7 @@ describe('CallScreen, commande d’enregistrement', () => {
     jest.spyOn(recordingApi, 'startRecording').mockRejectedValue(new Error('boom'));
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('recording-toggle'));
@@ -1654,7 +1702,7 @@ describe('CallScreen, commande d’enregistrement', () => {
       },
     });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() =>
       expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop'),
@@ -1676,7 +1724,7 @@ describe('CallScreen, commande d’enregistrement', () => {
     jest.spyOn(recordingApi, 'stopRecording').mockRejectedValue(new Error('boom'));
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() =>
       expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop'),
@@ -1694,7 +1742,7 @@ describe('CallScreen, commande d’enregistrement', () => {
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMore();
     await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('recording-toggle'));
@@ -1736,7 +1784,7 @@ describe('CallScreen, main levée', () => {
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1752,7 +1800,7 @@ describe('CallScreen, main levée', () => {
     // affichant « Lever la main » — un libellé qui annonce l'inverse de son
     // effet.
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.lowerHand');
   });
@@ -1772,7 +1820,7 @@ describe('CallScreen, main levée', () => {
       },
     });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1785,7 +1833,7 @@ describe('CallScreen, main levée', () => {
     // sauts plus loin.
     jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1806,7 +1854,7 @@ describe('CallScreen, main levée', () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('hand-banner')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('hand-lower'));
 
@@ -1835,7 +1883,7 @@ describe('CallScreen, main levée', () => {
     );
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('hand-lower')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('hand-lower'));
     await fireEvent.press(screen.getByTestId('hand-lower'));
@@ -1859,7 +1907,7 @@ describe('CallScreen, main levée', () => {
       }),
     );
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1887,7 +1935,7 @@ describe('CallScreen, main levée', () => {
     );
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:03Z' };
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => expect(screen.getByTestId('hand-banner-position')).toBeTruthy());
     // Troisième, pas première : un `position={1}` codé en dur dans la coquille
@@ -1907,7 +1955,7 @@ describe('CallScreen, main levée', () => {
       remoteParticipant('u-ada', 'Ada', { handRaisedAt: '2026-07-30T10:00:01Z' }),
     );
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
 
     expect(screen.getByTestId('hand-queue-row-u-ada')).toBeTruthy();
@@ -1923,7 +1971,7 @@ describe('CallScreen, main levée', () => {
     // rejet : un `.catch()` seul ne verrait pas passer un 403.
     jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1938,7 +1986,7 @@ describe('CallScreen, main levée', () => {
     // `toggle-hand` ne dit rien de la session OIDC, qui est valide.
     jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1951,7 +1999,7 @@ describe('CallScreen, main levée', () => {
   it('porte aussi un rejet inattendu jusqu’à la barre', async () => {
     jest.spyOn(hand, 'toggleHand').mockRejectedValue(new Error('boom'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
@@ -1965,7 +2013,7 @@ describe('CallScreen, main levée', () => {
       .spyOn(hand, 'toggleHand')
       .mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openMenu();
     await fireEvent.press(screen.getByTestId('hand-toggle'));
     await waitFor(() =>
@@ -1988,16 +2036,17 @@ describe('CallScreen, main levée', () => {
 // conception d'origine et le lot qui la simplifie pour le rapport de ce
 // changement.
 describe('CallScreen, épinglage', () => {
-  it('épingle la vignette qu’on touche dans la bande', async () => {
-    // Ada est seule et distante : par la règle ordinaire (`src/call/layout`,
-    // « la scène revient toujours à un distant »), c'est DÉJÀ elle qui est sur
-    // scène, et c'est la propre vignette locale qui commence dans la bande.
-    // La faire monter à son tour prouve le geste, pas la règle par défaut.
+  it('épingle la cellule qu’on touche dans la grille', async () => {
+    // Ada est seule et distante : les deux tuiles commencent donc CÔTE À CÔTE
+    // dans la grille, sans qu'aucune ne soit sur une scène — c'est le
+    // changement que la grille apporte. Épingler sa propre cellule la fait
+    // monter, et prouve le geste plutôt qu'une règle par défaut.
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
-    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+    expect(within(screen.getByTestId('grid')).getByTestId('tile-me:camera')).toBeTruthy();
+    expect(screen.queryByTestId('active-speaker')).toBeNull();
 
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
 
@@ -2022,7 +2071,7 @@ describe('CallScreen, épinglage', () => {
   it('un second appui sur la tuile désormais en scène ne la désépingle pas : il bascule le plein écran', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
     await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
@@ -2041,63 +2090,60 @@ describe('CallScreen, épinglage', () => {
   it('désépingle sur un appui du badge, jamais sur un appui de la tuile', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
     await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('pin-marker'));
 
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
-      ).toBeTruthy();
-    });
-    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
-    // Et repart avec le désépinglage : un badge qui survivrait mentirait sur
-    // l'état réel de la scène.
+    // Désépingler ne rend pas la scène à quelqu'un d'autre : il n'y a plus de
+    // scène du tout, on retombe dans la grille. C'est exactement ce que la
+    // grille supprime — la grande surface, et les bandes noires avec elle.
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
+    expect(within(screen.getByTestId('grid')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+    expect(within(screen.getByTestId('grid')).getByTestId('tile-me:camera')).toBeTruthy();
+    // Et le badge repart avec le désépinglage : un badge qui survivrait
+    // mentirait sur l'état réel.
     expect(screen.queryByTestId('pin-marker')).toBeNull();
   });
 });
 
 describe('CallScreen, plein écran', () => {
   it("n'affiche que la tuile et masque les commandes en plein écran", async () => {
-    // Ada distante, comme les tests d'épinglage ci-dessus : par la règle
-    // ordinaire elle est déjà sur scène, et c'est sur sa tuile qu'on appuie —
-    // un appui sur la scène bascule le plein écran, sans dépendre du geste
-    // d'épinglage testé plus haut.
+    // Ada distante : sa tuile commence dans la GRILLE, d'où le plein écran
+    // n'est pas atteignable directement — voir `enterFullscreen`, qui épingle
+    // d'abord.
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await enterFullscreen('u-ada:camera');
 
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
-      ).toBeTruthy();
-    });
-    // La bande et la barre disparaissent TOUTES LES DEUX : l'une masquée par
-    // `call.tsx` (la barre), l'autre par `CallStage` lui-même (la bande) — deux
-    // sites distincts, voir `stage.spec.tsx` pour la couverture propre au
-    // second.
+    expect(
+      within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+    ).toBeTruthy();
+    // La grille, la bande et la barre disparaissent TOUTES : la barre est
+    // masquée par `call.tsx`, le reste par `CallStage` lui-même — deux sites
+    // distincts, voir `stage.spec.tsx` pour la couverture propre au second.
+    expect(screen.queryByTestId('grid')).toBeNull();
     expect(screen.queryByTestId('filmstrip')).toBeNull();
     expect(screen.queryByTestId('mic-toggle')).toBeNull();
     expect(screen.queryByTestId('leave-btn')).toBeNull();
   });
 
-  it('rend la bande et les commandes hors plein écran', async () => {
+  it('rend la grille et les commandes hors plein écran', async () => {
     // Le complément direct du test précédent, même mise en place, sans
     // l'appui : sans CE test, une implémentation qui masquerait la barre et
-    // la bande inconditionnellement passerait quand même le test ci-dessus.
+    // la grille inconditionnellement passerait quand même le test ci-dessus.
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => {
       expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy();
-      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('grid')).toBeTruthy();
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
@@ -2110,10 +2156,9 @@ describe('CallScreen, plein écran', () => {
   it('retombe sur la disposition normale si la tuile plein écran disparaît', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-ada:camera');
 
     // Ada quitte la séance : sa tuile n'existe plus dans aucune disposition
     // possible, épinglée ou non.
@@ -2121,12 +2166,12 @@ describe('CallScreen, plein écran', () => {
     await emitRoom('participantDisconnected');
 
     await waitFor(() => {
-      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('grid')).toBeTruthy();
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
     });
-    // Seule reste la personne locale : la scène retombe sur elle, par la même
-    // règle ordinaire qu'à la connexion.
-    expect(within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera')).toBeTruthy();
+    // Seule reste la personne locale, seule cellule de la grille : l'épinglage
+    // d'Ada ne résout plus lui non plus, donc rien ne retient le mode `focus`.
+    expect(within(screen.getByTestId('grid')).getByTestId('tile-me:camera')).toBeTruthy();
   });
 
   // I4, reproduit par la revue : la clé `fullscreen` elle-même n'est JAMAIS
@@ -2141,15 +2186,14 @@ describe('CallScreen, plein écran', () => {
   it('ne ressuscite pas le plein écran quand la cible revient sans le moindre geste', async () => {
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-bob:camera');
 
     // Bob part : la disposition normale revient, par la résolution ordinaire.
     mockRoom.remoteParticipants.delete('u-bob');
     await emitRoom('participantDisconnected');
-    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
 
     // Bob revient, avec la MÊME identité, donc la MÊME clé de tuile — sans
     // que personne n'ait pressé quoi que ce soit sur cet écran entre-temps.
@@ -2157,9 +2201,15 @@ describe('CallScreen, plein écran', () => {
     await emitRoom('participantConnected');
     await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
 
-    // La disposition normale doit tenir : bande et barre restent là.
-    expect(screen.getByTestId('filmstrip')).toBeTruthy();
+    // Les deux clés se comportent DIFFÉREMMENT, et c'est tout l'objet de ce
+    // test. L'ÉPINGLAGE reprend : c'est le comportement voulu et écrit
+    // (`src/call/layout.ts`, « si elle revient, l'épinglage reprend tout
+    // seul »), et il est visible — Bob remonte sur la scène, badge compris.
+    expect(screen.getByTestId('pin-marker')).toBeTruthy();
+    // Le PLEIN ÉCRAN, lui, ne doit pas revenir : il retirerait toutes les
+    // commandes sans que personne n'ait rien demandé. La barre est donc là.
     expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    expect(screen.getByTestId('leave-btn')).toBeTruthy();
   });
 
   // Le même trou que ci-dessus, sous un angle différent : après la guérison
@@ -2172,26 +2222,21 @@ describe('CallScreen, plein écran', () => {
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
     mockRoom.remoteParticipants.set('u-carl', remoteParticipant('u-carl', 'Carl'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() =>
-      expect(
-        within(screen.getByTestId('filmstrip')).getByTestId('tile-u-carl:camera'),
-      ).toBeTruthy(),
+      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-carl:camera')).toBeTruthy(),
     );
 
-    // Carl, épinglé depuis la bande puis basculé en plein écran, puis parti :
+    // Carl, épinglé depuis la grille puis basculé en plein écran, puis parti :
     // `fullscreen` reste posé à `u-carl:camera` quand `fullscreenTile`,
     // résolu, retombe à `null`.
-    await fireEvent.press(screen.getByTestId('tile-u-carl:camera'));
-    await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('tile-u-carl:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-carl:camera');
 
     mockRoom.remoteParticipants.delete('u-carl');
     await emitRoom('participantDisconnected');
-    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
 
-    // Un appui ordinaire sur Bob, resté dans la bande : doit épingler.
+    // Un appui ordinaire sur Bob, resté dans la grille : doit épingler.
     await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
 
     await waitFor(() => {
@@ -2208,18 +2253,15 @@ describe('CallScreen, plein écran', () => {
   // tuile qui commençait dans la bande, et exerce la même résolution qui
   // cherchait autrefois `fullscreenTile` au-delà de `layout.stage`.
   it('résout la tuile plein écran même quand la cible a dû d’abord être épinglée depuis la bande', async () => {
-    // Identités choisies pour que la règle de scène ordinaire (parole égale,
-    // `compareStable` départage par identité) place Ada sur la scène et Bob
-    // dans la bande.
+    // Trois cellules dans la grille au départ, aucune sur une scène : c'est
+    // précisément ce qui rend l'épinglage OBLIGATOIRE avant le plein écran.
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => {
-      expect(
-        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
-      ).toBeTruthy();
-      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-bob:camera')).toBeTruthy();
     });
 
     await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
@@ -2228,6 +2270,8 @@ describe('CallScreen, plein écran', () => {
         within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
       ).toBeTruthy();
     });
+    // Ada, elle, redescend dans la bande du mode `focus`.
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
 
@@ -2250,11 +2294,10 @@ describe('CallScreen, plein écran, sortie', () => {
   it('sort du plein écran par un simple appui, et retrouve alors la totalité de la barre', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-ada:camera');
     // Rien n'est atteignable en plein écran : ni la barre, ni le bouton pour
     // quitter la séance — c'est précisément ce qu'une revue de branche avait
     // trouvé risqué (voir le describe « enfermement » plus bas).
@@ -2265,7 +2308,8 @@ describe('CallScreen, plein écran, sortie', () => {
 
     // La sortie est TOTALE, en un seul appui : bande ET barre entière
     // reviennent ensemble, sept boutons compris — aucun état intermédiaire où
-    // seule une partie de l'écran mènerait à la sortie.
+    // seule une partie de l'écran mènerait à la sortie. La bande, et non la
+    // grille : Ada reste épinglée, la sortie du plein écran ne désépingle pas.
     await waitFor(() => {
       expect(screen.getByTestId('filmstrip')).toBeTruthy();
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
@@ -2283,21 +2327,12 @@ describe('CallScreen, plein écran, sortie', () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() =>
-      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy(),
+      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-bob:camera')).toBeTruthy(),
     );
 
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
-      ).toBeTruthy();
-    });
-    expect(screen.getByTestId('pin-marker')).toBeTruthy();
-
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-bob:camera');
 
     // La sortie, sur la même tuile.
     await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
@@ -2328,13 +2363,13 @@ describe('CallScreen, plein écran, enfermement', () => {
   it('laisse le panneau des participants utilisable après un aller-retour par le plein écran', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
 
-    // Plein écran : bande et barre masquées, `participants-toggle` compris —
+    // Plein écran : grille et barre masquées, `participants-toggle` compris —
     // rien n'est atteignable tant qu'on n'en est pas sorti.
-    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
-    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await enterFullscreen('u-ada:camera');
+    expect(screen.queryByTestId('grid')).toBeNull();
     expect(screen.queryByTestId('participants-toggle')).toBeNull();
 
     // La sortie : un appui, où qu'il porte sur l'unique tuile affichée.

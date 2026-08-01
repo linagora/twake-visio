@@ -2,20 +2,10 @@ import { VideoTrack } from '@livekit/react-native';
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
 import React from 'react';
 
-import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
+import { GRID_GAP, type Box } from 'src/call/grid';
+import type { CallLayout, StripAxis, VideoTrackRef, Tile } from 'src/call/layout';
 import { tokens } from 'src/ui/tokens';
 import { CallStage } from './stage';
-
-// `require`, jamais `import * as RN` : ce dernier passe par
-// `_interopRequireWildcard`, qui COPIE l'objet du module pour en faire un
-// espace de noms — `stage.tsx` lit lui `useWindowDimensions` sur l'objet BRUT
-// que `require` renvoie directement. Espionner la copie ne touche donc jamais
-// ce que `stage.tsx` appelle : mesuré, la copie répond au mock, `stage.tsx`
-// continue de lire la vraie implémentation. `require` renvoie le même objet
-// aux deux endroits, puisque le registre de modules de Jest le met en cache
-// par chemin résolu.
-/* eslint-disable-next-line @typescript-eslint/no-require-imports */
-const RN: typeof import('react-native') = require('react-native');
 
 // Ce que ces tests peuvent montrer, et ce qu'ils ne peuvent pas : `VideoTrack`
 // est un bouchon qui ne rend rien (voir `__mocks__/@livekit/react-native.ts`).
@@ -44,8 +34,32 @@ function tile(key: string, overrides: Partial<Tile> = {}): Tile {
   };
 }
 
-function layout(stage: Tile, filmstrip: readonly Tile[] = [], pinned = false): CallLayout {
-  return { stage, pinned, filmstrip };
+// Le mode `focus` : une scène, une bande. Nommé par le mode qu'il fabrique —
+// il n'y a plus de disposition « par défaut ».
+function layout(
+  focus: Tile,
+  filmstrip: readonly Tile[] = [],
+  pinned = false,
+  // `'row'` par défaut — la bande sous la scène, ce que rend une boîte de
+  // téléphone en portrait. Les tests d'axe le font varier explicitement ; tous
+  // les autres n'ont aucune raison de s'en occuper.
+  stripAxis: StripAxis = 'row',
+): CallLayout {
+  return { mode: 'focus', focus, pinned, stripAxis, filmstrip };
+}
+
+// Le mode `grid`. Les dimensions sont celles que `packGrid` rend pour cette
+// forme sur la boîte de couverture en portrait ; aucun test de ce fichier ne
+// les recalcule — c'est le travail de `grid.spec.ts` — ils gardent seulement
+// que la coquille les POSE telles quelles.
+function gridLayout(
+  tiles: readonly Tile[],
+  columns = 1,
+  overflow = 0,
+  tileWidth = 435,
+  tileHeight = 244.6875,
+): CallLayout {
+  return { mode: 'grid', columns, tileWidth, tileHeight, tiles, overflow };
 }
 
 // Quatre gestes distincts désormais, un par surface : la plupart des tests de
@@ -58,21 +72,25 @@ function layout(stage: Tile, filmstrip: readonly Tile[] = [], pinned = false): C
 // tests d'avant continuent de voir la disposition ordinaire sans le passer.
 type RenderStageOptions = {
   readonly onPressStageTile?: () => void;
-  readonly onPressFilmstripTile?: (key: string) => void;
+  readonly onPinTile?: (key: string) => void;
   readonly onUnpinTile?: () => void;
   readonly onExitFullscreen?: () => void;
   readonly fullscreenTile?: Tile | null;
+  readonly onMeasureBox?: (box: Box) => void;
 };
 
 function renderStage(
-  layoutValue: CallLayout,
+  // `null` = la mesure n'est pas encore arrivée. Le défaut est une disposition
+  // réelle : seul le bloc « mesure » plus bas fait varier ce cas.
+  layoutValue: CallLayout | null,
   options: RenderStageOptions = {},
 ): ReturnType<typeof render> {
   return render(
     <CallStage
       layout={layoutValue}
+      onMeasureBox={options.onMeasureBox ?? jest.fn()}
       onPressStageTile={options.onPressStageTile ?? jest.fn()}
-      onPressFilmstripTile={options.onPressFilmstripTile ?? jest.fn()}
+      onPinTile={options.onPinTile ?? jest.fn()}
       onUnpinTile={options.onUnpinTile ?? jest.fn()}
       onExitFullscreen={options.onExitFullscreen ?? jest.fn()}
       fullscreenTile={options.fullscreenTile ?? null}
@@ -211,15 +229,15 @@ describe('gestes de tuile', () => {
   });
 
   it('épingle la vignette de la bande qu’on touche, avec sa clé', async () => {
-    const onPressFilmstripTile = jest.fn();
+    const onPinTile = jest.fn();
 
     await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), {
-      onPressFilmstripTile,
+      onPinTile,
     });
 
     await fireEvent.press(screen.getByTestId('tile-ada:camera'));
 
-    expect(onPressFilmstripTile).toHaveBeenCalledWith('ada:camera');
+    expect(onPinTile).toHaveBeenCalledWith('ada:camera');
   });
 
   // Chaque site d'appel a son propre geste : sans CE test, une implémentation
@@ -228,21 +246,21 @@ describe('gestes de tuile', () => {
   // chacun n'observant qu'un seul site à la fois.
   it('ne câble jamais le même geste aux deux surfaces', async () => {
     const onPressStageTile = jest.fn();
-    const onPressFilmstripTile = jest.fn();
+    const onPinTile = jest.fn();
 
     await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), {
       onPressStageTile,
-      onPressFilmstripTile,
+      onPinTile,
     });
 
     await fireEvent.press(screen.getByTestId('tile-bob:camera'));
 
     expect(onPressStageTile).toHaveBeenCalledTimes(1);
-    expect(onPressFilmstripTile).not.toHaveBeenCalled();
+    expect(onPinTile).not.toHaveBeenCalled();
 
     await fireEvent.press(screen.getByTestId('tile-ada:camera'));
 
-    expect(onPressFilmstripTile).toHaveBeenCalledWith('ada:camera');
+    expect(onPinTile).toHaveBeenCalledWith('ada:camera');
     // Toujours une seule fois : l'appui sur la bande n'a pas, en secret,
     // rappelé aussi le geste de la scène.
     expect(onPressStageTile).toHaveBeenCalledTimes(1);
@@ -457,54 +475,34 @@ describe('cadrage par source', () => {
   });
 });
 
-// L'orientation se lit sur les DIMENSIONS de la fenêtre, jamais sur une API
-// d'orientation : sur un pliable elles changent sans rotation. Mesuré sur Pixel
-// 10 Pro Fold — couverture 1080×2364, écran interne 2076×2152.
-describe('orientation', () => {
-  it('empile la bande sous la scène en portrait', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 400,
-      height: 800,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+// L'axe de la bande n'est plus lu ici : il ARRIVE dans `layout.stripAxis`,
+// décidé par `selectLayout` en comparant le rapport de la BOÎTE MESURÉE à
+// `TILE_ASPECT` — jamais `width > height`, jamais `useWindowDimensions()`.
+// Cette coquille ne décide rien ; ces tests gardent qu'elle obéit, et à cinq
+// endroits distincts.
+describe('axe de la bande', () => {
+  it('empile la bande sous la scène quand l’axe est la rangée', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'row'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
   });
 
-  it('range la bande en colonne sur le côté en paysage', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 800,
-      height: 400,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+  it('range la bande en colonne sur le côté quand l’axe est la colonne', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'column'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', false);
   });
 });
 
-// Le brief ne prouve que le sens de DÉFILEMENT du ScrollView (`horizontal`),
-// jamais la direction dans laquelle ses propres vignettes s'empilent : une
-// implémentation qui basculerait `horizontal` correctement tout en laissant
-// `filmstripContentColumn` en `flexDirection: 'row'` — le même défaut qui a
-// échappé à la tâche 5 avec des tests homogènes — passe les deux tests
-// ci-dessus sans broncher. Vérifié empiriquement : 0 rouge sous cette
-// mutation avant l'ajout de ce bloc.
-describe('axe de la bande, pas seulement sens de défilement', () => {
-  it('garde les vignettes en rangée dans le contenu défilable, en portrait', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 400,
-      height: 800,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+// Le sens de DÉFILEMENT du `ScrollView` (`horizontal`) ne dit rien de la
+// direction dans laquelle ses propres vignettes s'empilent : une implémentation
+// qui basculerait `horizontal` correctement tout en laissant
+// `filmstripContentColumn` en `flexDirection: 'row'` passerait les deux tests
+// ci-dessus sans broncher. Mesuré : 0 rouge sous cette mutation avant l'ajout
+// de ce bloc.
+describe('axe du contenu défilable, pas seulement sens de défilement', () => {
+  it('garde les vignettes en rangée dans le contenu défilable', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'row'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'contentContainerStyle',
@@ -512,15 +510,8 @@ describe('axe de la bande, pas seulement sens de défilement', () => {
     );
   });
 
-  it('bascule les vignettes en colonne dans le contenu défilable, en paysage', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 800,
-      height: 400,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+  it('bascule les vignettes en colonne dans le contenu défilable', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'column'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'contentContainerStyle',
@@ -529,56 +520,34 @@ describe('axe de la bande, pas seulement sens de défilement', () => {
   });
 });
 
-// Rien dans les tests du brief n'inspecte le conteneur COMMUN à la scène et à
-// la bande : une implémentation qui ferait basculer `filmstrip` en colonne
-// sans jamais mettre `flexDirection: 'row'` sur le conteneur qui les
-// enveloppe tous les deux passe les deux tests d'« orientation » ci-dessus —
-// la bande obéit, seule, à un côté qui ne s'est pas élargi. Vérifié
-// empiriquement : 0 rouge sous cette mutation avant l'ajout de ce bloc.
-describe('la scène reçoit la place libérée en paysage', () => {
-  it('garde la scène et la bande empilées en colonne, en portrait', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 400,
-      height: 800,
-      scale: 1,
-      fontScale: 1,
-    });
+// Rien dans les blocs ci-dessus n'inspecte le conteneur COMMUN à la scène et à
+// la bande : une implémentation qui ferait basculer la bande en colonne sans
+// jamais mettre `flexDirection: 'row'` sur la racine qui les enveloppe toutes
+// deux passe les quatre tests précédents — la bande obéit, seule, à un côté
+// qui ne s'est pas élargi. Mesuré : 0 rouge sous cette mutation avant l'ajout
+// de ce bloc.
+describe('la scène reçoit la place libérée', () => {
+  it('garde la scène et la bande empilées en colonne quand l’axe est la rangée', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'row'));
 
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
-
-    expect(screen.getByTestId('active-speaker').parent).not.toHaveStyle({ flexDirection: 'row' });
+    expect(screen.getByTestId('stage-root')).not.toHaveStyle({ flexDirection: 'row' });
   });
 
-  it('met la scène et la bande côte à côte, pour que la scène garde toute la hauteur, en paysage', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 800,
-      height: 400,
-      scale: 1,
-      fontScale: 1,
-    });
+  it('met la scène et la bande côte à côte quand l’axe est la colonne', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'column'));
 
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
-
-    expect(screen.getByTestId('active-speaker').parent).toHaveStyle({ flexDirection: 'row' });
+    expect(screen.getByTestId('stage-root')).toHaveStyle({ flexDirection: 'row' });
   });
 });
 
 // Aucun test ci-dessus n'observe la DIMENSION fixe que la bande et sa vignette
-// échangent en paysage — seulement l'AXE (`horizontal`, `flexDirection`). Or
-// c'est précisément l'échange largeur ↔ hauteur de `filmstripColumn` et
-// `thumbnailTileColumn` qui rend sa hauteur à la scène, le travail annoncé par
-// le titre du commit `8842d97` : une implémentation qui basculerait l'axe sans
-// jamais libérer 96 dp de hauteur passerait tous les blocs précédents.
+// échangent — seulement l'AXE. Or c'est précisément l'échange largeur ↔ hauteur
+// de `filmstripColumn` et `thumbnailTileColumn` qui rend sa hauteur à la scène :
+// une implémentation qui basculerait l'axe sans jamais libérer 96 dp de hauteur
+// passerait tous les blocs précédents.
 describe('la bande et sa vignette échangent une dimension fixe, pas seulement un axe', () => {
-  it('fixe la hauteur de la bande et la largeur de la vignette, en portrait', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 400,
-      height: 800,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+  it('fixe la hauteur de la bande et la largeur de la vignette, en rangée', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'row'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'style',
@@ -587,21 +556,66 @@ describe('la bande et sa vignette échangent une dimension fixe, pas seulement u
     expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ width: 128 });
   });
 
-  it('fixe la largeur de la bande et la hauteur de la vignette, en paysage', async () => {
-    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({
-      width: 800,
-      height: 400,
-      scale: 1,
-      fontScale: 1,
-    });
-
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+  it('fixe la largeur de la bande et la hauteur de la vignette, en colonne', async () => {
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')], false, 'column'));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'style',
       expect.objectContaining({ width: 96 }),
     );
     expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ height: 96 });
+  });
+});
+
+// La mesure elle-même. Elle n'existe pas sous Jest — RNTL ne dispose aucune
+// vue, donc `onLayout` ne part jamais tout seul : chaque test qui en a besoin
+// la déclenche à la main, exactement comme la première trame le ferait sur
+// appareil.
+describe('mesure de la boîte', () => {
+  it('ne rend aucune tuile tant que la mesure n’est pas arrivée', async () => {
+    await renderStage(null);
+
+    expect(screen.queryByTestId('active-speaker')).toBeNull();
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+    expect(VideoTrack).not.toHaveBeenCalled();
+  });
+
+  it('porte quand même la racine mesurable, sans quoi la mesure n’arriverait jamais', async () => {
+    // Le piège exact : rendre `null` en entier tant que la boîte est inconnue
+    // retire du même coup le `onLayout` qui la ferait connaître. L'écran reste
+    // alors vide pour toujours, et aucun test de disposition ne le voit.
+    await renderStage(null);
+
+    expect(screen.getByTestId('stage-root')).toBeTruthy();
+    expect(screen.getByTestId('stage-root')).toHaveProp('onLayout', expect.any(Function));
+  });
+
+  it('remonte la boîte que le système lui donne, sans la retoucher', async () => {
+    const onMeasureBox = jest.fn();
+
+    await renderStage(layout(tile('bob:camera')), { onMeasureBox });
+    await fireEvent(screen.getByTestId('stage-root'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 443, height: 900 } },
+    });
+
+    expect(onMeasureBox).toHaveBeenCalledWith({ width: 443, height: 900 });
+  });
+
+  it('remonte aussi la mesure en plein écran, où la boîte ne change pas de sens', async () => {
+    // Le `onLayout` est posé sur la racine COMMUNE aux trois dispositions.
+    // Le poser dans chaque branche le ferait disparaître de celle qu'on
+    // oublierait — et le plein écran est justement celle qu'on oublie.
+    const onMeasureBox = jest.fn();
+
+    await renderStage(layout(tile('bob:camera')), {
+      onMeasureBox,
+      fullscreenTile: tile('solo:camera'),
+    });
+    await fireEvent(screen.getByTestId('stage-root'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 500 } },
+    });
+
+    expect(onMeasureBox).toHaveBeenCalledWith({ width: 300, height: 500 });
   });
 });
 
@@ -632,14 +646,109 @@ it('donne à chaque tuile de quoi remplir son pressable, sans quoi la bande est 
   expect(screen.getByTestId('tile-bob:camera')).toHaveStyle({ flex: 1 });
 });
 
-// Garde contre la fuite que `jest.restoreAllMocks()`, dans le `beforeEach`
-// ci-dessus, referme : sans lui, ce test — qui ne pose lui-même AUCUNE
-// dimension — hérite du dernier `800×400` posé par le test paysage
-// précédent et lit `horizontal: false`. Placé volontairement en dernier, tout
-// de suite après un bloc paysage, pour que l'ordre de déclaration par défaut
-// de Jest le fasse mordre de façon fiable si la fuite revient.
-it('ne pose aucune dimension et voit donc le préréglage portrait du banc de test', async () => {
-  await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+// La grille : aucune scène, aucune bande, des cellules toutes de la même
+// taille. Ce que ces tests gardent est le CÂBLAGE — combien de cellules, dans
+// quelles rangées, avec quelles dimensions, sur quel geste — et jamais qu'une
+// image est apparue : `VideoTrack` est un bouchon qui ne rend rien.
+describe('mode grille', () => {
+  it('pose une cellule par tuile, et ni scène ni bande', async () => {
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera'), tile('bob:camera')], 1));
 
-  expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
+    expect(screen.getByTestId('grid')).toBeTruthy();
+    expect(
+      ['me:camera', 'ada:camera', 'bob:camera'].map((key) => screen.queryByTestId(`tile-${key}`)),
+    ).not.toContain(null);
+    // La grille REMPLACE la scène et la bande, elle ne s'y ajoute pas.
+    expect(screen.queryByTestId('active-speaker')).toBeNull();
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+  });
+
+  it('découpe les cellules en rangées d’une colonne quand la grille en compte une', async () => {
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1));
+
+    expect(screen.getAllByTestId(/^grid-row-/)).toHaveLength(2);
+  });
+
+  it('les découpe en rangées de deux quand la grille en compte deux', async () => {
+    // Le MÊME nombre de tuiles, l'autre valeur de `columns` : une
+    // implémentation qui ignorerait `columns` et rendrait une rangée par tuile
+    // — ou une seule rangée pour tout — passerait l'un des deux tests seul.
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera'), tile('bob:camera')], 2));
+
+    expect(screen.getAllByTestId(/^grid-row-/)).toHaveLength(2);
+    // Et le REMPLISSAGE, pas seulement le compte : les deux premières tuiles
+    // partagent la première rangée, la troisième ouvre la seconde.
+    const first = screen.getByTestId('grid-row-0');
+    const second = screen.getByTestId('grid-row-1');
+    expect(within(first).getByTestId('tile-me:camera')).toBeTruthy();
+    expect(within(first).getByTestId('tile-ada:camera')).toBeTruthy();
+    expect(within(second).getByTestId('tile-bob:camera')).toBeTruthy();
+  });
+
+  it('pose sur chaque cellule les dimensions que la sélection a calculées', async () => {
+    // La seule forme de style dynamique du fichier, et elle est obligatoire :
+    // ces deux nombres descendent de la boîte mesurée et ne peuvent pas être
+    // statiques. Des valeurs volontairement distinctes de celles du défaut,
+    // pour qu'une implémentation qui poserait une taille figée échoue.
+    await renderStage(gridLayout([tile('me:camera')], 1, 0, 300, 168.75));
+
+    expect(screen.getByTestId('tile-me:camera')).toHaveStyle({ width: 300, height: 168.75 });
+  });
+
+  it('remplit chaque cellule plutôt que d’y laisser du noir', async () => {
+    // `cover` et non `contain` : la cellule EST déjà au rapport du gabarit, donc
+    // le rognage est marginal — et le vide, lui, appartient à la marge de la
+    // page, jamais à l'intérieur d'une tuile.
+    await renderStage(gridLayout([tile('me:camera')], 1));
+
+    expect(propsFor('ts-me:camera')?.objectFit).toBe('cover');
+  });
+
+  it('épingle la cellule qu’on touche, avec sa clé, et pas une autre', async () => {
+    const onPinTile = jest.fn();
+
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1), { onPinTile });
+
+    await fireEvent.press(screen.getByTestId('tile-ada:camera'));
+
+    expect(onPinTile).toHaveBeenCalledWith('ada:camera');
+    expect(onPinTile).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne bascule jamais le plein écran depuis une cellule', async () => {
+    // Les deux gestes restent distincts : une cellule ÉPINGLE, seule la tuile
+    // de scène du mode `focus` bascule le plein écran. Sans ce test, un site
+    // d'appel câblé sur le mauvais rappel passerait celui d'au-dessus.
+    const onPressStageTile = jest.fn();
+
+    await renderStage(gridLayout([tile('me:camera')], 1), { onPressStageTile });
+
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    expect(onPressStageTile).not.toHaveBeenCalled();
+  });
+
+  it('ne rend jamais le badge d’épinglage dans une cellule', async () => {
+    // Une tuile épinglée force le mode `focus` : aucune cellule de grille n'est
+    // jamais celle qui est épinglée. Explicite plutôt que supposé.
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1));
+
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
+  });
+
+  it('garde la racine en colonne : une grille n’a pas de bande à mettre sur le côté', async () => {
+    await renderStage(gridLayout([tile('me:camera')], 1));
+
+    expect(screen.getByTestId('stage-root')).not.toHaveStyle({ flexDirection: 'row' });
+  });
+
+  it('pose la même valeur en marge de page qu’en écart entre deux cellules', async () => {
+    // C'est le nombre que `selectLayout` retire de la boîte mesurée avant
+    // d'empaqueter. Les deux ne peuvent pas diverger sans que les cellules
+    // débordent de la page ou lui laissent une marge qu'elle n'a pas comptée.
+    await renderStage(gridLayout([tile('me:camera')], 1));
+
+    expect(screen.getByTestId('grid')).toHaveStyle({ padding: GRID_GAP, gap: GRID_GAP });
+    expect(screen.getByTestId('grid-row-0')).toHaveStyle({ gap: GRID_GAP });
+  });
 });

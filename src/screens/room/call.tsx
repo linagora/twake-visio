@@ -23,8 +23,9 @@ import {
 } from 'src/call/audioRoute';
 import { createCallSession } from 'src/call/connection';
 import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
+import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, raisedHands } from 'src/call/hands';
-import type { ParticipantView } from 'src/call/layout';
+import type { ParticipantView, Tile } from 'src/call/layout';
 import {
   listCameras,
   readActiveCameraId,
@@ -241,10 +242,24 @@ export function CallScreen(): React.ReactElement {
   // chose. Résolue plus bas, une fois `layout` connu — voir `fullscreenTile`.
   const [fullscreen, setFullscreen] = useState<string | null>(null);
 
+  // La boîte réellement offerte à la scène, mesurée par `CallStage` et remontée
+  // ici — jamais `useWindowDimensions()`, qui ignore la barre de contrôle, les
+  // encoches et les trois bandeaux. `null` tant que la première mesure n'est
+  // pas arrivée : une trame.
+  //
+  // Elle vit ici et non dans `CallStage` parce que c'est ici qu'on appelle
+  // `useCallLayout`, qui en a besoin. Contrairement à l'épinglage, la perdre au
+  // démontage du panneau des participants est sans conséquence : elle est
+  // remesurée en une trame au remontage.
+  const [box, setBox] = useState<Box | null>(null);
+
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
-  const layout = useCallLayout(session.getRoom(), facing, pin);
+  //
+  // `null` tant que la boîte l'est : il n'y a pas de disposition possible sans
+  // savoir dans quoi on dispose.
+  const layout = useCallLayout(session.getRoom(), facing, box, pin);
 
   // Résolue contre la disposition présente, comme l'épinglage : une tuile qui
   // disparaît (la personne quitte la séance) ne laisse pas l'écran figé sur du
@@ -252,10 +267,17 @@ export function CallScreen(): React.ReactElement {
   // pas une décision de disposition — `selectLayout` n'a pas à connaître cette
   // notion d'écran, donc elle ne passe jamais par lui : on sait déjà quelle
   // tuile, on choisit seulement de ne montrer qu'elle.
+  // Toutes les tuiles que la disposition présente montre, quel que soit son
+  // mode : c'est contre elles, et rien d'autre, que `fullscreen` est résolu.
+  const visibleTiles: readonly Tile[] =
+    layout === null
+      ? []
+      : layout.mode === 'grid'
+        ? layout.tiles
+        : [layout.focus, ...layout.filmstrip];
+
   const fullscreenTile =
-    fullscreen === null
-      ? null
-      : ([layout.stage, ...layout.filmstrip].find((t) => t.key === fullscreen) ?? null);
+    fullscreen === null ? null : (visibleTiles.find((t) => t.key === fullscreen) ?? null);
 
   // I4 : sans cet ajustement, `fullscreen` reste posé indéfiniment même quand
   // sa cible ne résout plus — le même principe de résolution que l'épinglage
@@ -278,14 +300,15 @@ export function CallScreen(): React.ReactElement {
     setFullscreen(null);
   }
 
-  // Bande : un appui épingle la vignette touchée. Ce n'est plus un
-  // aller-retour — une vignette de la bande n'est, par construction
-  // (`src/call/layout.ts:213`), jamais celle déjà épinglée : elle a déjà
-  // quitté la bande pour la scène. L'ambiguïté que corrigeait l'ancien
-  // ternaire (« épingler ou désépingler selon l'état courant ») ne se
-  // présente donc plus ici — désépingler est maintenant le geste du badge
-  // seul, voir `handleUnpinTile`.
-  const handlePressFilmstripTile = useCallback((key: string): void => {
+  // Un appui sur une tuile qui n'est pas la scène — vignette de bande en mode
+  // `focus`, cellule en mode `grid` — épingle celle qu'on touche. Ce n'est pas
+  // un aller-retour : une tuile épinglée force le mode `focus` et occupe la
+  // scène, donc aucune des deux surfaces qui appellent ceci ne peut jamais
+  // porter la tuile déjà épinglée. L'ambiguïté que corrigeait l'ancien ternaire
+  // (« épingler ou désépingler selon l'état courant ») ne se présente donc pas
+  // — désépingler est le geste du badge, et de lui seul : voir
+  // `handleUnpinTile`.
+  const handlePinTile = useCallback((key: string): void => {
     setPin(key);
   }, []);
 
@@ -295,9 +318,18 @@ export function CallScreen(): React.ReactElement {
   // bande et le badge). `layout.stage.key` vient de la fermeture, pas d'un
   // paramètre : ce geste n'a rien d'autre à dire que « la tuile qui EST sur
   // scène en ce moment ».
+  //
+  // `stageKey` vaut `null` tant que la mesure n'est pas arrivée, ET en mode
+  // `grid` — deux états où aucune tuile de SCÈNE n'est rendue, donc où ce
+  // rappel n'est joignable par rien : la grille câble ses cellules sur
+  // `handlePinTile`, jamais ici. La garde existe pour le typage, jamais pour un
+  // cas atteint en pratique — même précédent que
+  // `if (account === null || roomId === null)` sur les trois actions de
+  // modération plus bas.
+  const stageKey = layout !== null && layout.mode === 'focus' ? layout.focus.key : null;
   const handlePressStageTile = useCallback((): void => {
-    setFullscreen(layout.stage.key);
-  }, [layout.stage.key]);
+    if (stageKey !== null) setFullscreen(stageKey);
+  }, [stageKey]);
 
   // Le badge d'épinglage (`stage.tsx`), seul et unique geste qui désépingle
   // désormais — plus jamais un second appui sur la scène, qui bascule le
@@ -824,8 +856,9 @@ export function CallScreen(): React.ReactElement {
         // grille du web rend chaque visage illisible sur un écran de téléphone.
         <CallStage
           layout={layout}
+          onMeasureBox={setBox}
           onPressStageTile={handlePressStageTile}
-          onPressFilmstripTile={handlePressFilmstripTile}
+          onPinTile={handlePinTile}
           onUnpinTile={handleUnpinTile}
           onExitFullscreen={handleExitFullscreen}
           fullscreenTile={fullscreenTile}
