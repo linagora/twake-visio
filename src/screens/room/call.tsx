@@ -594,19 +594,17 @@ export function CallScreen(): React.ReactElement {
     reactionStore.send(key).catch(() => undefined);
   };
 
-  // Invariant défensif, gardé après la simplification des gestes : ouvrir ce
-  // panneau exige toujours d'être sorti du plein écran d'abord. Ce n'est plus
-  // atteignable par l'interface — `participants-toggle` vit dans la barre de
-  // contrôle, elle-même masquée tant que `fullscreenTile` n'est pas `null`
-  // (voir plus bas) — mais l'appel reste : bon marché, et il garde
-  // `participantsOpen` et le plein écran mutuellement exclusifs PAR
-  // CONSTRUCTION plutôt que par la seule convention de la barre. C'est ce qui
-  // évitait, avant ce lot, l'enfermement total qu'une revue de branche avait
   // LE seul chemin qui change de panneau, et il sort du plein écran quoi qu'il
   // arrive.
   //
   // C'était deux lignes, une par ouvreur, que chaque nouvel appelant devait
-  // penser à écrire. Mesuré après coup : les supprimer TOUTES LES DEUX laissait
+  // penser à écrire. Elles gardaient l'écran de l'enfermement total qu'une
+  // revue de branche avait mesuré : ouvrir un panneau démontait `CallStage`,
+  // qui portait alors le seul geste capable de sortir du plein écran, et le
+  // minuteur de l'ancien `chromeVisible` continuait de tourner sans qu'aucun
+  // bouton ne reste atteignable pour l'arrêter.
+  //
+  // Mesuré après coup : les supprimer TOUTES LES DEUX laissait
   // **343 tests sur 343 au vert**, parce que rien ne peut les atteindre — les
   // commandes qui changent de panneau vivent dans la barre, elle-même non
   // rendue en plein écran, et c'est CE fait-là qui protège l'écran
@@ -624,12 +622,11 @@ export function CallScreen(): React.ReactElement {
     setPanel(next);
   };
 
-  // mesuré : ouvrir le panneau démontait `CallStage`, qui portait alors le
-  // seul geste capable de sortir du plein écran, et le minuteur de l'ancien
-  // `chromeVisible` continuait de tourner sans qu'aucun bouton ne reste
-  // atteignable pour l'arrêter. Seulement à l'OUVERTURE : le fermer n'a
-  // jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce sens serait
-  // un no-op silencieux — `fullscreen` est déjà `null` à ce moment-là.
+  // Une bascule, donc un ternaire : le même bouton ouvre et referme. Passer par
+  // `openPanel` dans les deux sens est volontairement redondant à la fermeture
+  // — `fullscreen` y vaut déjà `null` — mais un ouvreur qui contournerait la
+  // porte pour « optimiser » est exactement ce que cette porte existe pour
+  // empêcher.
   const handleToggleParticipants = (): void => {
     openPanel((current) => (current === 'participants' ? 'none' : 'participants'));
   };
