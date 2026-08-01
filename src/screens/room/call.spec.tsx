@@ -2037,6 +2037,43 @@ describe('CallScreen, plein écran', () => {
     expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
   });
 
+  // Trou trouvé par vérification par mutation de cette même tâche : retirer
+  // `setChromeVisible(false)` de la guérison automatique d'I4 (en gardant
+  // `setFullscreen(null)`) laissait les 95 tests de ce fichier verts, parce
+  // qu'aucun scénario existant ne posait `chromeVisible` à `true` avant le
+  // départ de la cible. C'est pourtant exactement la même faute qu'E4 corrige
+  // pour une sortie volontaire (`handleExitFullscreen`) : sans elle, un
+  // PROCHAIN plein écran — sur n'importe quelle autre tuile — hériterait des
+  // commandes déjà visibles, affichées sans le moindre appui.
+  it('repart aussi commandes masquées pour un plein écran ultérieur, après une guérison automatique', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+
+    // Bob en plein écran, commandes révélées par un appui.
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
+
+    // Bob part PENDANT que les commandes sont visibles : la guérison
+    // automatique d'I4 doit désarmer `chromeVisible` en même temps que
+    // `fullscreen`.
+    mockRoom.remoteParticipants.delete('u-bob');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Un plein écran FRAIS, sur Ada cette fois : doit repartir commandes
+    // masquées, comme tout premier plein écran.
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+
   // Trou trouvé par la revue de la tâche 3 : muter la résolution de
   // `fullscreenTile` de `[layout.stage, ...layout.filmstrip]` à
   // `[layout.stage]` laissait les 688 tests de la branche verts, parce
