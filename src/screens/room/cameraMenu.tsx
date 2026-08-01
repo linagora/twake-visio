@@ -10,7 +10,7 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
-import { MenuCheck } from 'src/screens/room/menuCheck';
+import { SheetCheck } from 'src/screens/room/sheetCheck';
 import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type CameraMenuProps = {
@@ -67,7 +67,7 @@ export function CameraMenu({
             // à passer pour la couleur ordinaire.
             leading={
               camera.deviceId === activeDeviceId ? (
-                <MenuCheck testID={`camera-check-${camera.deviceId}`} />
+                <SheetCheck testID={`camera-check-${camera.deviceId}`} />
               ) : undefined
             }
             // Composé par i18next, jamais en JavaScript : une chaîne assemblée

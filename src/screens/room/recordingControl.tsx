@@ -23,7 +23,7 @@ export type RecordingControlProps = {
 //
 // Pas de `leading` : `SheetRow` insère ce nœud tel quel, sans lui donner de
 // couleur — c'est pour cette raison que le glyphe de coche porte sa propre
-// couleur explicite ailleurs (`menuCheck.tsx`, réutilisé par `cameraMenu.tsx`
+// couleur explicite ailleurs (`sheetCheck.tsx`, réutilisé par `cameraMenu.tsx`
 // et `audioOutputControl.tsx`). Ici, l'identité passe par le libellé et sa
 // couleur, jamais par une icône.
 export function RecordingControl({

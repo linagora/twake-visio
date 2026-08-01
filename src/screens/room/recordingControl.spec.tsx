@@ -54,7 +54,7 @@ describe('RecordingControl', () => {
     // `titleStyle` dans le tableau de styles qu'il passe à son `Text` interne
     // (`testID` suffixé `-title`, jamais celui de la racine) — la couleur
     // explicite gagne, mais seulement si le composant la pose vraiment. Un
-    // `titleStyle` figé sur `barStyles.menuTitle` (jamais basculé vers la
+    // `titleStyle` figé sur `sheetStyles.rowTitle` (jamais basculé vers la
     // variante danger) passerait quand même le test de libellé ci-dessus :
     // c'est cette variation-là, pas le texte, que ce test protège.
     expect(screen.getByTestId('recording-toggle-title')).toHaveStyle({
@@ -76,7 +76,7 @@ describe('RecordingControl', () => {
     );
 
     expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop');
-    // Le pendant du contrôle ci-dessus, côté arrêt : `menuTitleDanger` est la
+    // Le pendant du contrôle ci-dessus, côté arrêt : `rowTitleDanger` est la
     // seule couleur d'alerte de cette barre qui ne soit pas celle de
     // « quitter » (`controlBar.ts`), et c'est cette phase-ci que §5.3 refuse de
     // griser — la lisibilité de « ça s'arrête » compte donc particulièrement
@@ -101,7 +101,7 @@ describe('RecordingControl', () => {
       expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop');
       // La couleur d'alerte suit `stopping`, pas la seule phase `starting` :
       // sans cette boucle sur les trois autres phases, un `titleStyle` codé en
-      // dur sur `state.phase === 'starting' ? danger : menuTitle` afficherait
+      // dur sur `state.phase === 'starting' ? danger : rowTitle` afficherait
       // la bonne couleur au test précédent tout en repassant en clair ici.
       expect(screen.getByTestId('recording-toggle-title')).toHaveStyle({
         color: tokens.color.dangerDark,

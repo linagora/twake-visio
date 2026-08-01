@@ -12,7 +12,7 @@ import {
   barStyles,
   sheetStyles,
 } from 'src/screens/room/controlBar';
-import { MenuCheck } from 'src/screens/room/menuCheck';
+import { SheetCheck } from 'src/screens/room/sheetCheck';
 import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type AudioOutputControlProps = {
@@ -92,7 +92,7 @@ export function AudioOutputControl({
             key={kind}
             testID={`audio-output-option-${kind}`}
             leading={
-              kind === chosen ? <MenuCheck testID={`audio-output-check-${kind}`} /> : undefined
+              kind === chosen ? <SheetCheck testID={`audio-output-check-${kind}`} /> : undefined
             }
             title={t(audioOutputNameKey(kind))}
             onPress={() => {

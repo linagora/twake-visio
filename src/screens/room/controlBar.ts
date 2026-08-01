@@ -15,34 +15,6 @@ import { tokens } from 'src/ui/tokens';
 // l'ondulation reste ronde.
 export const barStyles = StyleSheet.create({
   button: { margin: 0, width: 44, height: 44, borderRadius: 22 },
-  // Cet écran est sombre dans les deux schémas alors que le thème Paper suit
-  // le schéma système. Un `Menu` laissé intact serait cohérent avec lui-même ;
-  // le piège n'apparaît qu'en forçant la surface sans le texte, ou l'inverse.
-  // Les deux sont donc forcés : 15,86:1.
-  menuContent: { backgroundColor: tokens.color.surfaceDark },
-  menuTitle: { color: tokens.color.textDark },
-  // 8,21:1 sur `surfaceDark` (8,62:1 est `dangerDark` sur `backgroundDark` —
-  // le fond de `call.tsx`, pas celui de ce menu). La seule couleur d'alerte de
-  // cette barre qui ne soit pas celle de « quitter » : elle vit dans un menu,
-  // à deux appuis, donc jamais adjacente au combiné raccroché.
-  menuTitleDanger: { color: tokens.color.dangerDark },
-  // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
-  // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.
-  menuNote: {
-    color: tokens.color.textDark,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-  },
-  // La coche du menu : un glyphe `MaterialCommunityIcons` rendu directement
-  // par `MenuCheck` (`menuCheck.tsx`), partagé par `cameraMenu.tsx` et
-  // `audioOutputControl.tsx`, jamais par la résolution habituelle d'un
-  // `Menu.Item`. Pour un `leadingIcon` fonction, `Icon.tsx` (react-native-paper)
-  // appelle `s({ color, size, direction, testID })`, mais rien n'oblige la
-  // fonction à lire cet argument — la nôtre ne le faisait pas, et un `View`
-  // vide n'a de toute façon ni contenu ni fond à colorer. La couleur est donc
-  // portée ici, explicitement, et jamais celle que Paper calculerait depuis
-  // le thème.
-  check: { color: tokens.color.textDark },
 });
 
 // 16,65:1 sur `backgroundDark`. Aucun `IconButton` de cette barre ne porte
@@ -110,9 +82,11 @@ export const sheetStyles = StyleSheet.create({
     paddingVertical: tokens.spacing.md,
   },
   rowTitle: { color: tokens.color.textDark },
-  // 8,21:1 sur `surfaceDark`. La seule couleur d'alerte de cette barre qui ne
-  // soit pas celle de « quitter » : elle vit dans une feuille, à deux appuis,
-  // donc jamais adjacente au combiné raccroché.
+  // 8,21:1 sur `surfaceDark` (8,62:1 est `dangerDark` sur `backgroundDark` —
+  // le fond de `call.tsx`, pas celui de cette feuille). La seule couleur
+  // d'alerte de cette barre qui ne soit pas celle de « quitter » : elle vit
+  // dans une feuille, à deux appuis, donc jamais adjacente au combiné
+  // raccroché.
   rowTitleDanger: { color: tokens.color.dangerDark },
   // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
   // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.
@@ -121,5 +95,14 @@ export const sheetStyles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.md,
     paddingVertical: tokens.spacing.sm,
   },
+  // La coche de la feuille : un glyphe `MaterialCommunityIcons` rendu
+  // directement par `SheetCheck` (`sheetCheck.tsx`), partagé par
+  // `cameraMenu.tsx` et `audioOutputControl.tsx`, jamais par la résolution
+  // habituelle d'un `Menu.Item`. Pour un `leadingIcon` fonction, `Icon.tsx`
+  // (react-native-paper) appelle `s({ color, size, direction, testID })`,
+  // mais rien n'oblige la fonction à lire cet argument — la nôtre ne le
+  // faisait pas, et un `View` vide n'a de toute façon ni contenu ni fond à
+  // colorer. La couleur est donc portée ici, explicitement, et jamais celle
+  // que Paper calculerait depuis le thème.
   check: { color: tokens.color.textDark },
 });
