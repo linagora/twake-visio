@@ -1907,6 +1907,10 @@ describe('CallScreen, épinglage', () => {
       ).toBeTruthy();
     });
     expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+    // I5 : le seul retour visuel de ce geste. Sans lui, l'épinglage est
+    // silencieux — mesuré par la revue de branche : un appui qui fige la
+    // scène sans que rien à l'écran ne le dise.
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
   });
 
   // E1, la seconde issue. Sans CE test, une implémentation qui poserait
@@ -1922,6 +1926,8 @@ describe('CallScreen, épinglage', () => {
         within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
       ).toBeTruthy();
     });
+    // I5 : le marqueur est là tant que l'épinglage tient.
+    expect(screen.getByTestId('pin-marker')).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
 
@@ -1931,6 +1937,9 @@ describe('CallScreen, épinglage', () => {
       ).toBeTruthy();
     });
     expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+    // Et repart avec le désépinglage : un marqueur qui survivrait mentirait
+    // sur l'état réel de la scène.
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
   });
 });
 

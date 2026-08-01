@@ -36,6 +36,7 @@
   "call.share": "Поделиться ссылкой",
   "call.more": "Ещё",
   "call.muted": "Микрофон выключен",
+  "call.pinned": "Закреплено",
   "call.permissionsDenied": "Для подключения нужен доступ к камере и микрофону",
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",

@@ -1,3 +1,4 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { VideoTrack } from '@livekit/react-native';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -72,6 +73,27 @@ const styles = StyleSheet.create({
     padding: tokens.spacing.xs,
   },
   placeholderText: { color: tokens.color.textDark, textAlign: 'center' },
+  // I5 : le marqueur d'épinglage. Un fond opaque, jamais translucide — sans
+  // lui, le glyphe se pose directement sur une vidéo dont la couleur n'est
+  // connue de personne ici, et `tokens.color.textDark` peut tomber sur du
+  // texte clair filmé, aussi invisible qu'un quasi-noir sur noir. Coin
+  // opposé au nom (`placeholder`, centré) et à la bordure de locuteur
+  // (`speaking`, sur tout le pourtour) : rien ne se recouvre.
+  pinMarkerBadge: {
+    position: 'absolute',
+    top: tokens.spacing.xs,
+    left: tokens.spacing.xs,
+    backgroundColor: tokens.color.surfaceDark,
+    borderRadius: tokens.radius.pill,
+    padding: tokens.spacing.xs,
+  },
+  // Cet écran est sombre dans les deux schémas et `react-native-paper`
+  // l'ignore (`AGENTS.md`) — mais ce glyphe n'est pas un composant Paper : sa
+  // couleur est ce `style` littéral, jamais calculée depuis un thème, donc
+  // rien à contourner ici. 15,86:1 sur `surfaceDark` (calculé, pas copié du
+  // 16,65:1 de `backgroundDark` ailleurs dans ce fichier : les deux fonds
+  // sont proches mais distincts).
+  pinMarkerIcon: { color: tokens.color.textDark },
 });
 
 type VideoTileProps = {
@@ -94,6 +116,14 @@ type VideoTileProps = {
   // même nom, laissait 682 tests verts.
   readonly onTilePress: () => void;
   readonly onTileLongPress: () => void;
+  // I5 : vrai quand CETTE tuile doit porter le marqueur d'épinglage.
+  // Obligatoire plutôt qu'optionnelle à défaut `false`, pour la même raison
+  // que `onTilePress`/`onTileLongPress` juste au-dessus : `CallStage`
+  // instancie `VideoTile` à trois sites d'appel (scène, bande, plein écran),
+  // et un défaut silencieux laisserait un site oublié se comporter par
+  // accident au lieu de forcer une décision. Seule la scène, en disposition
+  // ordinaire, doit jamais valoir `true` — voir `CallStage` plus bas.
+  readonly pinned: boolean;
 };
 
 // Aucune décision ici : la vignette pose ce qu'on lui donne. Tout ce qui se
@@ -105,6 +135,7 @@ function VideoTile({
   size,
   onTilePress,
   onTileLongPress,
+  pinned,
 }: VideoTileProps): React.ReactElement {
   const { t } = useTranslation();
   // La sélection nettoie le nom : il n'y a qu'une absence à traiter, et jamais
@@ -148,6 +179,22 @@ function VideoTile({
             mirror={tile.mirror}
           />
         )}
+        {pinned ? (
+          // I5 : le seul retour visuel qu'un appui d'épinglage produit. Un
+          // `View` pour le fond opaque, un glyphe direct pour l'icône — pas
+          // un `leadingIcon` fonction de Paper, qui ne s'applique de toute
+          // façon qu'à un `Menu.Item` : voir `sheetCheck.tsx` pour le même
+          // choix, motivé par le même précédent (`controlBar.ts`).
+          <View style={styles.pinMarkerBadge}>
+            <MaterialCommunityIcons
+              testID="pin-marker"
+              name="pin"
+              size={16}
+              style={styles.pinMarkerIcon}
+              accessibilityLabel={t('call.pinned')}
+            />
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -213,6 +260,12 @@ export function CallStage({
             size={styles.stageTile}
             onTilePress={() => onPressTile(fullscreenTile.key)}
             onTileLongPress={() => onLongPressTile(fullscreenTile.key)}
+            // I5 : jamais ici, même quand `layout.pinned` vaut `true` pour
+            // cette même tuile. Un appui en plein écran ne signifie jamais
+            // « annuler l'épinglage » — voir le court-circuit de
+            // `handlePressTile` dans `call.tsx`, qui le redirige vers le
+            // rappel des commandes — et un marqueur suggérerait le contraire.
+            pinned={false}
           />
         </View>
       </View>
@@ -232,6 +285,11 @@ export function CallStage({
           size={styles.stageTile}
           onTilePress={() => onPressTile(layout.stage.key)}
           onTileLongPress={() => onLongPressTile(layout.stage.key)}
+          // I5 : la SEULE des trois instanciations de `VideoTile` où ce
+          // marqueur peut apparaître — voir `src/call/layout.ts:213`, dont le
+          // filtre garantit qu'une tuile épinglée ne peut jamais se trouver
+          // dans la bande juste en dessous.
+          pinned={layout.pinned}
         />
       </View>
 
@@ -258,6 +316,12 @@ export function CallStage({
             size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
             onTilePress={() => onPressTile(tile.key)}
             onTileLongPress={() => onLongPressTile(tile.key)}
+            // I5 : jamais dans la bande, par construction — `layout.ts:213`
+            // filtre systématiquement la tuile épinglée hors de `filmstrip`,
+            // donc aucune tuile qui atteint ce site d'appel n'est jamais
+            // elle. Explicite plutôt qu'omis, pour que ce site d'appel décide
+            // lui aussi, au lieu d'hériter un défaut en silence.
+            pinned={false}
           />
         ))}
       </ScrollView>

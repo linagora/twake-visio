@@ -36,6 +36,7 @@
   "call.share": "Link teilen",
   "call.more": "Mehr",
   "call.muted": "Stummgeschaltet",
+  "call.pinned": "Angeheftet",
   "call.permissionsDenied": "Für die Teilnahme sind Kamera- und Mikrofonzugriff erforderlich",
   "call.reconnecting": "Verbindung wird wiederhergestellt…",
   "call.ended": "Die Besprechung ist beendet",

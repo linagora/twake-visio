@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react-native
 import React from 'react';
 
 import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
+import { tokens } from 'src/ui/tokens';
 import { CallStage } from './stage';
 
 // `require`, jamais `import * as RN` : ce dernier passe par
@@ -43,11 +44,8 @@ function tile(key: string, overrides: Partial<Tile> = {}): Tile {
   };
 }
 
-function layout(stage: Tile, filmstrip: readonly Tile[] = []): CallLayout {
-  // Aucun test de ce fichier ne fait varier l'épinglage : `CallStage` n'en tire
-  // pas encore de marqueur (voir `src/call/layout.ts`), donc une valeur fixe
-  // suffit à satisfaire le type sans rien affirmer de faux.
-  return { stage, pinned: false, filmstrip };
+function layout(stage: Tile, filmstrip: readonly Tile[] = [], pinned = false): CallLayout {
+  return { stage, pinned, filmstrip };
 }
 
 // `onPressTile`/`onLongPressTile` sont désormais obligatoires : la plupart des
@@ -287,6 +285,68 @@ describe('plein écran', () => {
     expect(
       within(screen.getByTestId('active-speaker')).getByTestId('tile-ada:camera'),
     ).toBeTruthy();
+  });
+});
+
+// I5 de la revue de branche : un appui simple sur la tuile de scène l'épingle
+// déjà (`handlePressTile` dans `call.tsx`), mais rien ne le montrait — aucun
+// retour visuel. `CallLayout.pinned` porte exactement cette information
+// depuis la tâche 1 (`src/call/layout.ts:215`) mais n'était lue par aucun
+// code de rendu : trois assertions de `layout.spec.ts`, zéro composant. Le
+// marqueur ci-dessous en tire enfin quelque chose à l'écran — et seulement à
+// la scène, en disposition ordinaire : une tuile épinglée est filtrée hors de
+// la bande par construction (`layout.ts:213`), donc la scène est la SEULE
+// surface où le geste peut porter, et le plein écran est un état
+// indépendant, où un appui ne signifie jamais « annuler l'épinglage » (voir
+// le court-circuit de `handlePressTile`).
+describe('marqueur d’épinglage', () => {
+  it('rend le marqueur sur la scène quand la disposition dit qu’elle est épinglée', async () => {
+    await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], true));
+
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
+  });
+
+  it('ne rend aucun marqueur quand rien n’est épinglé', async () => {
+    await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], false));
+
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
+  });
+
+  it('ne rend jamais le marqueur sur une vignette de la bande', async () => {
+    // Une tuile épinglée est filtrée hors de la bande par construction
+    // (`layout.ts:213`) : ce cas ne peut donc pas se produire en pratique,
+    // mais le garder explicite protège le site d'appel de la bande d'un
+    // marqueur qui n'aurait jamais dû lui être câblé.
+    await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], true));
+
+    expect(within(screen.getByTestId('filmstrip')).queryByTestId('pin-marker')).toBeNull();
+  });
+
+  it('ne rend jamais le marqueur en plein écran, même sur la tuile épinglée elle-même', async () => {
+    // La MÊME tuile, épinglée ET en plein écran à la fois : le cas le plus
+    // dur à distinguer, puisque `layout.pinned` vaut `true` ici. Le plein
+    // écran doit quand même gagner — un appui n'y signifie jamais « annuler
+    // l'épinglage », seulement « rappelle les commandes ».
+    const solo = tile('ada:camera');
+
+    await renderStage(layout(solo, [], true), undefined, undefined, solo);
+
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
+  });
+
+  it('porte une couleur explicite issue des tokens', async () => {
+    // Cet écran est sombre dans les deux schémas et `react-native-paper`
+    // l'ignore (`AGENTS.md`) — mais ce glyphe n'est pas un composant Paper :
+    // sa couleur est un `style` littéral, jamais calculée depuis un thème.
+    await renderStage(layout(tile('ada:camera'), [], true));
+
+    expect(screen.getByTestId('pin-marker')).toHaveStyle({ color: tokens.color.textDark });
+  });
+
+  it('porte un accessibilityLabel traduit, jamais une clé nue à l’écran', async () => {
+    await renderStage(layout(tile('ada:camera'), [], true));
+
+    expect(screen.getByTestId('pin-marker')).toHaveProp('accessibilityLabel', 'call.pinned');
   });
 });
 

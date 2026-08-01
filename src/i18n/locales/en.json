@@ -36,6 +36,7 @@
   "call.share": "Share the link",
   "call.more": "More",
   "call.muted": "Muted",
+  "call.pinned": "Pinned",
   "call.permissionsDenied": "Camera and microphone access is required to join",
   "call.reconnecting": "Reconnecting…",
   "call.ended": "The meeting has ended",
