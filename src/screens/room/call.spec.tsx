@@ -929,6 +929,32 @@ describe('CallScreen, échec de modération', () => {
     });
   });
 
+  // Le repli lui-même veut son test. Mesuré : muter `default` vers une autre
+  // clé ne rougissait RIEN sur les 709. Le test « exception inattendue » plus
+  // bas assertait pourtant bien `error.network` — mais il l'atteint par le
+  // `.catch()`, qui pose la clé EN DUR sans jamais traverser
+  // `toApiErrorMessage`. Assertion sur le résultat, branche jamais exercée :
+  // le trou exact que décrit `AGENTS.md`. Il faut une panne de transport
+  // RÉSOLUE en `{ ok: false }`, pas une promesse rejetée.
+  it('garde le repli réseau pour une panne de transport résolue', async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'network' } });
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+    });
+  });
+
   it("affiche aussi l'échec d'une expulsion", async () => {
     // Les trois actions partagent le même défaut avant correctif : ne pas les
     // couvrir toutes les trois reproduirait exactement le trou de l'Important 1.
