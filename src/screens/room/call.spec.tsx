@@ -2245,3 +2245,53 @@ describe('CallScreen, plein écran, rappel des commandes', () => {
     expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
   });
 });
+
+// C1, le constat CRITIQUE de la revue de branche, arbre à l'appui : ouvrir le
+// panneau des participants depuis le plein écran démonte `CallStage`, qui
+// porte le SEUL `Pressable` capable de rappeler les commandes
+// (`handlePressTile`). Le minuteur, lui, continue de tourner — il vit dans
+// `call.tsx`, pas dans la coquille — et quand il s'écoule, `chromeVisible`
+// retombe à `false` : la rangée de sortie ET la barre normale se démontent
+// TOUTES LES DEUX, et il ne reste plus un seul bouton atteignable sur l'écran
+// entier. Ni `BackHandler`, ni en-tête natif : le seul recours restant est le
+// retour matériel d'Android, que `call.tsx:819-828` désigne lui-même comme
+// « un pis-aller, pas la sortie que ce point critique exige » — et rien du
+// tout sur iOS.
+describe('CallScreen, plein écran, enfermement', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('laisse une sortie atteignable après avoir ouvert le panneau des participants en plein écran', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Rappel des commandes, comme le ferait quiconque cherche le panneau des
+    // participants depuis le plein écran.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('participants-toggle')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
+
+    // L'échéance du minuteur armé par le rappel ci-dessus, atteinte pendant que
+    // le panneau est ouvert : c'est exactement l'instant reproduit par la
+    // revue.
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    // Une sortie doit rester atteignable : raccrocher, ou au moins refermer le
+    // panneau pour retrouver la scène.
+    expect(screen.getByTestId('leave-btn')).toBeTruthy();
+    expect(screen.getByTestId('participants-toggle')).toBeTruthy();
+  });
+});

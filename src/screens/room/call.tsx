@@ -639,8 +639,20 @@ export function CallScreen(): React.ReactElement {
       });
   };
 
+  // C1 : ouvrir ce panneau démonte `CallStage` juste en dessous, qui porte le
+  // SEUL `Pressable` capable de rappeler les commandes en plein écran (voir
+  // `handlePressTile`). Sans cette sortie, le minuteur de `chromeVisible` —
+  // qui continue de tourner, lui, puisqu'il vit ICI et pas dans la coquille —
+  // finit par démonter la rangée de sortie ET la barre normale, et il ne
+  // reste plus un seul bouton atteignable sur tout l'écran : un enfermement
+  // total. Ouvrir ce panneau est déjà un geste de « je quitte la vidéo » ;
+  // `handleExitFullscreen` le rend total. Seulement à l'OUVERTURE : le
+  // fermer n'a jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce
+  // sens serait un no-op silencieux — `fullscreen` est déjà `null` à ce
+  // moment-là.
   const handleToggleParticipants = (): void => {
-    setParticipantsOpen((open) => !open);
+    if (!participantsOpen) handleExitFullscreen();
+    setParticipantsOpen(!participantsOpen);
   };
 
   // `answer` a déjà retiré la personne de la file de façon optimiste (voir
