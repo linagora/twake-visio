@@ -827,24 +827,43 @@ export function CallScreen(): React.ReactElement {
       style={styles.root}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
-      {/* Au-dessus de la scène : ne rend rien tant que personne n'attend, donc
-          toujours monté, jamais enveloppé d'une condition. */}
-      <WaitingBanner
-        participant={firstWaiting(waiting)}
-        remaining={Math.max(waiting.length - 1, 0)}
-        onAnswer={handleAnswerEntry}
-      />
+      {/* **En plein écran : une tuile, et rien d'autre.** La lecture stricte,
+          choisie par le produit, et la seule condition de tout ce bloc — les
+          trois bandeaux ne rendent déjà rien au repos, c'est le plein écran
+          seul qui les enveloppe.
 
-      {/* Vu de tout le monde, y compris de qui n'a aucun bouton : ne rend rien
-          au repos, donc toujours monté, jamais enveloppé d'une condition. */}
-      <RecordingIndicator state={recordingState} />
+          Une ternaire, et non une prop `hidden` comme celle de
+          `CallControlBar` : celle-ci existe parce que la barre POSSÈDE quatre
+          états de périphérique qu'un démontage effacerait. Ces trois-ci sont
+          des coquilles pures — aucun état, aucun effet — donc les démonter ne
+          perd rien, et l'invariant à tenir est l'inverse : qu'il ne reste rien
+          à l'écran.
 
-      {/* Une main levée oubliée serait invisible pour qui l'a levée : ce
-          bandeau la dit, et la baisse en un seul appui. Ne rend rien au repos,
-          donc toujours monté, jamais enveloppé d'une condition. La bande
-          empile ses lignes : l'indicateur d'enregistrement et celui-ci
-          peuvent être vrais en même temps. */}
-      <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
+          **Conséquence énoncée et acceptée** : une demande d'admission devient
+          INVISIBLE tant qu'on reste en plein écran. La file continue d'être
+          relue, le bandeau revient au premier appui qui en sort, et un test le
+          nomme dans `call.spec.tsx` plutôt que de le laisser se découvrir sur
+          appareil. */}
+      {fullscreenTile === null ? (
+        <>
+          {/* Au-dessus de la scène : ne rend rien tant que personne n'attend. */}
+          <WaitingBanner
+            participant={firstWaiting(waiting)}
+            remaining={Math.max(waiting.length - 1, 0)}
+            onAnswer={handleAnswerEntry}
+          />
+
+          {/* Vu de tout le monde, y compris de qui n'a aucun bouton : ne rend
+              rien au repos. */}
+          <RecordingIndicator state={recordingState} />
+
+          {/* Une main levée oubliée serait invisible pour qui l'a levée : ce
+              bandeau la dit, et la baisse en un seul appui. Ne rend rien au
+              repos. La bande empile ses lignes : l'indicateur d'enregistrement
+              et celui-ci peuvent être vrais en même temps. */}
+          <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
+        </>
+      ) : null}
 
       {/* Les trois corps qui s'excluent, et leur aiguillage. `panel` descend en
           lecture seule : `openPanel` reste la seule porte qui l'écrit. */}
@@ -908,13 +927,19 @@ export function CallScreen(): React.ReactElement {
 
       {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
           l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
-          repos, donc toujours montée, jamais enveloppée d'une condition.
+          repos — mais elle est bel et bien enveloppée, pour la même raison
+          que les trois bandeaux ci-dessus : en plein écran, une tuile et rien
+          d'autre. La condition est séparée de la leur parce que sa POSITION
+          l'est : ce calque doit rester le dernier enfant, sans quoi il passe
+          sous la barre.
 
           `chatOpen` est la SEULE chose qu'elle sache de l'écran, et elle n'en
           tire qu'une garde de bas : la zone de saisie du chat occupe le bas de
           la région des panneaux, et les bulles s'y posaient. Voir
           `BOTTOM_GUARD` dans `reactionOverlay.tsx` pour l'arithmétique. */}
-      <ReactionOverlay reactions={reactions} chatOpen={panel === 'chat'} />
+      {fullscreenTile === null ? (
+        <ReactionOverlay reactions={reactions} chatOpen={panel === 'chat'} />
+      ) : null}
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
           seul `visible` bascule. Une seule case pour cinq actions — modération

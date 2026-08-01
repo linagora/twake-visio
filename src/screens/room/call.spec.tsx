@@ -2598,6 +2598,117 @@ describe('CallScreen, plein écran, enfermement', () => {
   });
 });
 
+// « En plein écran : une tuile, et rien d'autre. » La lecture STRICTE, choisie
+// par le produit. La barre l'appliquait déjà ; les trois bandeaux et
+// l'incrustation des réactions, non — ils continuaient de se poser par-dessus
+// l'unique tuile, sur un écran dont c'est justement toute la raison d'être.
+//
+// **Conséquence énoncée et acceptée** : une demande d'admission devient
+// INVISIBLE tant qu'on reste en plein écran. Le premier test ci-dessous la
+// nomme, plutôt que de la laisser se découvrir sur appareil.
+//
+// Un test par surface masquée, et chacun fait l'aller-retour : sans le retour,
+// une implémentation qui ne rendrait plus jamais le bandeau passerait aussi.
+describe('CallScreen, plein écran, tout le reste disparaît', () => {
+  // La file d'attente part d'un `setInterval` de cinq secondes : sans avancer
+  // le temps, `listWaitingParticipants` n'est jamais appelé et le bandeau
+  // n'existe pas. Même dispositif que le describe « salle d'attente », posé sur
+  // ce describe entier plutôt que sur son seul test qui en a besoin : les trois
+  // autres n'attendent aucun minuteur, et une horloge figée y garde même la
+  // bulle de réaction en vie plutôt que de la laisser expirer au bout de 3 s.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("masque le bandeau d'admission en plein écran, et le rend au retour", async () => {
+    // La conséquence acceptée : personne ne voit plus frapper à la porte tant
+    // que le plein écran dure. Le retour est immédiat et tient à un seul appui,
+    // et la file, elle, n'a pas bougé — `useWaitingParticipants` continue de la
+    // relire.
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'listWaitingParticipants')
+      .mockResolvedValue({ ok: true, value: [{ id: 'lobby-1', username: 'Ada' }] });
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+
+    await enterFullscreen('u-bob:camera');
+
+    expect(screen.queryByTestId('waiting-banner')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+  });
+
+  it("masque l'indicateur d'enregistrement en plein écran, et le rend au retour", async () => {
+    mockRoomMetadata = STARTED_METADATA;
+    mockRoomIsRecording = true;
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('recording-indicator')).toBeTruthy());
+
+    await enterFullscreen('u-bob:camera');
+
+    expect(screen.queryByTestId('recording-indicator')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => expect(screen.getByTestId('recording-indicator')).toBeTruthy());
+  });
+
+  it('masque le bandeau de main levée en plein écran, et le rend au retour', async () => {
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-banner')).toBeTruthy());
+
+    await enterFullscreen('u-bob:camera');
+
+    expect(screen.queryByTestId('hand-banner')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => expect(screen.getByTestId('hand-banner')).toBeTruthy());
+  });
+
+  it('masque les bulles de réaction en plein écran, et les rend au retour', async () => {
+    // Une réaction reçue par le canal de données, jamais depuis le menu : la
+    // feuille du menu resterait ouverte par-dessus la scène, et l'appui qui
+    // ouvre le plein écran ne serait plus celui d'un vrai parcours.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await emitRoom(
+      'dataReceived',
+      new TextEncoder().encode('{"type":"reactionReceived","data":{"emoji":"party-popper"}}'),
+      { identity: 'u-bob' },
+    );
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+
+    await enterFullscreen('u-bob:camera');
+
+    expect(screen.queryByTestId('reaction-overlay')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
+  });
+});
+
 describe('CallScreen, réactions', () => {
   it('envoie une réaction depuis le menu, sans jamais fermer celui-ci', async () => {
     await renderCall();
