@@ -32,6 +32,7 @@
   "lobby.noModerator": "Nessun moderatore è attualmente presente",
   "lobby.denied": "La tua richiesta di partecipazione è stata rifiutata",
   "call.leave": "Abbandona",
+  "call.exitFullscreen": "Esci dallo schermo intero",
   "call.share": "Condividi il link",
   "call.more": "Altro",
   "call.muted": "Microfono disattivato",
