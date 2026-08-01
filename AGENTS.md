@@ -125,12 +125,45 @@ la garde possible, mais c'est un changement d'architecture, pas une correction d
 différent, pas une exception à la borne qui précède.** `Button.tsx:405` (react-native-paper
 5.15.3) pose ``testID={`${testID}-text`}`` sur son `Text` interne, donc
 `toHaveStyle({ color: … })` s'y applique bien — `textColor` compris, pour ses variantes
-`text` et `outlined`. Précédents : `participantsPanel.spec.tsx:230-249` (les trois boutons
-de modération) et `handBanner.spec.tsx:72`. L'absence de ce fait a produit une affirmation
-fausse dans un plan d'implémentation, rattrapée seulement parce qu'un implémenteur a refusé
-de la croire et l'a vérifiée à la source. `` `${testID}-text` `` reste une convention
-**interne** à Paper, pas un contrat d'API : une montée de version peut la renommer sans
-préavis, et le rouge de la suite serait alors le seul signal.
+`text` et `outlined`. Précédents : `handBanner.spec.tsx:72` et `waitingBanner.spec.tsx:107`.
+L'absence de ce fait a produit une affirmation fausse dans un plan d'implémentation,
+rattrapée seulement parce qu'un implémenteur a refusé de la croire et l'a vérifiée à la
+source. `` `${testID}-text` `` reste une convention **interne** à Paper, pas un contrat
+d'API : une montée de version peut la renommer sans préavis, et le rouge de la suite serait
+alors le seul signal.
+
+_(Ce paragraphe citait aussi les trois boutons de modération de `participantsPanel.spec.tsx`.
+Ils sont devenus des `SheetRow` dans une feuille, qui expose `` `${testID}-title` `` : la
+règle est la même, le composant a changé.)_
+
+### La borne de l'`IconButton` n'est pas une bizarrerie de ce composant. C'est la règle.
+
+Généralisation de ce qui précède, et **la seule chose à retenir** de tout ce passage :
+
+> **Une prop qu'un composant CONSOMME lui-même n'atteint jamais l'élément hôte.** Il la
+> déstructure avant de répandre le reste, donc `props.<nom>` sur le nœud que rend une
+> requête vaut `undefined` — et une assertion dessus est **verte dans les deux états**.
+
+Trois instances mesurées le 2026-08-01, dans les sources, sur trois composants sans rapport
+entre eux :
+
+| Composant                             | Déstructure             | Vu sur l'élément hôte |
+| ------------------------------------- | ----------------------- | --------------------- |
+| `Badge` (Paper)                       | `visible = true, …rest` | `undefined`           |
+| `Snackbar` (Paper)                    | `visible, …rest`        | `undefined`           |
+| `KeyboardAvoidingView` (react-native) | `behavior, …props`      | `undefined`           |
+
+Deux implémenteurs l'ont rencontrée le même jour sans se parler, sur `Badge` et sur
+`Snackbar`. Un plan s'appuyait sur `props.visible` **quatre fois** ; les quatre assertions
+auraient été vertes contre une implémentation nulle.
+
+**Ce qu'il faut faire à la place** : assertir sur une conséquence OBSERVABLE — rendu ou non
+rendu (`queryByTestId(…)).toBe(null)`), un style composé, un texte. « Rendu ou pas rendu »
+a en plus l'avantage de sortir un « 0 » parasite de l'arbre d'accessibilité.
+
+**Comment le détecter avant d'écrire le test** : ouvrir le composant et lire sa
+déstructuration. Si le nom y figure, il n'ira pas plus loin. C'est deux lignes à lire, et
+c'est la seule façon — le test, lui, ne le dira jamais.
 
 **Et jamais pour `rippleColor`** — ne la cherche pas là non plus, elle est hors de portée
 pour une autre raison. Le préréglage Jest fixe `Platform.OS` à `'ios'`,
