@@ -1,9 +1,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Menu } from 'react-native-paper';
 
 import type { RecordingState } from 'src/call/recording';
-import { BAR_RIPPLE_COLOR, barStyles } from 'src/screens/room/controlBar';
+import { sheetStyles } from 'src/screens/room/controlBar';
+import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type RecordingControlProps = {
   readonly state: RecordingState;
@@ -21,10 +21,11 @@ export type RecordingControlProps = {
 // pendant un appel en vol, `disabled` rendrait un quasi-noir illisible que
 // Paper calcule avant toute couleur explicite. On masque, on ne grise pas.
 //
-// Pas de `leadingIcon` : `MenuItem` colore l'icône depuis le thème, donc en
-// quasi-noir sur cette surface sombre — c'est pour cette raison que le glyphe
-// de coche a dû être extrait dans `menuCheck.tsx`. L'identité passe par le
-// libellé et sa couleur.
+// Pas de `leading` : `SheetRow` insère ce nœud tel quel, sans lui donner de
+// couleur — c'est pour cette raison que le glyphe de coche porte sa propre
+// couleur explicite ailleurs (`menuCheck.tsx`, réutilisé par `cameraMenu.tsx`
+// et `audioOutputControl.tsx`). Ici, l'identité passe par le libellé et sa
+// couleur, jamais par une icône.
 export function RecordingControl({
   state,
   canStart,
@@ -40,11 +41,12 @@ export function RecordingControl({
   const label = stopping ? 'recording.stop' : 'recording.start';
 
   return (
-    <Menu.Item
+    <SheetRow
       testID="recording-toggle"
       title={t(label)}
-      titleStyle={stopping ? barStyles.menuTitleDanger : barStyles.menuTitle}
-      rippleColor={BAR_RIPPLE_COLOR}
+      // `SheetRow` applique `rowTitle` en dessous : seul le SURCLASSEMENT
+      // d'alerte se passe ici, ce qui dit mieux ce qui est l'exception.
+      titleStyle={stopping ? sheetStyles.rowTitleDanger : undefined}
       accessibilityLabel={t(label)}
       onPress={stopping ? onStop : onStart}
     />
