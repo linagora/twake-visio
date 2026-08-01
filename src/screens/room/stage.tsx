@@ -82,8 +82,18 @@ type VideoTileProps = {
   // Relayés tels quels : la vignette ne décide ni qui monte sur scène ni ce
   // qu'un appui long signifie, elle ne fait que rapporter le geste avec la clé
   // de SA tuile — voir `CallStage`, qui ferme la clé dans la fermeture.
-  readonly onPress: () => void;
-  readonly onLongPress: () => void;
+  //
+  // Nommés `onTilePress`/`onTileLongPress`, jamais `onPress`/`onLongPress` :
+  // `fireEvent.press` de RNTL 14 retombe, faute de handler sur l'élément visé,
+  // sur une remontée de FIBRE (`findEventHandlerFromFiber`,
+  // `@testing-library/react-native/dist/fire-event.js`) qui s'arrête au premier
+  // ANCÊTRE HÔTE croisé — jamais avant. `Pressable` n'étant pas un composant
+  // hôte, un nom identique à sa propre prop `onPress` se laisse trouver sur
+  // CETTE fonction-ci sans jamais prouver qu'elle le relaie : vérifié par
+  // mutation, retirer `onPress={onPress}` du `Pressable` ci-dessous, sous ce
+  // même nom, laissait 682 tests verts.
+  readonly onTilePress: () => void;
+  readonly onTileLongPress: () => void;
 };
 
 // Aucune décision ici : la vignette pose ce qu'on lui donne. Tout ce qui se
@@ -93,8 +103,8 @@ function VideoTile({
   tile,
   fitWhenCamera,
   size,
-  onPress,
-  onLongPress,
+  onTilePress,
+  onTileLongPress,
 }: VideoTileProps): React.ReactElement {
   const { t } = useTranslation();
   // La sélection nettoie le nom : il n'y a qu'une absence à traiter, et jamais
@@ -110,7 +120,7 @@ function VideoTile({
     // sur la vue qu'il a toujours désigné : les tests existants l'interrogent,
     // et `fireEvent.press` atteint `onPress` en remontant jusqu'à ce `Pressable`
     // quel que soit l'élément visé par la requête.
-    <Pressable style={size} onPress={onPress} onLongPress={onLongPress}>
+    <Pressable style={size} onPress={onTilePress} onLongPress={onTileLongPress}>
       <View
         testID={`tile-${tile.key}`}
         // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
@@ -193,8 +203,8 @@ export function CallStage({
           tile={layout.stage}
           fitWhenCamera="contain"
           size={styles.stageTile}
-          onPress={() => onPressTile(layout.stage.key)}
-          onLongPress={() => onLongPressTile(layout.stage.key)}
+          onTilePress={() => onPressTile(layout.stage.key)}
+          onTileLongPress={() => onLongPressTile(layout.stage.key)}
         />
       </View>
 
@@ -219,8 +229,8 @@ export function CallStage({
             tile={tile}
             fitWhenCamera="cover"
             size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
-            onPress={() => onPressTile(tile.key)}
-            onLongPress={() => onLongPressTile(tile.key)}
+            onTilePress={() => onPressTile(tile.key)}
+            onTileLongPress={() => onLongPressTile(tile.key)}
           />
         ))}
       </ScrollView>
