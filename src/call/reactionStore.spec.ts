@@ -62,6 +62,19 @@ function fakeRoom(localIdentity: string, localName: string): RoomProbe {
 }
 
 describe('createReactionStore', () => {
+  // Sur tout le fichier, pas seulement sur `purge automatique` : les tests de
+  // `send` ci-dessous n'appellent jamais `dispose()`, et sous de vrais
+  // timers chacun laisse un `setInterval` orphelin (voir `schedulePurge`).
+  // Un seul s'auto-efface correctement par store — mais une mutation qui
+  // casserait la garde de réentrance de `schedulePurge` en armerait DIX pour
+  // la seule rafale ci-dessous, dont neuf ne s'effacent jamais (voir ce
+  // commentaire, plus bas, à l'endroit de cette garde) : un magasin non
+  // disposé y survivrait au processus Jest lui-même. Des timers FAKE
+  // n'ouvrent aucune poignée réelle : qu'ils soient armés, orphelins ou
+  // jamais avancés ne peut jamais empêcher Jest de sortir.
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
   it("s'abonne à DataReceived dès sa construction", () => {
     const probe = fakeRoom('me', 'Me');
     createReactionStore(probe.room);
@@ -196,10 +209,7 @@ describe('createReactionStore', () => {
   });
 
   describe('purge automatique', () => {
-    afterEach(() => jest.useRealTimers());
-
     it('efface une réaction après sa durée de vie et arrête son intervalle', async () => {
-      jest.useFakeTimers();
       const probe = fakeRoom('me', 'Me');
       const store = createReactionStore(probe.room);
       await store.send('thumbs-up');
@@ -212,7 +222,6 @@ describe('createReactionStore', () => {
     });
 
     it("ne lance l'intervalle qu'une fois une réaction présente", async () => {
-      jest.useFakeTimers();
       const probe = fakeRoom('me', 'Me');
       createReactionStore(probe.room);
 
@@ -230,8 +239,21 @@ describe('createReactionStore', () => {
     // qu'un intervalle est déjà armé. Un second envoi, avant toute avance du
     // temps, doit rester sur le MÊME intervalle plutôt que d'en armer un
     // second.
+    //
+    // Ce test est le seul filet pour cette garde : sous de vrais timers, la
+    // casser (ex. `if (false) return;`) laisserait la rafale de `send`
+    // ci-dessus armer dix intervalles au lieu d'un — et `dispose()` (voir
+    // plus bas) n'en efface qu'un seul, celui que `pruneTimer` référence en
+    // dernier. Les neuf autres ne s'auto-effacent JAMAIS : leur propre
+    // fermeture voit `pruneTimer` déjà nul (mis à `null` par celui qui s'est
+    // effacé le premier) et leur garde de purge (`pruneTimer !== null`) reste
+    // fausse pour toujours. Neuf `setInterval` réels, orphelins, qui
+    // rappellent `notify()` toutes les 250 ms sans fin : c'est ce qui
+    // empêchait Jest de sortir avant que ce fichier passe aux timers fake
+    // (mesuré : `timeout 25 npx jest …` tué après 25 s pile, `real 25,01`,
+    // contre 1,24 s une fois le fichier sur `jest.useFakeTimers()`). Un test
+    // affaibli ici dégraderait donc un rouge immédiat en un blocage muet.
     it("n'arme pas un second intervalle tant que le premier n'a pas fini de purger", async () => {
-      jest.useFakeTimers();
       const probe = fakeRoom('me', 'Me');
       const store = createReactionStore(probe.room);
 
@@ -255,7 +277,6 @@ describe('createReactionStore', () => {
     });
 
     it("arrête l'intervalle de purge en cours", async () => {
-      jest.useFakeTimers();
       const probe = fakeRoom('me', 'Me');
       const store = createReactionStore(probe.room);
       await store.send('thumbs-up');
@@ -264,7 +285,6 @@ describe('createReactionStore', () => {
       store.dispose();
 
       expect(jest.getTimerCount()).toBe(0);
-      jest.useRealTimers();
     });
   });
 });
