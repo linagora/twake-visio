@@ -223,6 +223,24 @@ describe('createReactionStore', () => {
 
       expect(jest.getTimerCount()).toBeGreaterThan(0);
     });
+
+    // La garde de `schedulePurge` (`if (pruneTimer !== null) return;`) n'est
+    // exercée par aucun des deux tests ci-dessus : chacun n'appelle `send`
+    // qu'une seule fois, donc `schedulePurge` n'y est jamais rappelée pendant
+    // qu'un intervalle est déjà armé. Un second envoi, avant toute avance du
+    // temps, doit rester sur le MÊME intervalle plutôt que d'en armer un
+    // second.
+    it("n'arme pas un second intervalle tant que le premier n'a pas fini de purger", async () => {
+      jest.useFakeTimers();
+      const probe = fakeRoom('me', 'Me');
+      const store = createReactionStore(probe.room);
+
+      await store.send('thumbs-up');
+      expect(jest.getTimerCount()).toBe(1);
+
+      await store.send('thumbs-down');
+      expect(jest.getTimerCount()).toBe(1);
+    });
   });
 
   describe('dispose', () => {
