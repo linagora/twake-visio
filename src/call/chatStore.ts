@@ -8,6 +8,17 @@ import {
   type ChatMessage,
 } from 'src/call/chat';
 
+// `CHAT_MAX_LENGTH` borne un message ; rien ne bornait leur NOMBRE avant ce
+// chiffre, et une séance longue grossissait le fil sans fin. 500 est choisi
+// comme un plafond qu'une conversation de séance normale n'atteint jamais,
+// mais qui borne le pire cas : à un message toutes les 5 secondes SANS
+// interruption — un débit qu'aucune conversation humaine ne soutient des
+// heures durant — il faut plus de 40 minutes pour l'atteindre. Chaque
+// message est lui-même borné par `CHAT_MAX_LENGTH` (2 000 caractères) à
+// l'émission, donc le pire cas reste de l'ordre du million de caractères de
+// texte, pas plus, champs internes non compris.
+export const CHAT_LOG_MAX_MESSAGES = 500;
+
 export type ChatSnapshot = {
   readonly log: readonly ChatMessage[];
   readonly unread: number;
@@ -37,6 +48,26 @@ export function createChatStore(room: Room): ChatStore {
   let snapshot: ChatSnapshot | null = null;
   let disposed = false;
 
+  // Plafonne le fil à CHAT_LOG_MAX_MESSAGES, en retirant les plus anciens —
+  // jamais un message édité en place : `appendMessage` remplace déjà un
+  // message existant sans changer la longueur du fil, cette fonction n'a
+  // donc jamais à en tenir compte séparément.
+  //
+  // Les clés des messages retirés sont oubliées de `readKeys` avec eux : sans
+  // cela, un identifiant (`id`+`identity`) qui réapparaîtrait plus tard —
+  // `appendMessage` ne le fusionnerait plus, faute de trouver l'original
+  // dans le fil tronqué, et l'ajouterait comme un message neuf — hériterait à
+  // tort du statut « lu » d'un message que l'écran n'a jamais montré sous
+  // cette apparition. Un message RETIRÉ, lui, ne peut jamais redevenir « non
+  // lu » par cet oubli : parti du fil, il ne compte plus du tout dans
+  // `unreadCount`, qui n'itère que sur ce qui reste.
+  function capLog(nextLog: readonly ChatMessage[]): readonly ChatMessage[] {
+    if (nextLog.length <= CHAT_LOG_MAX_MESSAGES) return nextLog;
+    const dropped = nextLog.slice(0, nextLog.length - CHAT_LOG_MAX_MESSAGES);
+    for (const message of dropped) readKeys.delete(messageKey(message));
+    return nextLog.slice(nextLog.length - CHAT_LOG_MAX_MESSAGES);
+  }
+
   function invalidate(): void {
     // Une lecture lancée avant `dispose()` peut se terminer après : prévenir
     // React d'un changement sur un magasin que l'écran a lâché n'apprend rien
@@ -59,15 +90,17 @@ export function createChatStore(room: Room): ChatStore {
     reader
       .readAll()
       .then((body) => {
-        log = appendMessage(log, {
-          id,
-          identity,
-          name,
-          body,
-          sentAt: timestamp,
-          editedAt: null,
-          isLocal: false,
-        });
+        log = capLog(
+          appendMessage(log, {
+            id,
+            identity,
+            name,
+            body,
+            sentAt: timestamp,
+            editedAt: null,
+            isLocal: false,
+          }),
+        );
         invalidate();
       })
       .catch((error: unknown) => {
@@ -120,15 +153,17 @@ export function createChatStore(room: Room): ChatStore {
         // inventer un identifiant, et un identifiant inventé casserait la
         // règle d'édition d'`appendMessage`. LiveKit ne renvoie pas à
         // l'émetteur son propre paquet : il n'y a aucun doublon à craindre.
-        log = appendMessage(log, {
-          id: info.id,
-          identity: room.localParticipant.identity,
-          name: room.localParticipant.name ?? '',
-          body,
-          sentAt: info.timestamp,
-          editedAt: null,
-          isLocal: true,
-        });
+        log = capLog(
+          appendMessage(log, {
+            id: info.id,
+            identity: room.localParticipant.identity,
+            name: room.localParticipant.name ?? '',
+            body,
+            sentAt: info.timestamp,
+            editedAt: null,
+            isLocal: true,
+          }),
+        );
         invalidate();
         return true;
       } catch {
@@ -142,9 +177,10 @@ export function createChatStore(room: Room): ChatStore {
       // Le saut sur `isLocal` est une ÉCONOMIE, pas une garde, et aucun test ne
       // peut le faire rougir : `unreadCount` écarte déjà les siens, donc les
       // ajouter ici ne changerait aucun compte — seulement la taille de
-      // l'ensemble, qui grossit déjà sans borne avec le fil. Mesuré : le
-      // retirer laisse les 43 cas verts. C'est écrit pour qu'on ne cherche pas
-      // le test manquant, qui n'existe pas.
+      // l'ensemble, que `capLog` borne de toute façon avec le fil. Mesuré : le
+      // retirer laisse les 45 cas verts (`chat.spec.ts` + `chatStore.spec.ts`).
+      // C'est écrit pour qu'on ne cherche pas le test manquant, qui n'existe
+      // pas.
       let changed = false;
       for (const message of log) {
         if (message.isLocal) continue;
