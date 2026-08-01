@@ -34,7 +34,7 @@ import {
   type FacingMode,
 } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
-import { ensureMediaPermissions } from 'src/call/permissions';
+import { ensureBluetoothPermission, ensureMediaPermissions } from 'src/call/permissions';
 import {
   canStartRecording,
   recordingErrorMessage,
@@ -461,6 +461,16 @@ export function CallScreen(): React.ReactElement {
           if (!cancelled) setFailure('call.permissionsDenied');
           return;
         }
+        if (cancelled) return;
+
+        // Résultat ignoré à dessein : contrairement à la caméra et au micro, un
+        // refus Bluetooth ne doit JAMAIS bloquer l'entrée en séance — il prive
+        // seulement le menu de sortie audio d'une entrée (`listAudioOutputs`),
+        // et la séance se tient au haut-parleur. Demandée ICI, avant
+        // `connect()`, pour qu'`AudioSession.startAudioSession()`
+        // (`src/call/connection.ts`) la voie déjà tranchée à son activation
+        // plutôt qu'à une énumération ultérieure.
+        await ensureBluetoothPermission();
         if (cancelled) return;
 
         // `connect()` ne rejette jamais : l'issue est publiée sur l'abonnement
