@@ -2439,6 +2439,43 @@ describe('CallScreen, plein écran, sortie', () => {
     expect(screen.getByTestId('pin-marker')).toBeTruthy();
     expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
   });
+
+  // La barre n'est PAS décrochée par une ternaire de `call.tsx` : elle reste
+  // montée en plein écran et rend `null` elle-même, sur sa prop `hidden`. Ce
+  // n'est pas un détail de style — c'est ce qui garde les quatre états de
+  // périphérique qu'elle possède, et la sortie audio demandée est le seul des
+  // quatre que RIEN ne relit : les deux listes sont réinterrogées à chaque
+  // ouverture de leur feuille, la caméra en service avec elles.
+  //
+  // Mesuré des deux côtés, contre la même fixture : ce test passe sur la barre
+  // telle qu'elle est, et rougit sur `{fullscreenTile === null ? <CallControlBar
+  // hidden={false} … /> : null}` — la forme qu'une extraction naïve produit, et
+  // que les 114 autres tests de ce fichier acceptent sans broncher. La coche du
+  // haut-parleur disparaissait alors sur un aller-retour, sans que personne
+  // n'ait rien demandé.
+  it('garde la sortie audio demandée à travers un aller-retour par le plein écran', async () => {
+    jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
+
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await enterFullscreen('u-ada:camera');
+    // La sortie, sur la même tuile : la barre revient entière.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-check-speaker')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
+  });
 });
 
 // Constat critique d'une revue de branche, arbre à l'appui : ouvrir le
