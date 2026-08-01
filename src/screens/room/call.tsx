@@ -116,15 +116,6 @@ const NO_ACCOUNT: Account = {
   displayName: '',
 };
 
-// Quelques secondes, à la manière d'un lecteur vidéo : assez pour lire les
-// commandes et agir, pas assez pour qu'elles gênent la vidéo qu'on regarde en
-// plein écran. La vérification sur appareil (D4, voir le plan) capture à
-// quatre secondes pour confirmer qu'elles se sont retirées ; ce nombre est
-// celui qui rend cette capture vraie. Non exportée : les tests qui en ont
-// besoin la reproduisent en dur, comme `WAITING_POLL_MS` de
-// `useWaitingParticipants.ts` en dehors de ce fichier.
-const CHROME_REVEAL_MS = 4000;
-
 const styles = StyleSheet.create({
   // La scène reste sombre dans les deux schémas : c'est la convention de toute
   // la visioconférence, et un fond clair autour d'une vignette vidéo éblouit
@@ -139,15 +130,6 @@ const styles = StyleSheet.create({
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
     // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
     gap: tokens.spacing.sm,
-    padding: tokens.spacing.xs,
-  },
-  // La sortie du plein écran, seule dans sa propre rangée : la barre ci-dessus
-  // est déjà pleine à 357 dp sur 360 (`controlBar.ts`), une huitième cible n'y
-  // tiendrait pas. Cette rangée n'existe QUE par-dessus une tuile plein écran,
-  // jamais ailleurs — voir le point critique de cette tâche.
-  fullscreenExitRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     padding: tokens.spacing.xs,
   },
   // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
@@ -223,27 +205,13 @@ export function CallScreen(): React.ReactElement {
   const [pin, setPin] = useState<string | null>(null);
 
   // La clé de la tuile plein écran, indépendante de l'épinglage : les deux
-  // gestes ne se recouvrent pas, un appui simple épingle sans y entrer, un
-  // appui long y entre sans changer l'épinglage. Résolue plus bas, une fois
-  // `layout` connu — voir `fullscreenTile`.
+  // surfaces ne se recouvrent jamais. Un appui sur la SCÈNE bascule le plein
+  // écran sur la tuile qui s'y trouve, épinglée ou non ; un appui sur une
+  // vignette de la BANDE épingle, sans jamais entrer en plein écran ; et seul
+  // le badge d'épinglage désépingle (voir `handleUnpinTile`). Aucun appui
+  // long : chaque surface ne porte qu'un seul geste, qui ne veut qu'une seule
+  // chose. Résolue plus bas, une fois `layout` connu — voir `fullscreenTile`.
   const [fullscreen, setFullscreen] = useState<string | null>(null);
-
-  // Les commandes rappelées PAR-DESSUS la tuile plein écran, à la manière d'un
-  // lecteur vidéo — jamais un état qui a un sens hors plein écran. Voir le
-  // `useEffect` plus bas, qui l'arme et la désarme, et `handlePressTile`, qui
-  // la pose.
-  const [chromeVisible, setChromeVisible] = useState(false);
-
-  // I3 : un compteur, jamais lu pour sa VALEUR — seul son CHANGEMENT compte.
-  // `setChromeVisible(true)` sur une valeur déjà `true` est un no-op pour
-  // React : le rendu est court-circuité, et le `useEffect` plus bas — dont
-  // `chromeVisible` était l'unique dépendance — ne se rejouait donc jamais.
-  // Un second appui pendant que les commandes étaient déjà visibles ne
-  // réarmait rien : le minuteur du PREMIER appui continuait de courir,
-  // inchangé, et les commandes disparaissaient à SON échéance, pas quatre
-  // secondes après le second appui. Incrémenté à CHAQUE appui, premier compris
-  // — un seul mécanisme de réarmement, jamais un premier appui traité à part.
-  const [chromeRevealNonce, setChromeRevealNonce] = useState(0);
 
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
@@ -256,11 +224,6 @@ export function CallScreen(): React.ReactElement {
   // pas une décision de disposition — `selectLayout` n'a pas à connaître cette
   // notion d'écran, donc elle ne passe jamais par lui : on sait déjà quelle
   // tuile, on choisit seulement de ne montrer qu'elle.
-  //
-  // Calculée AVANT les gestionnaires ci-dessous, qui la lisent : une référence
-  // prise plus haut dans le corps de la fonction lèverait une erreur
-  // d'initialisation dès le premier rendu, la lecture faisant partie du
-  // tableau de dépendances de `useCallback`, évalué immédiatement.
   const fullscreenTile =
     fullscreen === null
       ? null
@@ -285,84 +248,45 @@ export function CallScreen(): React.ReactElement {
   // ce que cet appel fait à l'instant même où il s'exécute.
   if (fullscreen !== null && fullscreenTile === null) {
     setFullscreen(null);
-    setChromeVisible(false);
   }
 
-  // La tuile résolue, jamais la clé brute `fullscreen` : la clé reste posée
-  // même quand elle ne résout plus (une personne mise en plein écran qui
-  // quitte la séance), et l'écran retombe alors sur la disposition normale —
-  // voir le commentaire ci-dessus. Un appui y redeviendrait un no-op
-  // silencieux, ni épinglage ni rappel, si le court-circuit ci-dessous lisait
-  // la clé plutôt que sa résolution contre CE rendu.
-  const inFullscreen = fullscreenTile !== null;
-
-  // Point de conception tranché ici : `onPressTile` de la tuile plein écran
-  // est câblé vers CE gestionnaire (voir `stage.tsx`), qui épingle hors plein
-  // écran. Sans ce court-circuit, un appui pour rappeler les commandes
-  // épinglerait aussi la tuile en secret — invisible sur le moment puisque la
-  // bande est masquée, et qui ne resurgirait qu'à la sortie, sous la forme
-  // d'un épinglage que personne n'a consciemment demandé. On court-circuite
-  // donc le câblage plutôt que d'ajouter un second geste : en plein écran, un
-  // appui ne veut jamais dire autre chose que « montre-moi les commandes », à
-  // la manière d'un lecteur vidéo — la convention retenue par la conception
-  // (`docs/superpowers/specs/2026-08-01-grid-and-pinning-design.md`, décision
-  // du 2026-08-01) pour l'appui long qui mène ici.
-  //
-  // Hors plein écran, inchangé : une seule instruction, DEUX issues — un
-  // second appui sur la tuile déjà épinglée la désépingle, ce qui rend le
-  // geste réversible sans rien apprendre de plus. Chacune des deux issues
-  // veut son propre test : sans celui du désépinglage, une implémentation qui
-  // écrirait `setPin(key)` sans jamais repasser à `null` passerait quand même
-  // le premier.
-  const handlePressTile = useCallback(
-    (key: string): void => {
-      if (inFullscreen) {
-        setChromeVisible(true);
-        // I3 : réarme le minuteur ci-dessous même si `chromeVisible` valait
-        // déjà `true`, où la ligne du dessus seule ne changerait rien.
-        setChromeRevealNonce((n) => n + 1);
-        return;
-      }
-      setPin((current) => (current === key ? null : key));
-    },
-    [inFullscreen],
-  );
-
-  // Le plein écran affiche la tuile touchée seule, sans bande ni barre de
-  // contrôle — voir `fullscreenTile` plus haut, qui résout la clé contre la
-  // disposition courante, et son passage à `CallStage` plus bas.
-  const handleLongPressTile = useCallback((key: string): void => {
-    setFullscreen(key);
+  // Bande : un appui épingle la vignette touchée. Ce n'est plus un
+  // aller-retour — une vignette de la bande n'est, par construction
+  // (`src/call/layout.ts:213`), jamais celle déjà épinglée : elle a déjà
+  // quitté la bande pour la scène. L'ambiguïté que corrigeait l'ancien
+  // ternaire (« épingler ou désépingler selon l'état courant ») ne se
+  // présente donc plus ici — désépingler est maintenant le geste du badge
+  // seul, voir `handleUnpinTile`.
+  const handlePressFilmstripTile = useCallback((key: string): void => {
+    setPin(key);
   }, []);
 
-  // E4, les DEUX instructions : quitter le plein écran ET désarmer le
-  // minuteur de disparition. Sans la seconde, `chromeVisible` resterait à
-  // `true` et le PROCHAIN plein écran rallumerait les commandes sans qu'on ait
-  // rien demandé — le `useEffect` juste en dessous ne désarme
-  // qu'en RÉACTION à un changement de cette valeur, jamais de son propre chef.
+  // Scène, hors plein écran : un appui bascule le plein écran SUR ELLE, que
+  // la scène soit ou non le fruit d'un épinglage — jamais un épinglage ni un
+  // désépinglage, qui appartiennent désormais à deux autres surfaces (la
+  // bande et le badge). `layout.stage.key` vient de la fermeture, pas d'un
+  // paramètre : ce geste n'a rien d'autre à dire que « la tuile qui EST sur
+  // scène en ce moment ».
+  const handlePressStageTile = useCallback((): void => {
+    setFullscreen(layout.stage.key);
+  }, [layout.stage.key]);
+
+  // Le badge d'épinglage (`stage.tsx`), seul et unique geste qui désépingle
+  // désormais — plus jamais un second appui sur la scène, qui bascule le
+  // plein écran à la place (`handlePressStageTile`).
+  const handleUnpinTile = useCallback((): void => {
+    setPin(null);
+  }, []);
+
+  // Tuile plein écran : un appui, où qu'il porte sur cette unique tuile,
+  // referme le plein écran — un aller-retour sur la même surface que
+  // `handlePressStageTile`, qui l'a ouvert. Toute la machinerie de rappel des
+  // commandes (`chromeVisible`, son minuteur) devient inutile : la sortie
+  // n'est plus un état intermédiaire à révéler, elle est immédiate — et donc
+  // totale par construction, voir le test qui le prouve dans `call.spec.tsx`.
   const handleExitFullscreen = useCallback((): void => {
     setFullscreen(null);
-    setChromeVisible(false);
   }, []);
-
-  // E3 : afficher ET armer la disparition. E4 : la sortie du plein écran
-  // (ci-dessus) doit désarmer, sinon le minuteur se déclenche sur un
-  // composant démonté ou rallume les commandes après coup. C'est la ligne
-  // qu'on oublie, et le `return` de CE `useEffect` est ce qui la rend
-  // automatique plutôt que manuelle : il s'exécute à chaque changement de
-  // `chromeVisible`, qu'il vienne du minuteur lui-même ou de
-  // `handleExitFullscreen`.
-  //
-  // `chromeRevealNonce` en seconde dépendance, pour I3 : sans lui, un appui
-  // répété pendant que `chromeVisible` est déjà `true` ne changerait aucune
-  // des deux dépendances de ce tableau, l'effet ne se rejouerait pas, et
-  // l'ancien `setTimeout` — jamais annulé — continuerait de courir vers SA
-  // propre échéance au lieu d'être repoussé par le nouvel appui.
-  useEffect(() => {
-    if (!chromeVisible) return undefined;
-    const id = setTimeout(() => setChromeVisible(false), CHROME_REVEAL_MS);
-    return () => clearTimeout(id);
-  }, [chromeVisible, chromeRevealNonce]);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
@@ -681,17 +605,20 @@ export function CallScreen(): React.ReactElement {
       });
   };
 
-  // C1 : ouvrir ce panneau démonte `CallStage` juste en dessous, qui porte le
-  // SEUL `Pressable` capable de rappeler les commandes en plein écran (voir
-  // `handlePressTile`). Sans cette sortie, le minuteur de `chromeVisible` —
-  // qui continue de tourner, lui, puisqu'il vit ICI et pas dans la coquille —
-  // finit par démonter la rangée de sortie ET la barre normale, et il ne
-  // reste plus un seul bouton atteignable sur tout l'écran : un enfermement
-  // total. Ouvrir ce panneau est déjà un geste de « je quitte la vidéo » ;
-  // `handleExitFullscreen` le rend total. Seulement à l'OUVERTURE : le
-  // fermer n'a jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce
-  // sens serait un no-op silencieux — `fullscreen` est déjà `null` à ce
-  // moment-là.
+  // Invariant défensif, gardé après la simplification des gestes : ouvrir ce
+  // panneau exige toujours d'être sorti du plein écran d'abord. Ce n'est plus
+  // atteignable par l'interface — `participants-toggle` vit dans la barre de
+  // contrôle, elle-même masquée tant que `fullscreenTile` n'est pas `null`
+  // (voir plus bas) — mais l'appel reste : bon marché, et il garde
+  // `participantsOpen` et le plein écran mutuellement exclusifs PAR
+  // CONSTRUCTION plutôt que par la seule convention de la barre. C'est ce qui
+  // évitait, avant ce lot, l'enfermement total qu'une revue de branche avait
+  // mesuré : ouvrir le panneau démontait `CallStage`, qui portait alors le
+  // seul geste capable de sortir du plein écran, et le minuteur de l'ancien
+  // `chromeVisible` continuait de tourner sans qu'aucun bouton ne reste
+  // atteignable pour l'arrêter. Seulement à l'OUVERTURE : le fermer n'a
+  // jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce sens serait
+  // un no-op silencieux — `fullscreen` est déjà `null` à ce moment-là.
   const handleToggleParticipants = (): void => {
     if (!participantsOpen) handleExitFullscreen();
     setParticipantsOpen(!participantsOpen);
@@ -854,8 +781,10 @@ export function CallScreen(): React.ReactElement {
         // grille du web rend chaque visage illisible sur un écran de téléphone.
         <CallStage
           layout={layout}
-          onPressTile={handlePressTile}
-          onLongPressTile={handleLongPressTile}
+          onPressStageTile={handlePressStageTile}
+          onPressFilmstripTile={handlePressFilmstripTile}
+          onUnpinTile={handleUnpinTile}
+          onExitFullscreen={handleExitFullscreen}
           fullscreenTile={fullscreenTile}
         />
       )}
@@ -870,38 +799,14 @@ export function CallScreen(): React.ReactElement {
         </View>
       ) : null}
 
-      {/* LE POINT CRITIQUE de cette tâche : sans cette rangée, un plein écran
-          sur sa PROPRE tuile n'a strictement aucune sortie — le repli habituel
-          (la tuile disparaît) ne peut pas jouer sur soi-même, et `leave-btn`,
-          qui permettrait de quitter la séance à défaut, est dans la barre que
-          le plein écran masque. Rendue UNIQUEMENT ici, par-dessus la tuile
-          seule, jamais confondue avec la barre normale ci-dessous : aucun de
-          ses sept boutons ne fait sortir DU plein écran, « raccrocher »
-          compris, qui quitte la séance entière — un pis-aller, pas la sortie
-          que ce point critique exige. Jamais `disabled` : à l'appui, elle agit
-          toujours. */}
-      {inFullscreen && chromeVisible ? (
-        <View style={styles.fullscreenExitRow}>
-          <IconButton
-            testID="fullscreen-exit-btn"
-            icon="fullscreen-exit"
-            iconColor={BAR_ICON_COLOR}
-            rippleColor={BAR_RIPPLE_COLOR}
-            style={barStyles.button}
-            hitSlop={BAR_HIT_SLOP}
-            onPress={handleExitFullscreen}
-            accessibilityLabel={t('call.exitFullscreen')}
-          />
-        </View>
-      ) : null}
-
-      {/* Masquée en plein écran, SAUF commandes rappelées : `chromeVisible` la
-          fait réapparaître par-dessus la tuile seule, exactement comme un
-          lecteur vidéo — voir `handlePressTile`. Elle reste inchangée dans ce
-          cas : mêmes sept boutons, y compris `leave-btn`, qui reste un moyen
-          de quitter la séance entière ; la rangée juste au-dessus est celle
-          qui fait sortir DU plein écran. */}
-      {fullscreenTile === null || chromeVisible ? (
+      {/* Masquée en plein écran, sans exception : plus de commandes à
+          rappeler, puisqu'un appui n'importe où sur l'unique tuile plein
+          écran en sort directement (`handleExitFullscreen`, câblé par
+          `stage.tsx`) — la sortie est donc totale par construction, prouvée
+          par un test dans `call.spec.tsx` plutôt qu'affirmée ici. Revient dès
+          le premier appui sur cette même tuile : sept boutons, `leave-btn`
+          compris, qui reste un moyen de quitter la séance entière. */}
+      {fullscreenTile === null ? (
         <View style={styles.controls}>
           <IconButton
             testID="mic-toggle"

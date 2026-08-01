@@ -48,24 +48,34 @@ function layout(stage: Tile, filmstrip: readonly Tile[] = [], pinned = false): C
   return { stage, pinned, filmstrip };
 }
 
-// `onPressTile`/`onLongPressTile` sont désormais obligatoires : la plupart des
-// tests de ce fichier ne portent pas sur le geste et n'ont besoin que d'un
-// bouchon qui satisfasse le type. Ceux qui portent sur le geste passent leur
-// propre espion. `fullscreenTile` par défaut à `null` pour la même raison :
-// seul le describe « plein écran » plus bas le fait varier, tous les tests
-// d'avant continuent de voir la disposition ordinaire sans le passer.
+// Quatre gestes distincts désormais, un par surface : la plupart des tests de
+// ce fichier ne portent que sur UN SEUL d'entre eux et n'ont besoin que d'un
+// bouchon pour les trois autres, qui satisfasse le type sans jamais être
+// examiné. Un objet d'options plutôt que des paramètres positionnels : à
+// quatre rappels, un appel positionnel `renderStage(l, undefined, spy,
+// undefined, undefined)` ne se relit plus. `fullscreenTile` par défaut à
+// `null` : seul le describe « plein écran » plus bas le fait varier, tous les
+// tests d'avant continuent de voir la disposition ordinaire sans le passer.
+type RenderStageOptions = {
+  readonly onPressStageTile?: () => void;
+  readonly onPressFilmstripTile?: (key: string) => void;
+  readonly onUnpinTile?: () => void;
+  readonly onExitFullscreen?: () => void;
+  readonly fullscreenTile?: Tile | null;
+};
+
 function renderStage(
   layoutValue: CallLayout,
-  onPressTile: (key: string) => void = jest.fn(),
-  onLongPressTile: (key: string) => void = jest.fn(),
-  fullscreenTile: Tile | null = null,
+  options: RenderStageOptions = {},
 ): ReturnType<typeof render> {
   return render(
     <CallStage
       layout={layoutValue}
-      onPressTile={onPressTile}
-      onLongPressTile={onLongPressTile}
-      fullscreenTile={fullscreenTile}
+      onPressStageTile={options.onPressStageTile ?? jest.fn()}
+      onPressFilmstripTile={options.onPressFilmstripTile ?? jest.fn()}
+      onUnpinTile={options.onUnpinTile ?? jest.fn()}
+      onExitFullscreen={options.onExitFullscreen ?? jest.fn()}
+      fullscreenTile={options.fullscreenTile ?? null}
     />,
   );
 }
@@ -175,74 +185,81 @@ describe('CallStage', () => {
 });
 
 // La scène et la bande passent toutes deux par `VideoTile`, mais `CallStage`
-// les câble à deux endroits distincts du fichier — un `VideoTile` isolé pour
-// la scène, une boucle `.map` pour la bande. Rien ne garantit qu'oublier l'un
-// des deux se voie ailleurs : `call.spec.tsx` ne presse que des vignettes
-// atteintes en pratique par son scénario, jamais les deux surfaces par
-// construction. Pire pour l'appui long : la seule tâche qui consomme
-// `onLongPressTile` pour de vrai (le plein écran) arrive après celle-ci, donc
-// aucun test d'intégration ne peut aujourd'hui distinguer un `onLongPress`
-// bien câblé d'un `onLongPress` oublié — seul ce bloc le peut.
+// les câble à deux endroits distincts du fichier, à deux gestes distincts —
+// un `VideoTile` isolé, câblé à `onPressStageTile`, pour la scène ; une
+// boucle `.map`, câblée à `onPressFilmstripTile`, pour la bande. Rien ne
+// garantit qu'oublier l'un des deux se voie ailleurs : `call.spec.tsx` ne
+// presse que des vignettes atteintes en pratique par son scénario, jamais les
+// deux surfaces par construction — d'où un test par site ici, plus un test
+// d'isolation entre les deux.
 //
-// `fireEvent.press` n'atteint que `onPress`, jamais `onLongPress` ;
-// `fireEvent(el, 'longPress')` atteint `onLongPress` et jamais `onPress` —
+// `fireEvent.press` n'atteint que l'`onPress` de l'élément visé (ou de son
+// premier ANCÊTRE HÔTE), jamais celui d'un autre `Pressable` du même arbre —
 // vérifié par exécution avant d'écrire ces tests.
 describe('gestes de tuile', () => {
-  it('relaie un appui simple avec la clé de la tuile touchée, scène et bande', async () => {
-    const onPressTile = jest.fn();
+  it('bascule le plein écran sur un appui sur la tuile de scène', async () => {
+    const onPressStageTile = jest.fn();
 
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), onPressTile);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), { onPressStageTile });
 
-    await fireEvent.press(screen.getByTestId('tile-ada:camera'));
     await fireEvent.press(screen.getByTestId('tile-bob:camera'));
 
-    expect(onPressTile).toHaveBeenCalledWith('ada:camera');
-    expect(onPressTile).toHaveBeenCalledWith('bob:camera');
+    // Zéro argument : il n'y a jamais qu'une seule tuile sur la scène, et
+    // `call.tsx` connaît déjà sa clé par `layout.stage.key` — voir
+    // `CallStageProps.onPressStageTile`.
+    expect(onPressStageTile).toHaveBeenCalledTimes(1);
   });
 
-  it('relaie un appui long avec la clé de la tuile touchée, scène et bande', async () => {
-    const onLongPressTile = jest.fn();
+  it('épingle la vignette de la bande qu’on touche, avec sa clé', async () => {
+    const onPressFilmstripTile = jest.fn();
 
-    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), undefined, onLongPressTile);
-
-    await fireEvent(screen.getByTestId('tile-ada:camera'), 'longPress');
-    await fireEvent(screen.getByTestId('tile-bob:camera'), 'longPress');
-
-    expect(onLongPressTile).toHaveBeenCalledWith('ada:camera');
-    expect(onLongPressTile).toHaveBeenCalledWith('bob:camera');
-  });
-
-  it('ne confond pas les deux gestes sur la même tuile', async () => {
-    const onPressTile = jest.fn();
-    const onLongPressTile = jest.fn();
-
-    await renderStage(
-      layout(tile('bob:camera'), [tile('ada:camera')]),
-      onPressTile,
-      onLongPressTile,
-    );
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), {
+      onPressFilmstripTile,
+    });
 
     await fireEvent.press(screen.getByTestId('tile-ada:camera'));
 
-    expect(onPressTile).toHaveBeenCalledWith('ada:camera');
-    expect(onLongPressTile).not.toHaveBeenCalled();
+    expect(onPressFilmstripTile).toHaveBeenCalledWith('ada:camera');
+  });
+
+  // Chaque site d'appel a son propre geste : sans CE test, une implémentation
+  // qui câblerait `onPressFilmstripTile` à la place de `onPressStageTile` sur
+  // la scène — ou l'inverse — passerait quand même les deux tests ci-dessus,
+  // chacun n'observant qu'un seul site à la fois.
+  it('ne câble jamais le même geste aux deux surfaces', async () => {
+    const onPressStageTile = jest.fn();
+    const onPressFilmstripTile = jest.fn();
+
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), {
+      onPressStageTile,
+      onPressFilmstripTile,
+    });
+
+    await fireEvent.press(screen.getByTestId('tile-bob:camera'));
+
+    expect(onPressStageTile).toHaveBeenCalledTimes(1);
+    expect(onPressFilmstripTile).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByTestId('tile-ada:camera'));
+
+    expect(onPressFilmstripTile).toHaveBeenCalledWith('ada:camera');
+    // Toujours une seule fois : l'appui sur la bande n'a pas, en secret,
+    // rappelé aussi le geste de la scène.
+    expect(onPressStageTile).toHaveBeenCalledTimes(1);
   });
 });
 
 // `fullscreenTile` arrive déjà résolu : cette coquille ne fait que le poser.
-// K7 du recensement — la bande rendue ou absente — se joue ENTIÈREMENT ici, à
-// ce niveau, jamais à celui de `call.tsx` : c'est `CallStage` qui choisit
-// d'omettre le `ScrollView`, pas une prop qui ferait semblant en lui passant
-// une bande vide (voir le commentaire sur `filmstrip` plus haut : posée même
-// vide, elle garderait sa hauteur et resterait dans l'arbre).
+// La bande rendue ou absente se joue ENTIÈREMENT ici, à ce niveau, jamais à
+// celui de `call.tsx` : c'est `CallStage` qui choisit d'omettre le
+// `ScrollView`, pas une prop qui ferait semblant en lui passant une bande
+// vide (voir le commentaire sur `filmstrip` plus haut : posée même vide, elle
+// garderait sa hauteur et resterait dans l'arbre).
 describe('plein écran', () => {
   it('ne rend que la tuile fournie, sans bande', async () => {
-    await renderStage(
-      layout(tile('ada:camera'), [tile('bob:camera')]),
-      undefined,
-      undefined,
-      tile('solo:camera'),
-    );
+    await renderStage(layout(tile('ada:camera'), [tile('bob:camera')]), {
+      fullscreenTile: tile('solo:camera'),
+    });
 
     expect(
       within(screen.getByTestId('active-speaker')).getByTestId('tile-solo:camera'),
@@ -257,22 +274,19 @@ describe('plein écran', () => {
   // Le même trou qu'a comblé le describe « gestes de tuile » plus haut, pour
   // le même motif : ce site d'appel de `VideoTile` est distinct des deux
   // autres (scène, bande), et rien n'oblige les trois à rester synchronisés.
-  it('relaie les deux gestes sur la tuile plein écran, avec sa propre clé', async () => {
-    const onPressTile = jest.fn();
-    const onLongPressTile = jest.fn();
+  it('relaie un appui sur la tuile plein écran comme une sortie', async () => {
+    const onExitFullscreen = jest.fn();
 
-    await renderStage(
-      layout(tile('ada:camera')),
-      onPressTile,
-      onLongPressTile,
-      tile('solo:camera'),
-    );
+    await renderStage(layout(tile('ada:camera')), {
+      onExitFullscreen,
+      fullscreenTile: tile('solo:camera'),
+    });
 
     await fireEvent.press(screen.getByTestId('tile-solo:camera'));
-    await fireEvent(screen.getByTestId('tile-solo:camera'), 'longPress');
 
-    expect(onPressTile).toHaveBeenCalledWith('solo:camera');
-    expect(onLongPressTile).toHaveBeenCalledWith('solo:camera');
+    // Zéro argument, comme `onPressStageTile` : il n'y a jamais qu'une seule
+    // tuile en plein écran.
+    expect(onExitFullscreen).toHaveBeenCalledTimes(1);
   });
 
   it('rend la bande normalement quand rien n’est en plein écran', async () => {
@@ -288,65 +302,114 @@ describe('plein écran', () => {
   });
 });
 
-// I5 de la revue de branche : un appui simple sur la tuile de scène l'épingle
-// déjà (`handlePressTile` dans `call.tsx`), mais rien ne le montrait — aucun
-// retour visuel. `CallLayout.pinned` porte exactement cette information
-// depuis la tâche 1 (`src/call/layout.ts:215`) mais n'était lue par aucun
-// code de rendu : trois assertions de `layout.spec.ts`, zéro composant. Le
-// marqueur ci-dessous en tire enfin quelque chose à l'écran — et seulement à
-// la scène, en disposition ordinaire : une tuile épinglée est filtrée hors de
-// la bande par construction (`layout.ts:213`), donc la scène est la SEULE
+// I5 de la revue de branche, poursuivie par le lot qui simplifie les gestes :
+// un appui simple sur la tuile de scène épinglait déjà, mais rien ne le
+// montrait — aucun retour visuel. `CallLayout.pinned` porte exactement cette
+// information depuis la tâche 1 (`src/call/layout.ts:215`), et ce lot en fait
+// enfin un badge LISIBLE : un partenaire testant sur appareil n'avait jamais
+// vu la petite punaise qui le précédait. Le badge n'apparaît que sur la
+// scène, en disposition ordinaire : une tuile épinglée est filtrée hors de la
+// bande par construction (`layout.ts:213`), donc la scène est la SEULE
 // surface où le geste peut porter, et le plein écran est un état
-// indépendant, où un appui ne signifie jamais « annuler l'épinglage » (voir
-// le court-circuit de `handlePressTile`).
-describe('marqueur d’épinglage', () => {
-  it('rend le marqueur sur la scène quand la disposition dit qu’elle est épinglée', async () => {
+// indépendant, où un appui ne signifie jamais « désépingler » (voir
+// `onPressStageTile`/`onExitFullscreen` de `CallStageProps`).
+describe('badge d’épinglage', () => {
+  it('rend le badge sur la scène quand la disposition dit qu’elle est épinglée', async () => {
     await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], true));
 
     expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
   });
 
-  it('ne rend aucun marqueur quand rien n’est épinglé', async () => {
+  it('ne rend aucun badge quand rien n’est épinglé', async () => {
     await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], false));
 
     expect(screen.queryByTestId('pin-marker')).toBeNull();
   });
 
-  it('ne rend jamais le marqueur sur une vignette de la bande', async () => {
+  it('ne rend jamais le badge sur une vignette de la bande', async () => {
     // Une tuile épinglée est filtrée hors de la bande par construction
     // (`layout.ts:213`) : ce cas ne peut donc pas se produire en pratique,
     // mais le garder explicite protège le site d'appel de la bande d'un
-    // marqueur qui n'aurait jamais dû lui être câblé.
+    // badge qui n'aurait jamais dû lui être câblé.
     await renderStage(layout(tile('ada:camera'), [tile('bob:camera')], true));
 
     expect(within(screen.getByTestId('filmstrip')).queryByTestId('pin-marker')).toBeNull();
   });
 
-  it('ne rend jamais le marqueur en plein écran, même sur la tuile épinglée elle-même', async () => {
+  it('ne rend jamais le badge en plein écran, même sur la tuile épinglée elle-même', async () => {
     // La MÊME tuile, épinglée ET en plein écran à la fois : le cas le plus
     // dur à distinguer, puisque `layout.pinned` vaut `true` ici. Le plein
-    // écran doit quand même gagner — un appui n'y signifie jamais « annuler
-    // l'épinglage », seulement « rappelle les commandes ».
+    // écran doit quand même gagner — un appui n'y signifie jamais
+    // « désépingler », seulement « sortir ».
     const solo = tile('ada:camera');
 
-    await renderStage(layout(solo, [], true), undefined, undefined, solo);
+    await renderStage(layout(solo, [], true), { fullscreenTile: solo });
 
     expect(screen.queryByTestId('pin-marker')).toBeNull();
   });
 
-  it('porte une couleur explicite issue des tokens', async () => {
+  it('porte une couleur explicite issue des tokens, sur l’icône et sur le texte', async () => {
     // Cet écran est sombre dans les deux schémas et `react-native-paper`
-    // l'ignore (`AGENTS.md`) — mais ce glyphe n'est pas un composant Paper :
-    // sa couleur est un `style` littéral, jamais calculée depuis un thème.
+    // l'ignore (`AGENTS.md`) — mais ni l'icône ni le texte du badge ne
+    // passent par un composant Paper : les deux couleurs sont des `style`
+    // littéraux, jamais calculées depuis un thème.
     await renderStage(layout(tile('ada:camera'), [], true));
 
-    expect(screen.getByTestId('pin-marker')).toHaveStyle({ color: tokens.color.textDark });
+    expect(screen.getByTestId('pin-marker-icon')).toHaveStyle({ color: tokens.color.textDark });
+    expect(screen.getByTestId('pin-marker-text')).toHaveStyle({ color: tokens.color.textDark });
+  });
+
+  it('affiche un libellé traduit et lisible, pas seulement une icône', async () => {
+    // Le défaut mesuré chez le partenaire : une punaise seule, dans un coin,
+    // ne se voit pas. Le badge porte désormais un texte.
+    await renderStage(layout(tile('ada:camera'), [], true));
+
+    expect(screen.getByTestId('pin-marker-text')).toHaveTextContent('call.pinned');
   });
 
   it('porte un accessibilityLabel traduit, jamais une clé nue à l’écran', async () => {
     await renderStage(layout(tile('ada:camera'), [], true));
 
     expect(screen.getByTestId('pin-marker')).toHaveProp('accessibilityLabel', 'call.pinned');
+  });
+
+  // 44 dp, la recommandation Apple déjà retenue par `controlBar.ts` pour la
+  // barre de contrôle. Un plancher (`minWidth`/`minHeight`), jamais une
+  // largeur fixe : le libellé grandit avec sa traduction.
+  it('offre une cible tactile d’au moins 44 dp', async () => {
+    await renderStage(layout(tile('ada:camera'), [], true));
+
+    expect(screen.getByTestId('pin-marker')).toHaveStyle({ minWidth: 44, minHeight: 44 });
+  });
+
+  // Le geste qui remplace l'ancien appui simple sur la scène pour désépingler
+  // : c'est désormais le badge, et lui seul, qui le porte.
+  it('désépingle sur un appui du badge', async () => {
+    const onUnpinTile = jest.fn();
+
+    await renderStage(layout(tile('ada:camera'), [], true), { onUnpinTile });
+
+    await fireEvent.press(screen.getByTestId('pin-marker'));
+
+    expect(onUnpinTile).toHaveBeenCalledTimes(1);
+  });
+
+  // Le badge est un `Pressable` imbriqué DANS celui, plus grand, de la tuile
+  // de scène — jamais un second `onPress` posé sur le même élément. Sans CE
+  // test, un badge qui laisserait l'appui remonter jusqu'au `Pressable`
+  // parent basculerait aussi, en secret, le plein écran : un seul appui
+  // produirait alors DEUX effets, et désépingler enverrait la personne en
+  // plein écran par accident.
+  it('ne bascule jamais le plein écran de la tuile qui le porte', async () => {
+    const onUnpinTile = jest.fn();
+    const onPressStageTile = jest.fn();
+
+    await renderStage(layout(tile('ada:camera'), [], true), { onUnpinTile, onPressStageTile });
+
+    await fireEvent.press(screen.getByTestId('pin-marker'));
+
+    expect(onUnpinTile).toHaveBeenCalledTimes(1);
+    expect(onPressStageTile).not.toHaveBeenCalled();
   });
 });
 

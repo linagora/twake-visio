@@ -32,7 +32,6 @@
   "lobby.noModerator": "No moderator is currently present",
   "lobby.denied": "Your request to join was declined",
   "call.leave": "Leave",
-  "call.exitFullscreen": "Exit full screen",
   "call.share": "Share the link",
   "call.more": "More",
   "call.muted": "Muted",
