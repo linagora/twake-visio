@@ -1933,3 +1933,73 @@ describe('CallScreen, épinglage', () => {
     expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
   });
 });
+
+describe('CallScreen, plein écran', () => {
+  it("n'affiche que la tuile et masque les commandes en plein écran", async () => {
+    // Ada distante, comme les tests d'épinglage ci-dessus : par la règle
+    // ordinaire elle est déjà sur scène, et c'est sa tuile qu'on visera pour
+    // que l'appui long porte sur une tuile déjà présente, sans dépendre du
+    // geste d'épinglage testé plus haut.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+    });
+    // La bande et la barre disparaissent TOUTES LES DEUX : l'une masquée par
+    // `call.tsx` (la barre), l'autre par `CallStage` lui-même (la bande) — deux
+    // sites distincts, voir `stage.spec.tsx` pour la couverture propre au
+    // second.
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    expect(screen.queryByTestId('leave-btn')).toBeNull();
+  });
+
+  it('rend la bande et les commandes hors plein écran', async () => {
+    // Le complément direct du test précédent, même mise en place, sans
+    // l'appui long : sans CE test, une implémentation qui masquerait la barre
+    // et la bande inconditionnellement passerait quand même le test ci-dessus.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy();
+      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+      expect(screen.getByTestId('leave-btn')).toBeTruthy();
+    });
+  });
+
+  // K7 : la clé plein écran ne se résout plus une fois la personne partie.
+  // Sans le `?? null` qui referme la résolution, `fullscreenTile` resterait à
+  // `undefined` — pas `null` — et l'écran continuerait de croire qu'il doit
+  // afficher une tuile qu'il n'a plus.
+  it('retombe sur la disposition normale si la tuile plein écran disparaît', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Ada quitte la séance : sa tuile n'existe plus dans aucune disposition
+    // possible, épinglée ou non.
+    mockRoom.remoteParticipants.delete('u-ada');
+    await emitRoom('participantDisconnected');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    });
+    // Seule reste la personne locale : la scène retombe sur elle, par la même
+    // règle ordinaire qu'à la connexion.
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera')).toBeTruthy();
+  });
+});

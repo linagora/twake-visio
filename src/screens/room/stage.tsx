@@ -159,11 +159,16 @@ export type CallStageProps = {
   // rien du sens d'un appui : elle le rapporte, et `call.tsx` seul choisit ce
   // qu'il produit — voir `handlePressTile`, qui épingle et désépingle.
   readonly onPressTile: (key: string) => void;
-  // Encore inerte : le geste arrive avec cette tâche, ce qu'il déclenche
-  // (plein écran) avec la suivante. La scène est pressable comme les autres
-  // tuiles dès maintenant, pour que cette tâche-là n'ait plus à toucher au
-  // contrat de `CallStageProps`.
+  // Relayé de la même façon : c'est `call.tsx` qui décide ce qu'un appui long
+  // déclenche — voir `handleLongPressTile`, qui pose `fullscreenTile`
+  // ci-dessous.
   readonly onLongPressTile: (key: string) => void;
+  // La tuile seule à montrer, sans bande ; `null` = disposition normale. Ce
+  // n'est pas une décision de disposition — `selectLayout` n'a pas à
+  // connaître cette notion d'écran — donc elle arrive déjà résolue : cette
+  // coquille ne fait que la poser, elle ne décide ni ce qui la remplit ni
+  // quand elle retombe à `null`. Voir `fullscreenTile` dans `call.tsx`.
+  readonly fullscreenTile: Tile | null;
 };
 
 // La coquille de rendu, tenue aussi bête que possible : personne ne peut la
@@ -177,6 +182,7 @@ export function CallStage({
   layout,
   onPressTile,
   onLongPressTile,
+  fullscreenTile,
 }: CallStageProps): React.ReactElement {
   const { width, height } = useWindowDimensions();
   // Les dimensions de la fenêtre, jamais une API d'orientation : sur un
@@ -191,6 +197,27 @@ export function CallStage({
   // fiche produit), où ce prédicat binaire retourne toute la disposition sur
   // 3,5 % de géométrie.
   const landscape = width > height;
+
+  // Le plein écran remplace la disposition entière : une tuile, aucune bande.
+  // Appelé avant le `return` normal, jamais après : `useWindowDimensions`
+  // ci-dessus doit s'exécuter à chaque rendu, plein écran ou non, pour ne
+  // jamais changer le nombre de Hooks appelés d'un rendu à l'autre — même si
+  // `landscape` ne sert à rien dans cette branche.
+  if (fullscreenTile !== null) {
+    return (
+      <View style={styles.root}>
+        <View style={styles.stage} testID="active-speaker">
+          <VideoTile
+            tile={fullscreenTile}
+            fitWhenCamera="contain"
+            size={styles.stageTile}
+            onTilePress={() => onPressTile(fullscreenTile.key)}
+            onTileLongPress={() => onLongPressTile(fullscreenTile.key)}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.root, landscape ? styles.rootLandscape : null]}>

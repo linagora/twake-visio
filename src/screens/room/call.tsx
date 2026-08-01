@@ -204,6 +204,12 @@ export function CallScreen(): React.ReactElement {
   // ouverture, il vit donc ici.
   const [pin, setPin] = useState<string | null>(null);
 
+  // La clé de la tuile plein écran, indépendante de l'épinglage : les deux
+  // gestes ne se recouvrent pas, un appui simple épingle sans y entrer, un
+  // appui long y entre sans changer l'épinglage. Résolue plus bas, une fois
+  // `layout` connu — voir `fullscreenTile`.
+  const [fullscreen, setFullscreen] = useState<string | null>(null);
+
   // Une seule instruction, DEUX issues : un second appui sur la tuile déjà
   // épinglée la désépingle — c'est ce qui rend le geste réversible sans rien
   // apprendre de plus. Chacune des deux issues veut son propre test : sans
@@ -213,16 +219,28 @@ export function CallScreen(): React.ReactElement {
     setPin((current) => (current === key ? null : key));
   }, []);
 
-  // Le plein écran arrive avec une tâche suivante ; ce geste ne fait rien pour
-  // l'instant. `CallStageProps` l'exige déjà — pour que cette tâche-ci rende la
-  // scène et la bande pressables une fois pour toutes, sans que la suivante
-  // ait à retoucher le contrat entre les deux fichiers.
-  const handleLongPressTile = useCallback((): void => undefined, []);
+  // Le plein écran affiche la tuile touchée seule, sans bande ni barre de
+  // contrôle — voir `fullscreenTile` ci-dessous, qui résout la clé contre la
+  // disposition courante, et son passage à `CallStage` plus bas.
+  const handleLongPressTile = useCallback((key: string): void => {
+    setFullscreen(key);
+  }, []);
 
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
   const layout = useCallLayout(session.getRoom(), facing, pin);
+
+  // Résolue contre la disposition présente, comme l'épinglage : une tuile qui
+  // disparaît (la personne quitte la séance) ne laisse pas l'écran figé sur du
+  // vide, elle retombe sur la disposition normale au rendu suivant. Ce n'est
+  // pas une décision de disposition — `selectLayout` n'a pas à connaître cette
+  // notion d'écran, donc elle ne passe jamais par lui : on sait déjà quelle
+  // tuile, on choisit seulement de ne montrer qu'elle.
+  const fullscreenTile =
+    fullscreen === null
+      ? null
+      : ([layout.stage, ...layout.filmstrip].find((t) => t.key === fullscreen) ?? null);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
@@ -704,6 +722,7 @@ export function CallScreen(): React.ReactElement {
           layout={layout}
           onPressTile={handlePressTile}
           onLongPressTile={handleLongPressTile}
+          fullscreenTile={fullscreenTile}
         />
       )}
 
@@ -717,85 +736,91 @@ export function CallScreen(): React.ReactElement {
         </View>
       ) : null}
 
-      <View style={styles.controls}>
-        <IconButton
-          testID="mic-toggle"
-          icon={micOn ? 'microphone' : 'microphone-off'}
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleToggleMic}
-          accessibilityLabel={t('call.muted')}
-        />
-        {/* La paire caméra : la bascule et le chevron qui lui colle. */}
-        <View style={styles.cameraGroup}>
+      {/* Masquée en plein écran : la tuile seule occupe l'écran, sans bande ni
+          barre — c'est la définition même du plein écran que livre cette
+          tâche. Le rappel des commandes par un appui est le périmètre de la
+          suivante. */}
+      {fullscreenTile === null ? (
+        <View style={styles.controls}>
           <IconButton
-            testID="camera-toggle"
-            icon={cameraOn ? 'video' : 'video-off'}
+            testID="mic-toggle"
+            icon={micOn ? 'microphone' : 'microphone-off'}
             iconColor={BAR_ICON_COLOR}
             rippleColor={BAR_RIPPLE_COLOR}
             style={barStyles.button}
             hitSlop={BAR_HIT_SLOP}
-            onPress={handleToggleCamera}
-            accessibilityLabel={t('prejoin.cameraOff')}
+            onPress={handleToggleMic}
+            accessibilityLabel={t('call.muted')}
           />
-          <CameraMenu
-            cameras={cameras}
-            activeDeviceId={activeCameraId}
-            onOpen={handleOpenCameraMenu}
-            onSelect={handleSelectCamera}
+          {/* La paire caméra : la bascule et le chevron qui lui colle. */}
+          <View style={styles.cameraGroup}>
+            <IconButton
+              testID="camera-toggle"
+              icon={cameraOn ? 'video' : 'video-off'}
+              iconColor={BAR_ICON_COLOR}
+              rippleColor={BAR_RIPPLE_COLOR}
+              style={barStyles.button}
+              hitSlop={BAR_HIT_SLOP}
+              onPress={handleToggleCamera}
+              accessibilityLabel={t('prejoin.cameraOff')}
+            />
+            <CameraMenu
+              cameras={cameras}
+              activeDeviceId={activeCameraId}
+              onOpen={handleOpenCameraMenu}
+              onSelect={handleSelectCamera}
+            />
+          </View>
+          <AudioOutputControl
+            mode={routeControl}
+            outputs={outputs}
+            chosen={chosenOutput}
+            onOpen={handleOpenAudioOutput}
+            onSelect={handleSelectAudioOutput}
+            onSystemPicker={handleOpenSystemRoutePicker}
           />
-        </View>
-        <AudioOutputControl
-          mode={routeControl}
-          outputs={outputs}
-          chosen={chosenOutput}
-          onOpen={handleOpenAudioOutput}
-          onSelect={handleSelectAudioOutput}
-          onSystemPicker={handleOpenSystemRoutePicker}
-        />
-        {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
+          {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
             demanderait 409. Le partage, seule commande de la barre qu'on
             n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
             porte aussi l'enregistrement et la main levée. Sept cibles avant,
             sept après — et la commande d'enregistrement n'est jamais
             adjacente au bouton quitter. */}
-        <MoreMenu
-          recording={recordingState}
-          canRecord={canRecord}
-          recordingBusy={recordingBusy}
-          handRaised={handRaised}
-          handBusy={handBusy}
-          hands={hands}
-          onShare={handleShare}
-          onStartRecording={handleStartRecording}
-          onStopRecording={handleStopRecording}
-          onToggleHand={handleToggleHand}
-        />
-        <IconButton
-          testID="participants-toggle"
-          icon="account-multiple"
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleToggleParticipants}
-          accessibilityLabel={t('participants.title')}
-        />
-        <IconButton
-          testID="leave-btn"
-          icon="phone-hangup"
-          // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
-          // seuil WCAG AA, et la scène est sombre dans les deux schémas.
-          iconColor={tokens.color.dangerDark}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleLeave}
-          accessibilityLabel={t('call.leave')}
-        />
-      </View>
+          <MoreMenu
+            recording={recordingState}
+            canRecord={canRecord}
+            recordingBusy={recordingBusy}
+            handRaised={handRaised}
+            handBusy={handBusy}
+            hands={hands}
+            onShare={handleShare}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleStopRecording}
+            onToggleHand={handleToggleHand}
+          />
+          <IconButton
+            testID="participants-toggle"
+            icon="account-multiple"
+            iconColor={BAR_ICON_COLOR}
+            rippleColor={BAR_RIPPLE_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleToggleParticipants}
+            accessibilityLabel={t('participants.title')}
+          />
+          <IconButton
+            testID="leave-btn"
+            icon="phone-hangup"
+            // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
+            // seuil WCAG AA, et la scène est sombre dans les deux schémas.
+            iconColor={tokens.color.dangerDark}
+            rippleColor={BAR_RIPPLE_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleLeave}
+            accessibilityLabel={t('call.leave')}
+          />
+        </View>
+      ) : null}
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
           seul `visible` bascule. Une seule case pour cinq actions — modération

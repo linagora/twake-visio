@@ -1,5 +1,5 @@
 import { VideoTrack } from '@livekit/react-native';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, within } from '@testing-library/react-native';
 import React from 'react';
 
 import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
@@ -53,14 +53,22 @@ function layout(stage: Tile, filmstrip: readonly Tile[] = []): CallLayout {
 // `onPressTile`/`onLongPressTile` sont désormais obligatoires : la plupart des
 // tests de ce fichier ne portent pas sur le geste et n'ont besoin que d'un
 // bouchon qui satisfasse le type. Ceux qui portent sur le geste passent leur
-// propre espion.
+// propre espion. `fullscreenTile` par défaut à `null` pour la même raison :
+// seul le describe « plein écran » plus bas le fait varier, tous les tests
+// d'avant continuent de voir la disposition ordinaire sans le passer.
 function renderStage(
   layoutValue: CallLayout,
   onPressTile: (key: string) => void = jest.fn(),
   onLongPressTile: (key: string) => void = jest.fn(),
+  fullscreenTile: Tile | null = null,
 ): ReturnType<typeof render> {
   return render(
-    <CallStage layout={layoutValue} onPressTile={onPressTile} onLongPressTile={onLongPressTile} />,
+    <CallStage
+      layout={layoutValue}
+      onPressTile={onPressTile}
+      onLongPressTile={onLongPressTile}
+      fullscreenTile={fullscreenTile}
+    />,
   );
 }
 
@@ -220,6 +228,65 @@ describe('gestes de tuile', () => {
 
     expect(onPressTile).toHaveBeenCalledWith('ada:camera');
     expect(onLongPressTile).not.toHaveBeenCalled();
+  });
+});
+
+// `fullscreenTile` arrive déjà résolu : cette coquille ne fait que le poser.
+// K7 du recensement — la bande rendue ou absente — se joue ENTIÈREMENT ici, à
+// ce niveau, jamais à celui de `call.tsx` : c'est `CallStage` qui choisit
+// d'omettre le `ScrollView`, pas une prop qui ferait semblant en lui passant
+// une bande vide (voir le commentaire sur `filmstrip` plus haut : posée même
+// vide, elle garderait sa hauteur et resterait dans l'arbre).
+describe('plein écran', () => {
+  it('ne rend que la tuile fournie, sans bande', async () => {
+    await renderStage(
+      layout(tile('ada:camera'), [tile('bob:camera')]),
+      undefined,
+      undefined,
+      tile('solo:camera'),
+    );
+
+    expect(
+      within(screen.getByTestId('active-speaker')).getByTestId('tile-solo:camera'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+    // Ni la scène ni la bande de la disposition ORDINAIRE ne doivent survivre :
+    // la tuile plein écran remplace les deux, elle ne s'ajoute pas à elles.
+    expect(screen.queryByTestId('tile-ada:camera')).toBeNull();
+    expect(screen.queryByTestId('tile-bob:camera')).toBeNull();
+  });
+
+  // Le même trou qu'a comblé le describe « gestes de tuile » plus haut, pour
+  // le même motif : ce site d'appel de `VideoTile` est distinct des deux
+  // autres (scène, bande), et rien n'oblige les trois à rester synchronisés.
+  it('relaie les deux gestes sur la tuile plein écran, avec sa propre clé', async () => {
+    const onPressTile = jest.fn();
+    const onLongPressTile = jest.fn();
+
+    await renderStage(
+      layout(tile('ada:camera')),
+      onPressTile,
+      onLongPressTile,
+      tile('solo:camera'),
+    );
+
+    await fireEvent.press(screen.getByTestId('tile-solo:camera'));
+    await fireEvent(screen.getByTestId('tile-solo:camera'), 'longPress');
+
+    expect(onPressTile).toHaveBeenCalledWith('solo:camera');
+    expect(onLongPressTile).toHaveBeenCalledWith('solo:camera');
+  });
+
+  it('rend la bande normalement quand rien n’est en plein écran', async () => {
+    // Le complément de la première assertion ci-dessus : `fullscreenTile` à
+    // `null` (le défaut de `renderStage`) doit laisser la disposition
+    // ordinaire intacte, scène ET bande.
+    await renderStage(layout(tile('ada:camera'), [tile('bob:camera')]));
+
+    expect(screen.getByTestId('filmstrip')).toBeTruthy();
+    expect(
+      within(screen.getByTestId('active-speaker')).getByTestId('tile-ada:camera'),
+    ).toBeTruthy();
   });
 });
 
