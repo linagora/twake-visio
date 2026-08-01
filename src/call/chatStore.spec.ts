@@ -347,4 +347,24 @@ describe('createChatStore', () => {
 
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  // MESURÉ : le test ci-dessus ne garde PAS le drapeau `disposed`. Supprimer
+  // `if (disposed) return;` d'`invalidate()` laissait les dix-neuf tests verts,
+  // parce que `dispose()` vide déjà la liste d'abonnés — les deux mécanismes se
+  // masquent l'un l'autre, et la voie de notification ne peut localiser ni l'un
+  // ni l'autre. Ce test-ci passe par l'AUTRE effet du drapeau, le seul qui
+  // reste observable : un instantané périmé n'est pas invalidé après la
+  // libération, donc `getSnapshot()` rend la même valeur, à l'identique.
+  it('ne périme plus son instantané après dispose', async () => {
+    const probe = fakeRoom({ 'u-ada': 'Ada' });
+    const store = createChatStore(probe.room);
+    const before = store.getSnapshot();
+
+    probe.handlerFor(CHAT_TOPIC)?.(reader('s-1', 1_000, 'bonjour'), { identity: 'u-ada' });
+    store.dispose();
+    await settle();
+
+    expect(store.getSnapshot()).toBe(before);
+    expect(store.getSnapshot().log).toEqual([]);
+  });
 });
