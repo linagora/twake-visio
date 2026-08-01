@@ -304,16 +304,22 @@ export type CallStageProps = {
   // geste, voir `handlePressStageTile`. Zéro argument : il n'y a jamais qu'une
   // tuile sur la scène, et `call.tsx` connaît déjà sa clé par `layout.focus.key`.
   readonly onPressStageTile: () => void;
-  // Un appui sur une tuile qui n'est PAS la scène — vignette de bande en mode
-  // `focus`, cellule en mode `grid` — épingle celle qu'on touche. La clé de la
-  // tuile visée, `${identity}:${source}` ; c'est `call.tsx` seul qui décide ce
-  // que « épingler » produit, cette coquille ne fait que le rapporter.
+  // Cellule de grille : ouvre le plein écran sur ELLE, donc avec sa clé. La
+  // scène, elle, n'en a pas besoin — il n'y a jamais qu'une tuile dessus.
+  readonly onFullscreenTile: (key: string) => void;
+  // Vignette de bande, en mode `focus` : un appui épingle celle qu'on touche.
+  // La clé de la tuile visée, `${identity}:${source}` ; c'est `call.tsx` seul
+  // qui décide ce que « épingler » produit, cette coquille ne fait que le
+  // rapporter.
   //
-  // Nommé par ce qu'il VEUT DIRE et non par la surface d'où il part : les deux
-  // sites d'appel disent exactement la même chose, et un nom qui citerait la
-  // bande mentirait au site de la grille. C'est aussi ce qui rend le mauvais
-  // câblage détectable — un site branché sur `onPressStageTile` par erreur
-  // rougit, puisque les deux rappels restent distincts.
+  // Le SEUL site d'appel depuis que la grille ouvre le plein écran : la bande
+  // n'existe qu'en mode `focus`, donc l'épinglage n'est atteignable que sous un
+  // partage d'écran ou un épinglage déjà posé. Conséquence assumée de
+  // l'arbitrage — épingler sert à défaire ce qu'un partage a fait, et n'a rien
+  // à défaire ailleurs.
+  //
+  // Distinct de `onFullscreenTile` bien que de même signature, et c'est ce qui
+  // rend le mauvais câblage détectable : un site branché sur l'autre rougit.
   readonly onPinTile: (key: string) => void;
   // Badge d'épinglage, sur la scène : c'est lui, et lui seul, qui désépingle
   // — voir `onTileUnpin` de `VideoTile`.
@@ -341,6 +347,7 @@ export function CallStage({
   layout,
   onMeasureBox,
   onPressStageTile,
+  onFullscreenTile,
   onPinTile,
   onUnpinTile,
   onExitFullscreen,
@@ -370,6 +377,7 @@ export function CallStage({
       {renderContent({
         layout,
         onPressStageTile,
+        onFullscreenTile,
         onPinTile,
         onUnpinTile,
         onExitFullscreen,
@@ -389,7 +397,12 @@ function axisStyle(layout: CallLayout | null): StyleProp<ViewStyle> {
 
 type TileGridProps = {
   readonly layout: Extract<CallLayout, { mode: 'grid' }>;
-  readonly onPinTile: (key: string) => void;
+  // La grille n'épingle PLUS : elle ouvre le plein écran. Elle montre déjà tout
+  // le monde, donc y toucher une tuile veut dire « celui-ci, en grand » —
+  // transitoire, et dont un second appui sort — et non « garde-le sur la
+  // scène ». L'épinglage reste à la BANDE, où il défait ce qu'un partage
+  // d'écran a fait : ramener un visage que la scène a chassé.
+  readonly onFullscreenTile: (key: string) => void;
 };
 
 // Les tuiles découpées en rangées de `columns`. Le découpage est EXPLICITE et
@@ -414,7 +427,7 @@ function rowsOf(tiles: readonly Tile[], columns: number): readonly (readonly Til
 // taille. Chacune est déjà au rapport du gabarit, donc `cover` ne rogne
 // presque rien et ne laisse JAMAIS de noir à l'intérieur d'une tuile — c'est
 // tout le principe : le vide devient de la marge de page.
-function TileGrid({ layout, onPinTile }: TileGridProps): React.ReactElement {
+function TileGrid({ layout, onFullscreenTile }: TileGridProps): React.ReactElement {
   const { t } = useTranslation();
   const size = [styles.gridTile, { width: layout.tileWidth, height: layout.tileHeight }];
 
@@ -428,11 +441,11 @@ function TileGrid({ layout, onPinTile }: TileGridProps): React.ReactElement {
               tile={tile}
               fitWhenCamera="cover"
               size={size}
-              // Un appui sur une cellule ÉPINGLE, exactement comme un appui sur
-              // une vignette de bande : c'est la seule échappatoire depuis la
-              // grille vers une grande surface, et le seul moyen de figer ce
-              // qu'on regarde quand il y a plus de monde que de cellules.
-              onTilePress={() => onPinTile(tile.key)}
+              // Un appui sur une cellule ouvre le PLEIN ÉCRAN sur elle : la
+              // grille montre déjà tout le monde, donc y toucher quelqu'un veut
+              // dire « celui-ci, en grand ». Jamais un épinglage — voir
+              // `onFullscreenTile` du type ci-dessus.
+              onTilePress={() => onFullscreenTile(tile.key)}
               // Jamais de badge dans la grille : une tuile épinglée force le
               // mode `focus`, donc aucune tuile qui atteint ce site d'appel
               // n'est jamais celle qui est épinglée.
@@ -464,6 +477,7 @@ type StageContentProps = Omit<CallStageProps, 'onMeasureBox'>;
 function renderContent({
   layout,
   onPressStageTile,
+  onFullscreenTile,
   onPinTile,
   onUnpinTile,
   onExitFullscreen,
@@ -495,7 +509,8 @@ function renderContent({
   // plus tard, sous une vidéo en cours de lecture.
   if (layout === null) return null;
 
-  if (layout.mode === 'grid') return <TileGrid layout={layout} onPinTile={onPinTile} />;
+  if (layout.mode === 'grid')
+    return <TileGrid layout={layout} onFullscreenTile={onFullscreenTile} />;
 
   return (
     <>

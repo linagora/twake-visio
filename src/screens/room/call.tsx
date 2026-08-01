@@ -195,12 +195,13 @@ export function CallScreen(): React.ReactElement {
   const [pin, setPin] = useState<string | null>(null);
 
   // La clé de la tuile plein écran, indépendante de l'épinglage : les deux
-  // surfaces ne se recouvrent jamais. Un appui sur la SCÈNE bascule le plein
-  // écran sur la tuile qui s'y trouve, épinglée ou non ; un appui sur une
-  // vignette de la BANDE épingle, sans jamais entrer en plein écran ; et seul
-  // le badge d'épinglage désépingle (voir `handleUnpinTile`). Aucun appui
-  // long : chaque surface ne porte qu'un seul geste, qui ne veut qu'une seule
-  // chose. Résolue plus bas, une fois `layout` connu — voir `fullscreenTile`.
+  // surfaces ne se recouvrent jamais. Une CELLULE de grille l'ouvre sur
+  // elle-même ; un appui sur la SCÈNE la bascule sur la tuile qui s'y trouve,
+  // épinglée ou non ; un appui sur une vignette de la BANDE épingle, sans
+  // jamais entrer en plein écran ; et seul le badge d'épinglage désépingle
+  // (voir `handleUnpinTile`). Aucun appui long : chaque surface ne porte qu'un
+  // seul geste, qui ne veut qu'une seule chose. Résolue plus bas, une fois
+  // `layout` connu — voir `fullscreenTile`.
   const [fullscreen, setFullscreen] = useState<string | null>(null);
 
   // La boîte réellement offerte à la scène, mesurée par `CallStage` et remontée
@@ -261,16 +262,36 @@ export function CallScreen(): React.ReactElement {
     setFullscreen(null);
   }
 
-  // Un appui sur une tuile qui n'est pas la scène — vignette de bande en mode
-  // `focus`, cellule en mode `grid` — épingle celle qu'on touche. Ce n'est pas
+  // Un appui sur une VIGNETTE DE BANDE épingle celle qu'on touche. Ce n'est pas
   // un aller-retour : une tuile épinglée force le mode `focus` et occupe la
-  // scène, donc aucune des deux surfaces qui appellent ceci ne peut jamais
-  // porter la tuile déjà épinglée. L'ambiguïté que corrigeait l'ancien ternaire
-  // (« épingler ou désépingler selon l'état courant ») ne se présente donc pas
-  // — désépingler est le geste du badge, et de lui seul : voir
+  // scène, donc la bande ne peut jamais porter la tuile déjà épinglée
+  // (`src/call/layout.ts` l'en filtre). L'ambiguïté que corrigeait l'ancien
+  // ternaire (« épingler ou désépingler selon l'état courant ») ne se présente
+  // donc pas — désépingler est le geste du badge, et de lui seul : voir
   // `handleUnpinTile`.
+  //
+  // Seule surface qui épingle encore. La bande n'existe qu'en mode `focus`,
+  // donc épingler n'est atteignable que pendant un partage d'écran (ou sous un
+  // épinglage déjà posé) : c'est la conséquence assumée du geste de la grille,
+  // qui ouvre désormais le plein écran. Épingler sert à ramener un visage que
+  // le partage a chassé dans la bande ; hors partage, il n'y a rien à défaire.
   const handlePinTile = useCallback((key: string): void => {
     setPin(key);
+  }, []);
+
+  // Cellule de grille : le plein écran SUR ELLE, avec sa clé — là où la scène
+  // n'a pas besoin d'argument, puisqu'elle n'en porte jamais qu'une.
+  //
+  // C'est ici que la grille a cessé d'épingler. Elle montre déjà tout le monde,
+  // donc y toucher quelqu'un veut dire « celui-ci, en grand », pas « garde-le
+  // sur la scène » — et le parcours d'avant, DEUX appuis sur la même tuile,
+  // avait un défaut que seule la géométrie révélait : épingler redispose
+  // l'écran sous le doigt, et le second appui ne tombait plus sur la même
+  // chose. À cinq en portrait, une bande de ~92 dp en bas épinglait quelqu'un
+  // d'autre ; à trois ou moins, il tombait sur le badge et désépinglait, effet
+  // net nul. Un seul appui supprime le problème plutôt que de le border.
+  const handleFullscreenTile = useCallback((key: string): void => {
+    setFullscreen(key);
   }, []);
 
   // Scène, hors plein écran : un appui bascule le plein écran SUR ELLE, que
@@ -283,8 +304,8 @@ export function CallScreen(): React.ReactElement {
   // `stageKey` vaut `null` tant que la mesure n'est pas arrivée, ET en mode
   // `grid` — deux états où aucune tuile de SCÈNE n'est rendue, donc où ce
   // rappel n'est joignable par rien : la grille câble ses cellules sur
-  // `handlePinTile`, jamais ici. La garde existe pour le typage, jamais pour un
-  // cas atteint en pratique — même précédent que
+  // `handleFullscreenTile`, jamais ici. La garde existe pour le typage, jamais
+  // pour un cas atteint en pratique — même précédent que
   // `if (account === null || roomId === null)` sur les trois actions de
   // modération plus bas.
   const stageKey = layout !== null && layout.mode === 'focus' ? layout.focus.key : null;
@@ -841,6 +862,7 @@ export function CallScreen(): React.ReactElement {
         onMeasureBox={setBox}
         onPressStageTile={handlePressStageTile}
         onPinTile={handlePinTile}
+        onFullscreenTile={handleFullscreenTile}
         onUnpinTile={handleUnpinTile}
         onExitFullscreen={handleExitFullscreen}
         fullscreenTile={fullscreenTile}

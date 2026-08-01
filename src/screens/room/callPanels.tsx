@@ -43,6 +43,7 @@ export type CallPanelsProps = {
   readonly onMeasureBox: (box: Box) => void;
   readonly onPressStageTile: () => void;
   readonly onPinTile: (key: string) => void;
+  readonly onFullscreenTile: (key: string) => void;
   readonly onUnpinTile: () => void;
   readonly onExitFullscreen: () => void;
   readonly fullscreenTile: Tile | null;
@@ -73,6 +74,7 @@ export function CallPanels({
   onMeasureBox,
   onPressStageTile,
   onPinTile,
+  onFullscreenTile,
   onUnpinTile,
   onExitFullscreen,
   fullscreenTile,
@@ -101,6 +103,7 @@ export function CallPanels({
       onMeasureBox={onMeasureBox}
       onPressStageTile={onPressStageTile}
       onPinTile={onPinTile}
+      onFullscreenTile={onFullscreenTile}
       onUnpinTile={onUnpinTile}
       onExitFullscreen={onExitFullscreen}
       fullscreenTile={fullscreenTile}

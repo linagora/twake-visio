@@ -76,16 +76,29 @@ async function measureStage(box = PORTRAIT_BOX): Promise<void> {
 }
 
 // **La grille est la disposition par défaut** : tant que rien n'est épinglé et
-// que personne ne partage, il n'y a plus de scène du tout. Or le plein écran ne
-// s'ouvre que depuis la scène du mode `focus`. Le chemin y passe donc par un
-// épinglage, en deux appuis sur la MÊME tuile : le premier l'épingle et la
-// porte sur la scène, le second bascule le plein écran.
+// que personne ne partage, il n'y a plus de scène du tout. UN seul appui sur
+// une cellule y ouvre le plein écran.
 //
-// Ce n'est pas un artifice de test : c'est le parcours réel, et il est la
-// conséquence assumée de la grille — un appui direct sur une cellule ne peut
-// pas vouloir dire deux choses.
+// C'en était deux — épingler, puis basculer sur la même tuile — et ce parcours
+// avait un défaut que seule la géométrie révélait : épingler redispose l'écran
+// sous le doigt, donc le second appui ne tombait plus sur la même chose. RNTL
+// n'ayant aucune géométrie, l'ancienne aide ne pouvait pas le voir : elle
+// visait la tuile par son identité, jamais par sa position.
 async function enterFullscreen(key: string): Promise<void> {
   await fireEvent.press(screen.getByTestId(`tile-${key}`));
+  await waitFor(() => expect(screen.queryByTestId('mic-toggle')).toBeNull());
+}
+
+// Le seul chemin qui mène au plein écran une tuile qui commence dans la BANDE,
+// et il fait deux gestes sur deux surfaces distinctes : la vignette épingle —
+// c'est le seul endroit d'où l'on épingle encore —, puis la scène bascule.
+// À comparer avec `enterFullscreen` juste au-dessus, qui part d'une cellule de
+// grille et n'en demande qu'un.
+//
+// La bande n'existe qu'en mode `focus`, donc l'appelant doit avoir posé un
+// partage d'écran (voir `presentingParticipant`) ou un épinglage au préalable.
+async function pinThenFullscreen(key: string): Promise<void> {
+  await fireEvent.press(within(screen.getByTestId('filmstrip')).getByTestId(`tile-${key}`));
   await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
   await fireEvent.press(screen.getByTestId(`tile-${key}`));
   await waitFor(() => expect(screen.queryByTestId('mic-toggle')).toBeNull());
@@ -128,6 +141,33 @@ const UNKNOWN_CAMERA: CameraChoice = {
   nameKey: 'call.cameraUnknown',
   ordinal: null,
 };
+
+// Une personne qui PARTAGE SON ÉCRAN. Depuis que la cellule de grille ouvre le
+// plein écran, l'épinglage ne vit plus que sur la bande — et la bande n'existe
+// qu'en mode `focus`, c'est-à-dire sous un partage d'écran ou un épinglage déjà
+// posé. Tout test qui veut épingler doit donc d'abord en poser un : c'est la
+// conséquence directe de l'arbitrage, et non un détour de fixture.
+//
+// Aucune caméra : `getTrackPublication(Camera)` rend `undefined`, donc la tuile
+// `${identity}:camera` existe bien mais porte un carton nommé. C'est sans
+// conséquence ici — aucun de ces tests ne regarde l'image — et cela garde la
+// coquille minimale.
+function presentingParticipant(identity: string, name: string): unknown {
+  return {
+    identity,
+    name,
+    isLocal: false,
+    isSpeaking: false,
+    attributes: {},
+    getTrackPublication: (source: unknown) => {
+      if (source === Track.Source.Microphone) return { trackSid: `TR_${identity}` };
+      if (source === Track.Source.ScreenShare) {
+        return { trackSid: `SC_${identity}`, track: { id: 'screen' }, isMuted: false };
+      }
+      return undefined;
+    },
+  };
+}
 
 // Un participant distant minimal, du même contrat que `readParticipant` dans
 // `src/call/participants` attend d'un `Participant` LiveKit — même convention
@@ -2128,11 +2168,16 @@ describe('CallScreen, main levée', () => {
 // conception d'origine et le lot qui la simplifie pour le rapport de ce
 // changement.
 describe('CallScreen, épinglage', () => {
-  it('épingle la cellule qu’on touche dans la grille', async () => {
-    // Ada est seule et distante : les deux tuiles commencent donc CÔTE À CÔTE
-    // dans la grille, sans qu'aucune ne soit sur une scène — c'est le
-    // changement que la grille apporte. Épingler sa propre cellule la fait
-    // monter, et prouve le geste plutôt qu'une règle par défaut.
+  // La grille n'épingle PLUS : elle ouvre le plein écran. Ce test-ci reste dans
+  // ce describe parce que c'est la MOITIÉ NÉGATIVE de l'épinglage — il prouve
+  // qu'aucun épinglage ne part de cette surface — et il a pour complément
+  // exact, plus bas, « une vignette de bande épingle et n'ouvre jamais le plein
+  // écran ». Un des deux sites doit rougir si les deux rappels sont échangés.
+  it('ouvre le plein écran sur la cellule qu’on touche dans la grille, sans épingler', async () => {
+    // Ada est seule, distante et ne partage rien : les deux tuiles commencent
+    // donc CÔTE À CÔTE dans la grille, sans qu'aucune ne soit sur une scène.
+    // Toucher sa PROPRE cellule prouve que c'est bien la clé pressée qui part :
+    // celle d'Ada serait aussi celle qu'une règle par défaut aurait choisie.
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
     await renderCall();
@@ -2142,16 +2187,23 @@ describe('CallScreen, épinglage', () => {
 
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
 
+    // Sa propre vignette, SEULE : c'est le plein écran, et non une scène — la
+    // barre est partie avec la grille.
     await waitFor(() => {
       expect(
         within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
       ).toBeTruthy();
     });
-    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
-    // I5 : le seul retour visuel de ce geste. Sans lui, l'épinglage est
-    // silencieux — mesuré par la revue de branche : un appui qui fige la
-    // scène sans que rien à l'écran ne le dise.
-    expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
+    expect(screen.queryByTestId('grid')).toBeNull();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+
+    // Et rien n'a été épinglé au passage : la sortie rend la GRILLE, jamais une
+    // scène épinglée. Sans cette seconde moitié, une cellule qui appellerait
+    // les DEUX rappels passerait tout ce qui précède.
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
   });
 
   // Règle centrale de ce lot : un second appui sur la tuile désormais en
@@ -2161,11 +2213,13 @@ describe('CallScreen, épinglage', () => {
   // ternaire (« épingler ou désépingler selon l'état courant ») sur la scène
   // passerait quand même le test précédent.
   it('un second appui sur la tuile désormais en scène ne la désépingle pas : il bascule le plein écran', async () => {
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    // Ada partage son écran : c'est ce qui produit une bande, et la bande est
+    // désormais le seul endroit d'où l'on épingle.
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    await fireEvent.press(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera'));
     await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('tile-me:camera'));
@@ -2180,21 +2234,29 @@ describe('CallScreen, épinglage', () => {
 
   // Le badge devient le seul geste qui désépingle.
   it('désépingle sur un appui du badge, jamais sur un appui de la tuile', async () => {
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    // Ada partage son écran : c'est ce qui produit une bande, et la bande est
+    // désormais le seul endroit d'où l'on épingle.
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    await fireEvent.press(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera'));
     await waitFor(() => expect(screen.getByTestId('pin-marker')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('pin-marker'));
 
-    // Désépingler ne rend pas la scène à quelqu'un d'autre : il n'y a plus de
-    // scène du tout, on retombe dans la grille. C'est exactement ce que la
-    // grille supprime — la grande surface, et les bandes noires avec elle.
-    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
-    expect(within(screen.getByTestId('grid')).getByTestId('tile-u-ada:camera')).toBeTruthy();
-    expect(within(screen.getByTestId('grid')).getByTestId('tile-me:camera')).toBeTruthy();
+    // Désépingler rend la scène à ce qui l'occupait AVANT l'épinglage — le
+    // partage d'Ada, qui n'a pas cessé pendant ce temps. C'est exactement ce à
+    // quoi l'épinglage sert désormais, et le seul état d'où il peut partir :
+    // ramener un visage que le partage avait chassé dans la bande, puis le
+    // rendre.
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:screen'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
     // Et le badge repart avec le désépinglage : un badge qui survivrait
     // mentirait sur l'état réel.
     expect(screen.queryByTestId('pin-marker')).toBeNull();
@@ -2276,16 +2338,21 @@ describe('CallScreen, plein écran', () => {
   // résout de nouveau, et rejetterait l'écran dans un plein écran sans
   // commandes sans que personne n'ait rien demandé.
   it('ne ressuscite pas le plein écran quand la cible revient sans le moindre geste', async () => {
+    // Ada présente : c'est ce qui produit la bande, seul endroit d'où l'on
+    // épingle encore. Bob y est épinglé, puis basculé en plein écran depuis la
+    // scène — la seule façon de poser les DEUX clés sur la MÊME tuile, ce que
+    // ce test a précisément besoin de comparer.
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
-    await enterFullscreen('u-bob:camera');
+    await pinThenFullscreen('u-bob:camera');
 
     // Bob part : la disposition normale revient, par la résolution ordinaire.
     mockRoom.remoteParticipants.delete('u-bob');
     await emitRoom('participantDisconnected');
-    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
 
     // Bob revient, avec la MÊME identité, donc la MÊME clé de tuile — sans
     // que personne n'ait pressé quoi que ce soit sur cet écran entre-temps.
@@ -2310,26 +2377,28 @@ describe('CallScreen, plein écran', () => {
   // Carl est épinglé puis basculé en plein écran, avant de partir ; Bob,
   // resté dans la bande, sert de cible pour l'appui qui suit.
   it('un appui ordinaire redevient un épinglage une fois la cible du plein écran disparue', async () => {
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
     mockRoom.remoteParticipants.set('u-carl', remoteParticipant('u-carl', 'Carl'));
 
     await renderCall();
     await waitFor(() =>
-      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-carl:camera')).toBeTruthy(),
+      expect(
+        within(screen.getByTestId('filmstrip')).getByTestId('tile-u-carl:camera'),
+      ).toBeTruthy(),
     );
 
-    // Carl, épinglé depuis la grille puis basculé en plein écran, puis parti :
-    // `fullscreen` reste posé à `u-carl:camera` quand `fullscreenTile`,
-    // résolu, retombe à `null`.
-    await enterFullscreen('u-carl:camera');
+    // Carl, épinglé depuis la bande puis basculé en plein écran depuis la
+    // scène, puis parti : `fullscreen` reste posé à `u-carl:camera` quand
+    // `fullscreenTile`, résolu, retombe à `null`.
+    await pinThenFullscreen('u-carl:camera');
 
     mockRoom.remoteParticipants.delete('u-carl');
     await emitRoom('participantDisconnected');
-    await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
 
-    // Un appui ordinaire sur Bob, resté dans la grille : doit épingler.
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+    // Un appui ordinaire sur Bob, resté dans la bande : doit épingler.
+    await fireEvent.press(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera'));
 
     await waitFor(() => {
       expect(
@@ -2339,40 +2408,41 @@ describe('CallScreen, plein écran', () => {
     expect(screen.getByTestId('pin-marker')).toBeTruthy();
   });
 
-  // La cible du plein écran ne se rejoint plus par un appui long direct sur
-  // une vignette de la bande — la bande épingle désormais. Cette séquence en
-  // deux temps (épingler, puis basculer) est la seule façon d'y envoyer une
-  // tuile qui commençait dans la bande, et exerce la même résolution qui
-  // cherchait autrefois `fullscreenTile` au-delà de `layout.stage`.
-  it('résout la tuile plein écran même quand la cible a dû d’abord être épinglée depuis la bande', async () => {
-    // Trois cellules dans la grille au départ, aucune sur une scène : c'est
-    // précisément ce qui rend l'épinglage OBLIGATOIRE avant le plein écran.
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+  // Le complément EXACT de « ouvre le plein écran sur la cellule qu'on touche
+  // dans la grille, sans épingler » : les deux surfaces posent chacune un
+  // rappel, et une seule assertion par surface ne dit pas laquelle. Ici, la
+  // bande — elle épingle, et n'ouvre JAMAIS le plein écran.
+  //
+  // Ce test remplace « résout la tuile plein écran même quand la cible a dû
+  // d'abord être épinglée depuis la bande », dont le parcours (épingler depuis
+  // la bande, puis basculer depuis la scène) est devenu, mot pour mot, celui du
+  // test « un second appui sur la tuile désormais en scène… » du describe
+  // précédent — et qui n'observait donc plus rien que celui-ci n'observe déjà.
+  it('épingle depuis une vignette de bande, et n’y ouvre jamais le plein écran', async () => {
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
     await renderCall();
     await waitFor(() => {
-      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-ada:camera')).toBeTruthy();
-      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
     });
 
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+    await fireEvent.press(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera'));
+
+    // Bob monte sur la scène, badge compris : c'est un épinglage.
     await waitFor(() => {
       expect(
         within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
       ).toBeTruthy();
     });
-    // Ada, elle, redescend dans la bande du mode `focus`.
-    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
-
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
-
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
-      ).toBeTruthy();
-    });
-    expect(screen.queryByTestId('filmstrip')).toBeNull();
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
+    // Et surtout PAS un plein écran : la bande et la barre entière sont restées.
+    // Le badge ci-dessus attrape déjà l'ÉCHANGE des deux rappels ; ces deux
+    // lignes-ci attrapent le cas qu'il laisse passer — une vignette qui
+    // appellerait les DEUX, donc épinglerait ET basculerait.
+    expect(screen.getByTestId('filmstrip')).toBeTruthy();
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
   });
 });
 
@@ -2384,24 +2454,29 @@ describe('CallScreen, plein écran', () => {
 // état intermédiaire devenu inutile dès lors que la sortie est immédiate.
 describe('CallScreen, plein écran, sortie', () => {
   it('sort du plein écran par un simple appui, et retrouve alors la totalité de la barre', async () => {
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    // Ada présente : la scène est son écran, et un appui dessus ouvre le plein
+    // écran sans qu'aucun épinglage n'ait à être posé d'abord. C'est le chemin
+    // le plus court vers l'état que ce test veut QUITTER, et il laisse une
+    // bande derrière lui — ce dont la dernière assertion a besoin.
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:screen')).toBeTruthy());
 
-    await enterFullscreen('u-ada:camera');
+    await fireEvent.press(screen.getByTestId('tile-u-ada:screen'));
     // Rien n'est atteignable en plein écran : ni la barre, ni le bouton pour
     // quitter la séance — c'est précisément ce qu'une revue de branche avait
     // trouvé risqué (voir le describe « enfermement » plus bas).
-    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('mic-toggle')).toBeNull());
     expect(screen.queryByTestId('leave-btn')).toBeNull();
 
-    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await fireEvent.press(screen.getByTestId('tile-u-ada:screen'));
 
     // La sortie est TOTALE, en un seul appui : bande ET barre entière
     // reviennent ensemble, sept boutons compris — aucun état intermédiaire où
     // seule une partie de l'écran mènerait à la sortie. La bande, et non la
-    // grille : Ada reste épinglée, la sortie du plein écran ne désépingle pas.
+    // grille : le partage d'Ada tient toujours la scène, et la sortie du plein
+    // écran ne défait rien d'autre qu'elle-même.
     await waitFor(() => {
       expect(screen.getByTestId('filmstrip')).toBeTruthy();
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
@@ -2416,28 +2491,29 @@ describe('CallScreen, plein écran, sortie', () => {
   // doit pas défaire l'épinglage en secret, ce qui ferait redescendre Bob à
   // la place d'Ada.
   it("un appui qui sort du plein écran ne touche pas à l'épinglage", async () => {
-    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-ada', presentingParticipant('u-ada', 'Ada'));
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
 
     await renderCall();
     await waitFor(() =>
-      expect(within(screen.getByTestId('grid')).getByTestId('tile-u-bob:camera')).toBeTruthy(),
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy(),
     );
 
-    await enterFullscreen('u-bob:camera');
+    await pinThenFullscreen('u-bob:camera');
 
     // La sortie, sur la même tuile.
     await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
 
     // Bob, toujours épinglé et sur la scène : la sortie du plein écran n'a
-    // pas désépinglé en secret.
+    // pas désépinglé en secret. Sans épinglage, c'est le partage d'Ada qui
+    // aurait repris la scène — la différence est donc bien observable.
     await waitFor(() => {
       expect(
         within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
       ).toBeTruthy();
     });
     expect(screen.getByTestId('pin-marker')).toBeTruthy();
-    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:screen')).toBeTruthy();
   });
 
   // La barre n'est PAS décrochée par une ternaire de `call.tsx` : elle reste
@@ -2511,10 +2587,12 @@ describe('CallScreen, plein écran, enfermement', () => {
     await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
 
-    // Une sortie reste atteignable : la scène et le bouton pour raccrocher
-    // sont bien revenus.
+    // Une sortie reste atteignable : la zone vidéo et le bouton pour raccrocher
+    // sont bien revenus. La GRILLE, et non une scène : le plein écran ouvert
+    // depuis une cellule n'épingle rien, donc rien ne retient le mode `focus`
+    // une fois qu'on en sort.
     await waitFor(() => {
-      expect(screen.getByTestId('active-speaker')).toBeTruthy();
+      expect(screen.getByTestId('grid')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
   });

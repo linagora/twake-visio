@@ -80,6 +80,7 @@ function gridLayout(
 type RenderStageOptions = {
   readonly onPressStageTile?: () => void;
   readonly onPinTile?: (key: string) => void;
+  readonly onFullscreenTile?: (key: string) => void;
   readonly onUnpinTile?: () => void;
   readonly onExitFullscreen?: () => void;
   readonly fullscreenTile?: Tile | null;
@@ -98,6 +99,7 @@ function renderStage(
       onMeasureBox={options.onMeasureBox ?? jest.fn()}
       onPressStageTile={options.onPressStageTile ?? jest.fn()}
       onPinTile={options.onPinTile ?? jest.fn()}
+      onFullscreenTile={options.onFullscreenTile ?? jest.fn()}
       onUnpinTile={options.onUnpinTile ?? jest.fn()}
       onExitFullscreen={options.onExitFullscreen ?? jest.fn()}
       fullscreenTile={options.fullscreenTile ?? null}
@@ -711,15 +713,29 @@ describe('mode grille', () => {
     expect(propsFor('ts-me:camera')?.objectFit).toBe('cover');
   });
 
-  it('épingle la cellule qu’on touche, avec sa clé, et pas une autre', async () => {
+  it('ouvre le plein écran sur la cellule qu’on touche, avec sa clé', async () => {
+    // La grille montre DÉJÀ tout le monde : y épingler répondait à une question
+    // que personne ne se pose. Un appui y veut dire « celui-ci, en grand », ce
+    // qui est le plein écran — transitoire, et dont un second appui sort.
+    //
+    // L'épinglage ne vit plus que sur la BANDE, où il a un sens : ramener un
+    // visage qu'un partage d'écran a chassé. Deux tuiles, jamais une : avec une
+    // seule, une clé recopiée en dur passerait inaperçue.
+    const onFullscreenTile = jest.fn();
     const onPinTile = jest.fn();
 
-    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1), { onPinTile });
+    await renderStage(gridLayout([tile('me:camera'), tile('ada:camera')], 1), {
+      onFullscreenTile,
+      onPinTile,
+    });
 
     await fireEvent.press(screen.getByTestId('tile-ada:camera'));
 
-    expect(onPinTile).toHaveBeenCalledWith('ada:camera');
-    expect(onPinTile).toHaveBeenCalledTimes(1);
+    expect(onFullscreenTile).toHaveBeenCalledWith('ada:camera');
+    expect(onFullscreenTile).toHaveBeenCalledTimes(1);
+    // Le geste ne fait plus QUE ça : sans cette ligne, une cellule qui
+    // appellerait les deux passerait le test ci-dessus.
+    expect(onPinTile).not.toHaveBeenCalled();
   });
 
   it('ne bascule jamais le plein écran depuis une cellule', async () => {
