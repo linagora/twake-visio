@@ -2468,7 +2468,7 @@ describe('CallScreen, plein écran, enfermement', () => {
 
 describe('CallScreen, réactions', () => {
   it('envoie une réaction depuis le menu, sans jamais fermer celui-ci', async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
@@ -2487,7 +2487,7 @@ describe('CallScreen, réactions', () => {
   });
 
   it('affiche sa propre bulle après un envoi accepté', async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
@@ -2500,7 +2500,7 @@ describe('CallScreen, réactions', () => {
 
   it("n'affiche aucune bulle et ne montre aucune Snackbar quand la publication échoue", async () => {
     mockPublishData.mockRejectedValueOnce(new Error('offline'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
@@ -2523,7 +2523,7 @@ describe('CallScreen, réactions', () => {
 
   it('affiche une bulle avec le nom quand un autre participant réagit', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await emitRoom(
@@ -2542,7 +2542,7 @@ describe('CallScreen, réactions', () => {
   });
 
   it("ignore un paquet de données qui n'est pas une réaction", async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await emitRoom(
@@ -2565,7 +2565,7 @@ describe('CallScreen, réactions', () => {
   // aucun menu, donc ne dépend d'aucun minuteur réel.
   it('efface une bulle après sa durée de vie', async () => {
     jest.useFakeTimers();
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await emitRoom(
@@ -2584,7 +2584,7 @@ describe('CallScreen, réactions', () => {
   });
 
   it('détache le canal de données au démontage', async () => {
-    const view = await render(withPaper(<CallScreen />));
+    const view = await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     expect(mockRoomHandlers.get('dataReceived')?.length ?? 0).toBeGreaterThan(0);
 
@@ -2603,20 +2603,27 @@ describe('CallScreen — le chat', () => {
     await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
   }
 
-  it('remplace la scène par le chat, et la rend au retour', async () => {
-    // Le panneau remplace la scène plutôt que de se poser par-dessus : les
-    // deux se disputeraient la même vidéo. La barre, elle, reste en place.
-    await render(withPaper(<CallScreen />));
-    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+  it('remplace la zone vidéo par le chat, et la rend au retour', async () => {
+    // Le panneau remplace la vidéo plutôt que de se poser par-dessus : les
+    // deux se disputeraient la même image. La barre, elle, reste en place.
+    //
+    // `stage-root` et non `active-speaker` : depuis la grille adaptative, ce
+    // dernier n'existe que lorsque le CONTENU réclame une scène — un partage
+    // d'écran, un épinglage. À une seule personne, la disposition est une
+    // grille, et ce test échouait sur une tuile qui n'a jamais eu de raison
+    // d'être là. `stage-root` est la racine de la zone vidéo dans les deux
+    // dispositions, donc exactement ce que ce test veut voir disparaître.
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('stage-root')).toBeTruthy());
 
     await openChat();
 
-    expect(screen.queryByTestId('active-speaker')).toBe(null);
+    expect(screen.queryByTestId('stage-root')).toBe(null);
     expect(screen.getByTestId('leave-btn')).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId('chat-close'));
 
-    await waitFor(() => expect(screen.getByTestId('active-speaker')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('stage-root')).toBeTruthy());
     expect(screen.queryByTestId('chat-title')).toBe(null);
   });
 
@@ -2624,7 +2631,7 @@ describe('CallScreen — le chat', () => {
     // Trois états s'excluent ; deux booléens en autoriseraient quatre, dont un
     // impossible.
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await fireEvent.press(screen.getByTestId('participants-toggle'));
     await waitFor(() => expect(screen.getAllByTestId('participant-row').length).toBeGreaterThan(0));
 
@@ -2635,7 +2642,7 @@ describe('CallScreen — le chat', () => {
 
   it('affiche un message reçu du serveur', async () => {
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await receiveChat('u-bob', 's-1', 'bonjour');
     await openChat();
@@ -2647,7 +2654,7 @@ describe('CallScreen — le chat', () => {
     // Deux messages, jamais un seul : avec un seul, une pastille codée en dur
     // à 1 passerait.
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await receiveChat('u-bob', 's-1', 'bonjour', 1_000);
     await receiveChat('u-bob', 's-2', 'la suite', 2_000);
@@ -2661,7 +2668,7 @@ describe('CallScreen — le chat', () => {
 
   it('envoie sur le topic du chat et vide la zone', async () => {
     mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openChat();
 
     await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
@@ -2674,7 +2681,7 @@ describe('CallScreen — le chat', () => {
 
   it('signale un envoi échoué et garde le texte', async () => {
     mockSendText.mockRejectedValue(new Error('canal fermé'));
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openChat();
 
     await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
@@ -2691,7 +2698,7 @@ describe('CallScreen — le chat', () => {
     // effacer l'erreur d'un essai précédent.
     mockSendText.mockRejectedValueOnce(new Error('canal fermé'));
     mockSendText.mockResolvedValue({ id: 's-local', timestamp: 5_000 });
-    await render(withPaper(<CallScreen />));
+    await renderCall();
     await openChat();
 
     await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
@@ -2718,7 +2725,7 @@ describe('CallScreen — le chat', () => {
   // 'padding' que ce fichier rend ; l'autre est gardée dans `keyboard.spec.ts`,
   // et c'est précisément pourquoi `keyboardMode()` est une VALEUR.
   it('rembourre la racine entière, et non le seul panneau', async () => {
-    await render(withPaper(<CallScreen />));
+    await renderCall();
 
     await waitFor(() => expect(screen.getByTestId('call-root')).toBeTruthy());
     // `behavior` elle-même n'est joignable par aucune assertion :
@@ -2738,7 +2745,7 @@ describe('CallScreen — le chat', () => {
   it('enregistre lk.chat une seule fois, et le libère au démontage', async () => {
     // Un gestionnaire laissé sur une Room vivante est une fuite qu'aucun écran
     // ne rattrape ; deux enregistrements feraient jeter le SDK.
-    const view = await render(withPaper(<CallScreen />));
+    const view = await renderCall();
 
     expect(mockTextStreamHandlers.has('lk.chat')).toBe(true);
 
