@@ -64,7 +64,7 @@ describe('useCallLayout', () => {
     // noir jusqu'à ce que quelqu'un bouge — parfois jamais.
     const { room } = fakeRoom();
 
-    const { result } = await renderHook(() => useCallLayout(room, 'user'));
+    const { result } = await renderHook(() => useCallLayout(room, 'user', null));
 
     expect(result.current.stage.key).toBe('me:camera');
     expect(result.current.filmstrip).toEqual([]);
@@ -72,7 +72,7 @@ describe('useCallLayout', () => {
 
   it('suit l’arrivée d’un participant annoncée par la Room', async () => {
     const { room, remotes, emit } = fakeRoom();
-    const { result } = await renderHook(() => useCallLayout(room, 'user'));
+    const { result } = await renderHook(() => useCallLayout(room, 'user', null));
 
     await act(async () => {
       remotes.set('bob', person('bob'));
@@ -87,7 +87,7 @@ describe('useCallLayout', () => {
     const { room, remotes } = fakeRoom();
     remotes.set('bob', person('bob'));
     const { result, rerender } = await renderHook(
-      ({ facing }: { facing: FacingMode }) => useCallLayout(room, facing),
+      ({ facing }: { facing: FacingMode }) => useCallLayout(room, facing, null),
       { initialProps: { facing: 'user' as FacingMode } },
     );
     expect(result.current.filmstrip[0]?.mirror).toBe(true);
@@ -101,7 +101,7 @@ describe('useCallLayout', () => {
     // Sans cela, chaque passage sur l'écran laisse une Room qui rappelle un
     // composant démonté à chaque piste publiée par n'importe qui.
     const { room, subscribedEvents } = fakeRoom();
-    const { unmount } = await renderHook(() => useCallLayout(room, 'user'));
+    const { unmount } = await renderHook(() => useCallLayout(room, 'user', null));
     expect(subscribedEvents()).not.toEqual([]);
 
     await unmount();

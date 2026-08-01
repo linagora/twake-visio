@@ -107,7 +107,7 @@ participant distant. Deux fois payé.
 | Sur quoi porte-t-il ? | Une **clé de tuile** (`${identity}:${source}`), pas une personne. |
 | Où vit-il ? | Dans `call.tsx`, en `useState`. **Local à l'appareil**, non partagé, non persisté. |
 | Survit-il au départ ? | Il n'est jamais « effacé » : il est **résolu contre la vue présente** à chaque rendu, et ignoré s'il ne résout pas. Une reconnexion le conserve donc. |
-| Quel geste ? | **Appui long** sur n'importe quelle tuile, plus un marqueur pressable pour en sortir. |
+| Quel geste ? | **Appui simple** sur une tuile (bande ou scène) pour épingler ; **appui long** pour le plein écran. Voir la décision ci-dessous, qui remplace cette ligne. |
 
 > ## Décision du 2026-08-01, prise sur appareil : DEUX gestes, deux portées
 >
@@ -119,6 +119,54 @@ participant distant. Deux fois payé.
 > +13 % en linéaire, +28 % en surface.** Sur du texte partagé, 13 % de hauteur de glyphe
 > sépare « lisible » de « confortable ».
 >
+> ### Correction mesurée le 2026-08-01 : le gain du plein écran est PAYSAGE, et nul en portrait
+>
+> Les +28 % ci-dessus valent en paysage, où l'image est limitée par la **hauteur**. En
+> portrait, elle est limitée par la **largeur**, et masquer la bande et la barre n'ajoute que
+> du noir :
+>
+> | | scène | image 16:9 en `contain` |
+> | --- | --- | --- |
+> | portrait, aujourd'hui | 443 × 821,8 dp | **443 × 249,2** |
+> | portrait, plein écran | 443 × 969,8 dp | **443 × 249,2 — identique** |
+> | paysage, aujourd'hui | 873,8 × 391 dp | 695 × 391 |
+> | paysage, plein écran | 969,8 × 443 dp | **787,6 × 443 — +28 % d'aire** |
+>
+> Constaté sur appareil puis vérifié par le calcul, et non l'inverse.
+>
+> **Conséquence produit, non traitée par ce lot :** pour lire un support partagé en portrait,
+> la bonne action est de **tourner l'appareil**, pas d'appuyer longuement — et rien dans
+> l'application ne le dit. L'image n'occupe alors que 30 % de la hauteur de la scène. Reste
+> ouvert : le signaler, le suggérer, ou laisser faire.
+
+> ### Corrigé après implémentation : ce qui a réellement été livré, et le piège qu'il a fallu fermer
+>
+> **La sortie du plein écran est un BOUTON DÉDIÉ**, pas un simple appui. Ce document affirmait
+> le contraire (« évite de viser une petite cible pour sortir ») : c'est faux, et il a fallu
+> une revue de branche pour l'établir. L'appui révèle les commandes ; un bouton
+> `fullscreen-exit-btn` y figure, distinct de « raccrocher » — quitter le plein écran n'est
+> pas quitter l'appel.
+>
+> **Et l'appui simple porte aussi sur la tuile de SCÈNE, pas seulement sur la bande.** C'est
+> nécessaire : une tuile épinglée est filtrée hors de la bande, donc la scène est la seule
+> surface où le « second appui annule » peut se produire. Un **marqueur** rend l'épinglage
+> visible ; sans lui, l'appui gelait le suivi de la parole sans le moindre retour, ce qui a
+> été mesuré et corrigé.
+>
+> ### Le piège d'enfermement, qui n'était pas dans ce document et aurait dû y être
+>
+> Le plein écran masque la barre de contrôle — **donc le bouton pour raccrocher**. Livré tel
+> quel, il permettait d'entrer dans un état d'où l'on ne pouvait plus sortir : ouvrir le
+> panneau des participants démontait la seule surface capable de rappeler les commandes, et
+> quatre secondes plus tard il ne restait **aucun bouton sur l'écran**. Reproduit, arbre
+> énuméré, puis fermé.
+>
+> **La règle qui en sort, et qui vaut pour toute conception ultérieure :** tout état qui
+> retire des commandes doit être accompagné du tableau de ses sorties — pour chaque
+> affordance qui en sort, l'ensemble des états où elle est **montée** — et la transition
+> `entrée → sortie` doit être **totale sur les états atteignables**, pas seulement sur le
+> chemin heureux. Ce tableau fait deux lignes pour ce lot, et le défaut en tombe tout seul.
+
 > **Les deux gestes retenus :**
 >
 > - **Appui SIMPLE sur une tuile de la bande → elle passe sur la SCÈNE**, et l'occupant sortant

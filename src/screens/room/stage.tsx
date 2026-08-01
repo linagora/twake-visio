@@ -1,7 +1,9 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { VideoTrack } from '@livekit/react-native';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -71,6 +73,27 @@ const styles = StyleSheet.create({
     padding: tokens.spacing.xs,
   },
   placeholderText: { color: tokens.color.textDark, textAlign: 'center' },
+  // I5 : le marqueur d'épinglage. Un fond opaque, jamais translucide — sans
+  // lui, le glyphe se pose directement sur une vidéo dont la couleur n'est
+  // connue de personne ici, et `tokens.color.textDark` peut tomber sur du
+  // texte clair filmé, aussi invisible qu'un quasi-noir sur noir. Coin
+  // opposé au nom (`placeholder`, centré) et à la bordure de locuteur
+  // (`speaking`, sur tout le pourtour) : rien ne se recouvre.
+  pinMarkerBadge: {
+    position: 'absolute',
+    top: tokens.spacing.xs,
+    left: tokens.spacing.xs,
+    backgroundColor: tokens.color.surfaceDark,
+    borderRadius: tokens.radius.pill,
+    padding: tokens.spacing.xs,
+  },
+  // Cet écran est sombre dans les deux schémas et `react-native-paper`
+  // l'ignore (`AGENTS.md`) — mais ce glyphe n'est pas un composant Paper : sa
+  // couleur est ce `style` littéral, jamais calculée depuis un thème, donc
+  // rien à contourner ici. 15,86:1 sur `surfaceDark` (calculé, pas copié du
+  // 16,65:1 de `backgroundDark` ailleurs dans ce fichier : les deux fonds
+  // sont proches mais distincts).
+  pinMarkerIcon: { color: tokens.color.textDark },
 });
 
 type VideoTileProps = {
@@ -78,51 +101,121 @@ type VideoTileProps = {
   // Ce que la PLACE veut, quand la source n'impose rien.
   readonly fitWhenCamera: 'cover' | 'contain';
   readonly size: StyleProp<ViewStyle>;
+  // Relayés tels quels : la vignette ne décide ni qui monte sur scène ni ce
+  // qu'un appui long signifie, elle ne fait que rapporter le geste avec la clé
+  // de SA tuile — voir `CallStage`, qui ferme la clé dans la fermeture.
+  //
+  // Nommés `onTilePress`/`onTileLongPress`, jamais `onPress`/`onLongPress` :
+  // `fireEvent.press` de RNTL 14 retombe, faute de handler sur l'élément visé,
+  // sur une remontée de FIBRE (`findEventHandlerFromFiber`,
+  // `@testing-library/react-native/dist/fire-event.js`) qui s'arrête au premier
+  // ANCÊTRE HÔTE croisé — jamais avant. `Pressable` n'étant pas un composant
+  // hôte, un nom identique à sa propre prop `onPress` se laisse trouver sur
+  // CETTE fonction-ci sans jamais prouver qu'elle le relaie : vérifié par
+  // mutation, retirer `onPress={onPress}` du `Pressable` ci-dessous, sous ce
+  // même nom, laissait 682 tests verts.
+  readonly onTilePress: () => void;
+  readonly onTileLongPress: () => void;
+  // I5 : vrai quand CETTE tuile doit porter le marqueur d'épinglage.
+  // Obligatoire plutôt qu'optionnelle à défaut `false`, pour la même raison
+  // que `onTilePress`/`onTileLongPress` juste au-dessus : `CallStage`
+  // instancie `VideoTile` à trois sites d'appel (scène, bande, plein écran),
+  // et un défaut silencieux laisserait un site oublié se comporter par
+  // accident au lieu de forcer une décision. Seule la scène, en disposition
+  // ordinaire, doit jamais valoir `true` — voir `CallStage` plus bas.
+  readonly pinned: boolean;
 };
 
 // Aucune décision ici : la vignette pose ce qu'on lui donne. Tout ce qui se
 // choisit — qui, dans quel ordre, en miroir ou non — a été décidé par
 // `src/call/layout`, le seul endroit vérifiable.
-function VideoTile({ tile, fitWhenCamera, size }: VideoTileProps): React.ReactElement {
+function VideoTile({
+  tile,
+  fitWhenCamera,
+  size,
+  onTilePress,
+  onTileLongPress,
+  pinned,
+}: VideoTileProps): React.ReactElement {
   const { t } = useTranslation();
   // La sélection nettoie le nom : il n'y a qu'une absence à traiter, et jamais
   // d'identifiant brut à l'écran.
   const label = tile.name === '' ? t('call.unnamedParticipant') : tile.name;
 
   return (
-    <View
-      testID={`tile-${tile.key}`}
-      // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
-      // vidéo. Il le porte donc dans les deux cas, image ou non.
-      accessibilityLabel={label}
-      style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
-    >
-      {tile.track === null ? (
-        // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
-        // d'une panne, et faire disparaître la vignette sortirait la personne de
-        // la liste des présents alors qu'elle est bien là.
-        <View testID={`tile-placeholder-${tile.key}`} style={styles.placeholder}>
-          <Text style={styles.placeholderText} numberOfLines={2}>
-            {label}
-          </Text>
-        </View>
-      ) : (
-        <VideoTrack
-          trackRef={tile.track}
-          style={styles.video}
-          // Un écran ne se rogne jamais, où qu'il soit posé : un texte coupé est
-          // un texte perdu, et c'est précisément ce qu'on partage. La place ne
-          // décide que pour une caméra.
-          objectFit={tile.source === 'screen' ? 'contain' : fitWhenCamera}
-          mirror={tile.mirror}
-        />
-      )}
-    </View>
+    // `size` est répété ici : sans lui, ce `Pressable` — dépourvu de toute
+    // dimension propre — se rétrécirait à son contenu, et la vue dimensionnée
+    // qu'il enveloppe ne récupère JAMAIS sa taille depuis un enfant. C'est ce
+    // qui viderait la scène (`flex: 1`) à hauteur nulle, et réduirait chaque
+    // vignette de la bande à la largeur de son texte. Le `testID`, lui, reste
+    // sur la vue qu'il a toujours désigné : les tests existants l'interrogent,
+    // et `fireEvent.press` atteint `onPress` en remontant jusqu'à ce `Pressable`
+    // quel que soit l'élément visé par la requête.
+    <Pressable style={size} onPress={onTilePress} onLongPress={onTileLongPress}>
+      <View
+        testID={`tile-${tile.key}`}
+        // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
+        // vidéo. Il le porte donc dans les deux cas, image ou non.
+        accessibilityLabel={label}
+        style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
+      >
+        {tile.track === null ? (
+          // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
+          // d'une panne, et faire disparaître la vignette sortirait la personne de
+          // la liste des présents alors qu'elle est bien là.
+          <View testID={`tile-placeholder-${tile.key}`} style={styles.placeholder}>
+            <Text style={styles.placeholderText} numberOfLines={2}>
+              {label}
+            </Text>
+          </View>
+        ) : (
+          <VideoTrack
+            trackRef={tile.track}
+            style={styles.video}
+            // Un écran ne se rogne jamais, où qu'il soit posé : un texte coupé est
+            // un texte perdu, et c'est précisément ce qu'on partage. La place ne
+            // décide que pour une caméra.
+            objectFit={tile.source === 'screen' ? 'contain' : fitWhenCamera}
+            mirror={tile.mirror}
+          />
+        )}
+        {pinned ? (
+          // I5 : le seul retour visuel qu'un appui d'épinglage produit. Un
+          // `View` pour le fond opaque, un glyphe direct pour l'icône — pas
+          // un `leadingIcon` fonction de Paper, qui ne s'applique de toute
+          // façon qu'à un `Menu.Item` : voir `sheetCheck.tsx` pour le même
+          // choix, motivé par le même précédent (`controlBar.ts`).
+          <View style={styles.pinMarkerBadge}>
+            <MaterialCommunityIcons
+              testID="pin-marker"
+              name="pin"
+              size={16}
+              style={styles.pinMarkerIcon}
+              accessibilityLabel={t('call.pinned')}
+            />
+          </View>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
 export type CallStageProps = {
   readonly layout: CallLayout;
+  // La clé de la tuile touchée, `${identity}:${source}`. La coquille ne décide
+  // rien du sens d'un appui : elle le rapporte, et `call.tsx` seul choisit ce
+  // qu'il produit — voir `handlePressTile`, qui épingle et désépingle.
+  readonly onPressTile: (key: string) => void;
+  // Relayé de la même façon : c'est `call.tsx` qui décide ce qu'un appui long
+  // déclenche — voir `handleLongPressTile`, qui pose `fullscreenTile`
+  // ci-dessous.
+  readonly onLongPressTile: (key: string) => void;
+  // La tuile seule à montrer, sans bande ; `null` = disposition normale. Ce
+  // n'est pas une décision de disposition — `selectLayout` n'a pas à
+  // connaître cette notion d'écran — donc elle arrive déjà résolue : cette
+  // coquille ne fait que la poser, elle ne décide ni ce qui la remplit ni
+  // quand elle retombe à `null`. Voir `fullscreenTile` dans `call.tsx`.
+  readonly fullscreenTile: Tile | null;
 };
 
 // La coquille de rendu, tenue aussi bête que possible : personne ne peut la
@@ -132,7 +225,12 @@ export type CallStageProps = {
 // La bande reste posée même vide plutôt que d'apparaître au premier arrivant :
 // la scène garderait sinon la même hauteur pour deux dispositions différentes,
 // et se redimensionnerait sous une vidéo en cours de lecture.
-export function CallStage({ layout }: CallStageProps): React.ReactElement {
+export function CallStage({
+  layout,
+  onPressTile,
+  onLongPressTile,
+  fullscreenTile,
+}: CallStageProps): React.ReactElement {
   const { width, height } = useWindowDimensions();
   // Les dimensions de la fenêtre, jamais une API d'orientation : sur un
   // pliable elles changent SANS rotation — Pixel 10 Pro Fold, couverture
@@ -147,6 +245,33 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
   // 3,5 % de géométrie.
   const landscape = width > height;
 
+  // Le plein écran remplace la disposition entière : une tuile, aucune bande.
+  // Appelé avant le `return` normal, jamais après : `useWindowDimensions`
+  // ci-dessus doit s'exécuter à chaque rendu, plein écran ou non, pour ne
+  // jamais changer le nombre de Hooks appelés d'un rendu à l'autre — même si
+  // `landscape` ne sert à rien dans cette branche.
+  if (fullscreenTile !== null) {
+    return (
+      <View style={styles.root}>
+        <View style={styles.stage} testID="active-speaker">
+          <VideoTile
+            tile={fullscreenTile}
+            fitWhenCamera="contain"
+            size={styles.stageTile}
+            onTilePress={() => onPressTile(fullscreenTile.key)}
+            onTileLongPress={() => onLongPressTile(fullscreenTile.key)}
+            // I5 : jamais ici, même quand `layout.pinned` vaut `true` pour
+            // cette même tuile. Un appui en plein écran ne signifie jamais
+            // « annuler l'épinglage » — voir le court-circuit de
+            // `handlePressTile` dans `call.tsx`, qui le redirige vers le
+            // rappel des commandes — et un marqueur suggérerait le contraire.
+            pinned={false}
+          />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, landscape ? styles.rootLandscape : null]}>
       <View style={styles.stage} testID="active-speaker">
@@ -154,7 +279,18 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
             écran en portrait jusqu'à n'en montrer que 26 % — mesuré sur
             1080×2364. Aucune des deux valeurs n'est bonne ; les bandes noires
             sont un défaut de MISE EN PAGE, que la refonte de la grille traitera. */}
-        <VideoTile tile={layout.stage} fitWhenCamera="contain" size={styles.stageTile} />
+        <VideoTile
+          tile={layout.stage}
+          fitWhenCamera="contain"
+          size={styles.stageTile}
+          onTilePress={() => onPressTile(layout.stage.key)}
+          onTileLongPress={() => onLongPressTile(layout.stage.key)}
+          // I5 : la SEULE des trois instanciations de `VideoTile` où ce
+          // marqueur peut apparaître — voir `src/call/layout.ts:213`, dont le
+          // filtre garantit qu'une tuile épinglée ne peut jamais se trouver
+          // dans la bande juste en dessous.
+          pinned={layout.pinned}
+        />
       </View>
 
       {/* Une bande de longueur inconnue : au-delà de trois vignettes, les
@@ -178,6 +314,14 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
             tile={tile}
             fitWhenCamera="cover"
             size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
+            onTilePress={() => onPressTile(tile.key)}
+            onTileLongPress={() => onLongPressTile(tile.key)}
+            // I5 : jamais dans la bande, par construction — `layout.ts:213`
+            // filtre systématiquement la tuile épinglée hors de `filmstrip`,
+            // donc aucune tuile qui atteint ce site d'appel n'est jamais
+            // elle. Explicite plutôt qu'omis, pour que ce site d'appel décide
+            // lui aussi, au lieu d'hériter un défaut en silence.
+            pinned={false}
           />
         ))}
       </ScrollView>

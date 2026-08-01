@@ -80,6 +80,9 @@ export type Tile = {
 
 export type CallLayout = {
   readonly stage: Tile;
+  // Vrai quand c'est l'épinglage qui a produit cette scène, faux quand c'est un
+  // partage d'écran ou la parole. La coquille en tire un marqueur, pas une règle.
+  readonly pinned: boolean;
   readonly filmstrip: readonly Tile[];
 };
 
@@ -178,24 +181,36 @@ function pickScreen(view: RoomView): ParticipantView | null {
 
 // Fonction pure : mêmes entrées, mêmes vignettes. Tout ce qui décide de ce qui
 // s'affiche est ici ; la coquille de rendu ne fait que poser la liste.
-export function selectLayout(view: RoomView, facing: FacingMode): CallLayout {
-  const presenter = pickScreen(view);
-  // Un partage ne se DISPUTE pas la scène avec la parole : il la prend. Présenter,
-  // c'est demander qu'on regarde son écran pendant qu'on parle par-dessus.
-  const stage: Tile =
-    presenter === null
-      ? toTile(pickStage(view), 'camera', facing)
-      : toTile(presenter, 'screen', facing);
-
-  // Sa propre vignette ouvre la bande, à une place fixe. La chercher parmi des
-  // vignettes qui bougent, c'est ne jamais savoir si l'on est cadré.
+export function selectLayout(
+  view: RoomView,
+  facing: FacingMode,
+  // Une clé de tuile, `${identity}:${source}`. `null` = rien d'épinglé.
+  pin: string | null,
+): CallLayout {
+  // Toutes les tuiles candidates, dans l'ordre où la bande les montrerait. Sa
+  // propre vignette ouvre la bande, à une place fixe.
   const everyone = [view.local, ...[...view.remotes].sort(compareStable)];
-  // Les visages d'abord, puis les autres écrans : une personne qui partage
-  // apparaît donc deux fois, une fois par piste.
-  const filmstrip = [
+  const candidates = [
     ...everyone.map((p) => toTile(p, 'camera', facing)),
     ...everyone.filter((p) => p.screen !== null).map((p) => toTile(p, 'screen', facing)),
-  ].filter((tile) => tile.key !== stage.key);
+  ];
 
-  return { stage, filmstrip };
+  // L'épinglage est RÉSOLU contre la vue présente à chaque rendu, jamais
+  // « effacé ». Une personne qui part emporte sa tuile ; la clé reste posée et
+  // ne résout plus, donc on retombe sur la règle ordinaire. Si elle revient,
+  // l'épinglage reprend tout seul — et une reconnexion le conserve.
+  const pinnedTile = pin === null ? undefined : candidates.find((t) => t.key === pin);
+
+  const presenter = pickScreen(view);
+  // Un partage ne se DISPUTE pas la scène avec la parole : il la prend. Mais un
+  // épinglage passe devant lui : c'est une demande explicite, et elle gagne.
+  const stage: Tile =
+    pinnedTile ??
+    (presenter === null
+      ? toTile(pickStage(view), 'camera', facing)
+      : toTile(presenter, 'screen', facing));
+
+  const filmstrip = candidates.filter((tile) => tile.key !== stage.key);
+
+  return { stage, pinned: pinnedTile !== undefined, filmstrip };
 }

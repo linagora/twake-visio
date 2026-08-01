@@ -37,7 +37,7 @@ describe('selectLayout — la scène', () => {
   it('montre sa propre caméra quand personne d’autre n’est là', () => {
     // Sans cela, la personne qui arrive la première regarde un rectangle noir
     // et croit que la séance est cassée.
-    const layout = selectLayout(view(ME, []), 'user');
+    const layout = selectLayout(view(ME, []), 'user', null);
 
     expect(layout.stage.key).toBe('me:camera');
     expect(layout.stage.isLocal).toBe(true);
@@ -46,7 +46,7 @@ describe('selectLayout — la scène', () => {
   it('laisse la scène à un distant dès qu’il y en a un, même silencieux', () => {
     // On n’a pas besoin de se regarder soi-même en grand : on tient le
     // téléphone. La grande surface va à l’autre.
-    const layout = selectLayout(view(ME, [person('ada')]), 'user');
+    const layout = selectLayout(view(ME, [person('ada')]), 'user', null);
 
     expect(layout.stage.key).toBe('ada:camera');
   });
@@ -55,6 +55,7 @@ describe('selectLayout — la scène', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { lastSpokeAt: 10 }), person('bob', { isSpeaking: true })]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('bob:camera');
@@ -70,6 +71,7 @@ describe('selectLayout — la scène', () => {
         person('bob', { isSpeaking: false, lastSpokeAt: 50 }),
       ]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('ada:camera');
@@ -80,6 +82,7 @@ describe('selectLayout — la scène', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { lastSpokeAt: 5 }), person('bob', { lastSpokeAt: 50 })]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('bob:camera');
@@ -92,6 +95,7 @@ describe('selectLayout — la scène', () => {
         person('bob', { isSpeaking: true, lastSpokeAt: 50 }),
       ]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('bob:camera');
@@ -101,6 +105,7 @@ describe('selectLayout — la scène', () => {
     const layout = selectLayout(
       view(ME, [person('zoe', { joinedAt: 1 }), person('ada', { joinedAt: 2 })]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('zoe:camera');
@@ -109,7 +114,7 @@ describe('selectLayout — la scène', () => {
   it('reste déterministe quand même l’heure d’arrivée manque', () => {
     // `joinedAt` est facultatif côté SDK. Sans dernier départage, l’ordre des
     // vignettes dépendrait de celui de la Map du SDK et changerait tout seul.
-    const layout = selectLayout(view(ME, [person('zoe'), person('ada')]), 'user');
+    const layout = selectLayout(view(ME, [person('zoe'), person('ada')]), 'user', null);
 
     expect(layout.stage.key).toBe('ada:camera');
   });
@@ -124,6 +129,7 @@ describe('selectLayout — la scène', () => {
         person('bob', { camera: fakeCamera('t-bob') }),
       ]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('ada:camera');
@@ -133,7 +139,7 @@ describe('selectLayout — la scène', () => {
 
 describe('selectLayout — la bande de vignettes', () => {
   it('reste vide quand on est seul', () => {
-    const layout = selectLayout(view(ME, []), 'user');
+    const layout = selectLayout(view(ME, []), 'user', null);
 
     expect(layout.filmstrip).toEqual([]);
   });
@@ -142,6 +148,7 @@ describe('selectLayout — la bande de vignettes', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { isSpeaking: true }), person('bob')]),
       'user',
+      null,
     );
 
     expect(layout.filmstrip.map((tile) => tile.key)).not.toContain(layout.stage.key);
@@ -150,7 +157,7 @@ describe('selectLayout — la bande de vignettes', () => {
   it('ouvre la bande par sa propre vignette', () => {
     // Sa propre image a une place fixe : la chercher parmi des vignettes qui
     // bougent revient à ne jamais savoir si l’on est cadré.
-    const layout = selectLayout(view(ME, [person('ada'), person('bob')]), 'user');
+    const layout = selectLayout(view(ME, [person('ada'), person('bob')]), 'user', null);
 
     expect(layout.filmstrip[0]?.key).toBe('me:camera');
     expect(layout.filmstrip[0]?.isLocal).toBe(true);
@@ -166,6 +173,7 @@ describe('selectLayout — la bande de vignettes', () => {
         person('cid', { joinedAt: 3, isSpeaking: true }),
       ]),
       'user',
+      null,
     );
 
     expect(layout.stage.key).toBe('cid:camera');
@@ -184,6 +192,7 @@ describe('selectLayout — la bande de vignettes', () => {
         person('bob', { joinedAt: 20, isSpeaking: true }),
       ]),
       'user',
+      null,
     );
 
     expect(layout.filmstrip.map((tile) => tile.key)).toEqual([
@@ -199,6 +208,7 @@ describe('selectLayout — la bande de vignettes', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { isSpeaking: true }), person('bob')]),
       'user',
+      null,
     );
 
     expect(layout.filmstrip.map((tile) => tile.key)).toEqual(['me:camera', 'bob:camera']);
@@ -210,7 +220,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
   it('transporte la piste sans la toucher', () => {
     const camera = fakeCamera('t-ada');
 
-    const layout = selectLayout(view(ME, [person('ada', { camera })]), 'user');
+    const layout = selectLayout(view(ME, [person('ada', { camera })]), 'user', null);
 
     expect(layout.stage.track).toBe(camera);
   });
@@ -221,6 +231,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     const layout = selectLayout(
       view({ ...ME, camera: fakeCamera('t-me') }, [person('ada')]),
       'user',
+      null,
     );
 
     expect(layout.filmstrip[0]?.mirror).toBe(true);
@@ -228,19 +239,19 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
 
   it('cesse le miroir dès que la caméra passe à l’arrière', () => {
     // La caméra arrière filme le monde : le retourner rend tout texte illisible.
-    const layout = selectLayout(view(ME, [person('ada')]), 'environment');
+    const layout = selectLayout(view(ME, [person('ada')]), 'environment', null);
 
     expect(layout.filmstrip[0]?.mirror).toBe(false);
   });
 
   it('ne met jamais un distant en miroir', () => {
-    const layout = selectLayout(view(ME, [person('ada')]), 'user');
+    const layout = selectLayout(view(ME, [person('ada')]), 'user', null);
 
     expect(layout.stage.mirror).toBe(false);
   });
 
   it('nettoie le nom pour que la coquille n’ait qu’une absence à traiter', () => {
-    const layout = selectLayout(view(ME, [person('ada', { name: '  ' })]), 'user');
+    const layout = selectLayout(view(ME, [person('ada', { name: '  ' })]), 'user', null);
 
     expect(layout.stage.name).toBe('');
   });
@@ -249,6 +260,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { isSpeaking: true }), person('bob', { isSpeaking: true })]),
       'user',
+      null,
     );
 
     expect(layout.stage.isSpeaking).toBe(true);
@@ -262,6 +274,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     const layout = selectLayout(
       view(ME, [person('ada', { name: 'Ada' }), person('bob', { name: 'Ada' })]),
       'user',
+      null,
     );
 
     const keys = [layout.stage.key, ...layout.filmstrip.map((tile) => tile.key)];
@@ -286,7 +299,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
       screenSince: 1000,
     });
 
-    const layout = selectLayout(view(ME, [alice]), 'user');
+    const layout = selectLayout(view(ME, [alice]), 'user', null);
 
     const keys = [layout.stage.key, ...layout.filmstrip.map((tile) => tile.key)];
     expect(new Set(keys).size).toBe(keys.length);
@@ -303,7 +316,7 @@ describe('selectLayout — les vignettes elles-mêmes', () => {
     // ce qui est précisément ce qu'on partage.
     const me = { ...ME, screen: fakeCamera('scr-me'), screenSince: 1000 };
 
-    const layout = selectLayout(view(me, []), 'user');
+    const layout = selectLayout(view(me, []), 'user', null);
 
     expect(layout.stage.mirror).toBe(false);
   });
@@ -317,7 +330,7 @@ describe('un écran partagé prend la scène', () => {
     const alice = person('u-alice', { screen: fakeCamera('scr-1'), screenSince: 1000 });
     const bob = person('u-bob', { isSpeaking: true, camera: fakeCamera('cam-2') });
 
-    const layout = selectLayout(view(ME, [alice, bob]), 'user');
+    const layout = selectLayout(view(ME, [alice, bob]), 'user', null);
 
     expect(layout.stage.source).toBe('screen');
     expect(layout.stage.key).toBe('u-alice:screen');
@@ -330,7 +343,7 @@ describe('un écran partagé prend la scène', () => {
     const ancien = person('u-alice', { screen: fakeCamera('scr-1'), screenSince: 1000 });
     const recent = person('u-bob', { screen: fakeCamera('scr-2'), screenSince: 2000 });
 
-    const layout = selectLayout(view(ME, [ancien, recent]), 'user');
+    const layout = selectLayout(view(ME, [ancien, recent]), 'user', null);
 
     expect(layout.stage.key).toBe('u-bob:screen');
   });
@@ -350,7 +363,7 @@ describe('un écran partagé prend la scène', () => {
     const bob = person('u-bob', { screen: fakeCamera('scr-b'), screenSince: 1000 });
     const alice = person('u-alice', { screen: fakeCamera('scr-a'), screenSince: 1000 });
 
-    const layout = selectLayout(view(ME, [bob, alice]), 'user');
+    const layout = selectLayout(view(ME, [bob, alice]), 'user', null);
 
     expect(layout.stage.key).toBe('u-alice:screen');
   });
@@ -359,7 +372,7 @@ describe('un écran partagé prend la scène', () => {
     const alice = person('u-alice', { screen: null });
     const bob = person('u-bob', { isSpeaking: true, camera: fakeCamera('cam-2') });
 
-    const layout = selectLayout(view(ME, [alice, bob]), 'user');
+    const layout = selectLayout(view(ME, [alice, bob]), 'user', null);
 
     expect(layout.stage.source).toBe('camera');
     expect(layout.stage.key).toBe('u-bob:camera');
@@ -372,7 +385,7 @@ describe('un écran partagé prend la scène', () => {
       screenSince: 1000,
     });
 
-    const layout = selectLayout(view(ME, [alice]), 'user');
+    const layout = selectLayout(view(ME, [alice]), 'user', null);
 
     expect(layout.stage.key).toBe('u-alice:screen');
     expect(layout.filmstrip.map((t) => t.key)).toContain('u-alice:camera');
@@ -382,7 +395,7 @@ describe('un écran partagé prend la scène', () => {
     const a = person('u-a', { screen: fakeCamera('scr-1'), screenSince: 1000 });
     const b = person('u-b', { screen: fakeCamera('scr-2'), screenSince: 2000 });
 
-    const layout = selectLayout(view(ME, [a, b]), 'user');
+    const layout = selectLayout(view(ME, [a, b]), 'user', null);
 
     expect(layout.stage.key).toBe('u-b:screen');
     // L'ordre entier, pas seulement la présence : les visages d'abord, l'écran restant ensuite.
@@ -392,5 +405,51 @@ describe('un écran partagé prend la scène', () => {
       'u-b:camera',
       'u-a:screen',
     ]);
+  });
+});
+
+describe('selectLayout — l’épinglage', () => {
+  it('épingle la tuile demandée, même quand quelqu’un partage son écran', () => {
+    // Le cas qui justifie toute la fonction : sans épinglage, l'écran prend la
+    // scène et aucun visage ne peut y revenir — c'est ce qui a fait revenir
+    // cette fonction après qu'on l'eut retirée.
+    const ada = person('u-ada', {
+      camera: fakeCamera('cam-ada'),
+      screen: fakeCamera('scr-ada'),
+      screenSince: 1000,
+    });
+
+    const layout = selectLayout(view(ME, [ada]), 'user', 'u-ada:camera');
+
+    expect(layout.stage.key).toBe('u-ada:camera');
+    expect(layout.pinned).toBe(true);
+    // La tuile promue quitte la bande, et l'écran y descend.
+    expect(layout.filmstrip.map((t) => t.key)).toContain('u-ada:screen');
+    expect(layout.filmstrip.map((t) => t.key)).not.toContain('u-ada:camera');
+  });
+
+  it('sans épinglage, l’écran garde la scène', () => {
+    // L'autre côté de la paire ci-dessus : MÊME vue, MÊME appel, seule la clé
+    // d'épinglage change. C'est la paire qui prouve que `pin` est câblé, pas
+    // l'un des deux tests pris seul.
+    const ada = person('u-ada', {
+      camera: fakeCamera('cam-ada'),
+      screen: fakeCamera('scr-ada'),
+      screenSince: 1000,
+    });
+
+    const layout = selectLayout(view(ME, [ada]), 'user', null);
+
+    expect(layout.stage.key).toBe('u-ada:screen');
+    expect(layout.pinned).toBe(false);
+  });
+
+  it('ignore un épinglage qui ne résout plus, sans rien casser', () => {
+    // Quelqu'un est parti ; la clé reste posée côté coquille. On retombe sur la
+    // règle ordinaire plutôt que de rendre une scène vide.
+    const layout = selectLayout(view(ME, []), 'user', 'u-parti:camera');
+
+    expect(layout.stage.key).toBe('me:camera');
+    expect(layout.pinned).toBe(false);
   });
 });

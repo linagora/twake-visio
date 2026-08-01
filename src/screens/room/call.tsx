@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
@@ -116,6 +116,15 @@ const NO_ACCOUNT: Account = {
   displayName: '',
 };
 
+// Quelques secondes, à la manière d'un lecteur vidéo : assez pour lire les
+// commandes et agir, pas assez pour qu'elles gênent la vidéo qu'on regarde en
+// plein écran. La vérification sur appareil (D4, voir le plan) capture à
+// quatre secondes pour confirmer qu'elles se sont retirées ; ce nombre est
+// celui qui rend cette capture vraie. Non exportée : les tests qui en ont
+// besoin la reproduisent en dur, comme `WAITING_POLL_MS` de
+// `useWaitingParticipants.ts` en dehors de ce fichier.
+const CHROME_REVEAL_MS = 4000;
+
 const styles = StyleSheet.create({
   // La scène reste sombre dans les deux schémas : c'est la convention de toute
   // la visioconférence, et un fond clair autour d'une vignette vidéo éblouit
@@ -130,6 +139,15 @@ const styles = StyleSheet.create({
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
     // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
     gap: tokens.spacing.sm,
+    padding: tokens.spacing.xs,
+  },
+  // La sortie du plein écran, seule dans sa propre rangée : la barre ci-dessus
+  // est déjà pleine à 357 dp sur 360 (`controlBar.ts`), une huitième cible n'y
+  // tiendrait pas. Cette rangée n'existe QUE par-dessus une tuile plein écran,
+  // jamais ailleurs — voir le point critique de cette tâche.
+  fullscreenExitRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     padding: tokens.spacing.xs,
   },
   // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
@@ -196,10 +214,155 @@ export function CallScreen(): React.ReactElement {
   // les sorties anticipées ci-dessous : il n'y a pas de rendu où l'écran aurait
   // le droit de ne pas l'appeler.
   //
+  // La clé de la tuile épinglée, jamais un participant : depuis le partage
+  // d'écran, une personne produit deux tuiles, `${identity}:camera` et
+  // `${identity}:screen` — épingler LA PERSONNE serait ambigu entre les deux.
+  // `CallStage` est démontée quand le panneau des participants s'ouvre (voir
+  // plus bas) : un état tenu dans la coquille serait perdu à chaque
+  // ouverture, il vit donc ici.
+  const [pin, setPin] = useState<string | null>(null);
+
+  // La clé de la tuile plein écran, indépendante de l'épinglage : les deux
+  // gestes ne se recouvrent pas, un appui simple épingle sans y entrer, un
+  // appui long y entre sans changer l'épinglage. Résolue plus bas, une fois
+  // `layout` connu — voir `fullscreenTile`.
+  const [fullscreen, setFullscreen] = useState<string | null>(null);
+
+  // Les commandes rappelées PAR-DESSUS la tuile plein écran, à la manière d'un
+  // lecteur vidéo — jamais un état qui a un sens hors plein écran. Voir le
+  // `useEffect` plus bas, qui l'arme et la désarme, et `handlePressTile`, qui
+  // la pose.
+  const [chromeVisible, setChromeVisible] = useState(false);
+
+  // I3 : un compteur, jamais lu pour sa VALEUR — seul son CHANGEMENT compte.
+  // `setChromeVisible(true)` sur une valeur déjà `true` est un no-op pour
+  // React : le rendu est court-circuité, et le `useEffect` plus bas — dont
+  // `chromeVisible` était l'unique dépendance — ne se rejouait donc jamais.
+  // Un second appui pendant que les commandes étaient déjà visibles ne
+  // réarmait rien : le minuteur du PREMIER appui continuait de courir,
+  // inchangé, et les commandes disparaissaient à SON échéance, pas quatre
+  // secondes après le second appui. Incrémenté à CHAQUE appui, premier compris
+  // — un seul mécanisme de réarmement, jamais un premier appui traité à part.
+  const [chromeRevealNonce, setChromeRevealNonce] = useState(0);
+
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
-  const layout = useCallLayout(session.getRoom(), facing);
+  const layout = useCallLayout(session.getRoom(), facing, pin);
+
+  // Résolue contre la disposition présente, comme l'épinglage : une tuile qui
+  // disparaît (la personne quitte la séance) ne laisse pas l'écran figé sur du
+  // vide, elle retombe sur la disposition normale au rendu suivant. Ce n'est
+  // pas une décision de disposition — `selectLayout` n'a pas à connaître cette
+  // notion d'écran, donc elle ne passe jamais par lui : on sait déjà quelle
+  // tuile, on choisit seulement de ne montrer qu'elle.
+  //
+  // Calculée AVANT les gestionnaires ci-dessous, qui la lisent : une référence
+  // prise plus haut dans le corps de la fonction lèverait une erreur
+  // d'initialisation dès le premier rendu, la lecture faisant partie du
+  // tableau de dépendances de `useCallback`, évalué immédiatement.
+  const fullscreenTile =
+    fullscreen === null
+      ? null
+      : ([layout.stage, ...layout.filmstrip].find((t) => t.key === fullscreen) ?? null);
+
+  // I4 : sans cet ajustement, `fullscreen` reste posé indéfiniment même quand
+  // sa cible ne résout plus — le même principe de résolution que l'épinglage
+  // (`src/call/layout.ts:198-201` : « si elle revient, l'épinglage reprend
+  // tout seul »). Bénin pour l'épinglage, où une tuile qui revient se
+  // déplace, sous les yeux de la personne. Pas bénin ici : si la cible
+  // revient — reconnexion, ou simplement une personne qui repart puis
+  // rejoint sous la même identité —, la clé PÉRIMÉE résoudrait de nouveau
+  // exactement de la même façon, et rejetterait l'écran dans un plein écran
+  // sans commandes, sans que personne n'ait rien demandé.
+  //
+  // Corrigé PENDANT le rendu, jamais dans un effet : `react-hooks/set-state-in-effect`
+  // l'interdit, et un effet aurait de toute façon laissé peindre un rendu
+  // intermédiaire, périmé, avant de se corriger. React documente cet appel
+  // direct à `setState` pendant le rendu comme la façon de « réinitialiser
+  // un état quand quelque chose change » ; il ne boucle pas, puisque cette
+  // même condition redevient fausse dès que `fullscreen` repasse à `null`,
+  // ce que cet appel fait à l'instant même où il s'exécute.
+  if (fullscreen !== null && fullscreenTile === null) {
+    setFullscreen(null);
+    setChromeVisible(false);
+  }
+
+  // La tuile résolue, jamais la clé brute `fullscreen` : la clé reste posée
+  // même quand elle ne résout plus (une personne mise en plein écran qui
+  // quitte la séance), et l'écran retombe alors sur la disposition normale —
+  // voir le commentaire ci-dessus. Un appui y redeviendrait un no-op
+  // silencieux, ni épinglage ni rappel, si le court-circuit ci-dessous lisait
+  // la clé plutôt que sa résolution contre CE rendu.
+  const inFullscreen = fullscreenTile !== null;
+
+  // Point de conception tranché ici : `onPressTile` de la tuile plein écran
+  // est câblé vers CE gestionnaire (voir `stage.tsx`), qui épingle hors plein
+  // écran. Sans ce court-circuit, un appui pour rappeler les commandes
+  // épinglerait aussi la tuile en secret — invisible sur le moment puisque la
+  // bande est masquée, et qui ne resurgirait qu'à la sortie, sous la forme
+  // d'un épinglage que personne n'a consciemment demandé. On court-circuite
+  // donc le câblage plutôt que d'ajouter un second geste : en plein écran, un
+  // appui ne veut jamais dire autre chose que « montre-moi les commandes », à
+  // la manière d'un lecteur vidéo — la convention retenue par la conception
+  // (`docs/superpowers/specs/2026-08-01-grid-and-pinning-design.md`, décision
+  // du 2026-08-01) pour l'appui long qui mène ici.
+  //
+  // Hors plein écran, inchangé : une seule instruction, DEUX issues — un
+  // second appui sur la tuile déjà épinglée la désépingle, ce qui rend le
+  // geste réversible sans rien apprendre de plus. Chacune des deux issues
+  // veut son propre test : sans celui du désépinglage, une implémentation qui
+  // écrirait `setPin(key)` sans jamais repasser à `null` passerait quand même
+  // le premier.
+  const handlePressTile = useCallback(
+    (key: string): void => {
+      if (inFullscreen) {
+        setChromeVisible(true);
+        // I3 : réarme le minuteur ci-dessous même si `chromeVisible` valait
+        // déjà `true`, où la ligne du dessus seule ne changerait rien.
+        setChromeRevealNonce((n) => n + 1);
+        return;
+      }
+      setPin((current) => (current === key ? null : key));
+    },
+    [inFullscreen],
+  );
+
+  // Le plein écran affiche la tuile touchée seule, sans bande ni barre de
+  // contrôle — voir `fullscreenTile` plus haut, qui résout la clé contre la
+  // disposition courante, et son passage à `CallStage` plus bas.
+  const handleLongPressTile = useCallback((key: string): void => {
+    setFullscreen(key);
+  }, []);
+
+  // E4, les DEUX instructions : quitter le plein écran ET désarmer le
+  // minuteur de disparition. Sans la seconde, `chromeVisible` resterait à
+  // `true` et le PROCHAIN plein écran rallumerait les commandes sans qu'on ait
+  // rien demandé — le `useEffect` juste en dessous ne désarme
+  // qu'en RÉACTION à un changement de cette valeur, jamais de son propre chef.
+  const handleExitFullscreen = useCallback((): void => {
+    setFullscreen(null);
+    setChromeVisible(false);
+  }, []);
+
+  // E3 : afficher ET armer la disparition. E4 : la sortie du plein écran
+  // (ci-dessus) doit désarmer, sinon le minuteur se déclenche sur un
+  // composant démonté ou rallume les commandes après coup. C'est la ligne
+  // qu'on oublie, et le `return` de CE `useEffect` est ce qui la rend
+  // automatique plutôt que manuelle : il s'exécute à chaque changement de
+  // `chromeVisible`, qu'il vienne du minuteur lui-même ou de
+  // `handleExitFullscreen`.
+  //
+  // `chromeRevealNonce` en seconde dépendance, pour I3 : sans lui, un appui
+  // répété pendant que `chromeVisible` est déjà `true` ne changerait aucune
+  // des deux dépendances de ce tableau, l'effet ne se rejouerait pas, et
+  // l'ancien `setTimeout` — jamais annulé — continuerait de courir vers SA
+  // propre échéance au lieu d'être repoussé par le nouvel appui.
+  useEffect(() => {
+    if (!chromeVisible) return undefined;
+    const id = setTimeout(() => setChromeVisible(false), CHROME_REVEAL_MS);
+    return () => clearTimeout(id);
+  }, [chromeVisible, chromeRevealNonce]);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
@@ -518,8 +681,20 @@ export function CallScreen(): React.ReactElement {
       });
   };
 
+  // C1 : ouvrir ce panneau démonte `CallStage` juste en dessous, qui porte le
+  // SEUL `Pressable` capable de rappeler les commandes en plein écran (voir
+  // `handlePressTile`). Sans cette sortie, le minuteur de `chromeVisible` —
+  // qui continue de tourner, lui, puisqu'il vit ICI et pas dans la coquille —
+  // finit par démonter la rangée de sortie ET la barre normale, et il ne
+  // reste plus un seul bouton atteignable sur tout l'écran : un enfermement
+  // total. Ouvrir ce panneau est déjà un geste de « je quitte la vidéo » ;
+  // `handleExitFullscreen` le rend total. Seulement à l'OUVERTURE : le
+  // fermer n'a jamais eu besoin de ce nettoyage, et l'appeler aussi dans ce
+  // sens serait un no-op silencieux — `fullscreen` est déjà `null` à ce
+  // moment-là.
   const handleToggleParticipants = (): void => {
-    setParticipantsOpen((open) => !open);
+    if (!participantsOpen) handleExitFullscreen();
+    setParticipantsOpen(!participantsOpen);
   };
 
   // `answer` a déjà retiré la personne de la file de façon optimiste (voir
@@ -677,7 +852,12 @@ export function CallScreen(): React.ReactElement {
       ) : (
         // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
         // grille du web rend chaque visage illisible sur un écran de téléphone.
-        <CallStage layout={layout} />
+        <CallStage
+          layout={layout}
+          onPressTile={handlePressTile}
+          onLongPressTile={handleLongPressTile}
+          fullscreenTile={fullscreenTile}
+        />
       )}
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
@@ -690,85 +870,118 @@ export function CallScreen(): React.ReactElement {
         </View>
       ) : null}
 
-      <View style={styles.controls}>
-        <IconButton
-          testID="mic-toggle"
-          icon={micOn ? 'microphone' : 'microphone-off'}
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleToggleMic}
-          accessibilityLabel={t('call.muted')}
-        />
-        {/* La paire caméra : la bascule et le chevron qui lui colle. */}
-        <View style={styles.cameraGroup}>
+      {/* LE POINT CRITIQUE de cette tâche : sans cette rangée, un plein écran
+          sur sa PROPRE tuile n'a strictement aucune sortie — le repli habituel
+          (la tuile disparaît) ne peut pas jouer sur soi-même, et `leave-btn`,
+          qui permettrait de quitter la séance à défaut, est dans la barre que
+          le plein écran masque. Rendue UNIQUEMENT ici, par-dessus la tuile
+          seule, jamais confondue avec la barre normale ci-dessous : aucun de
+          ses sept boutons ne fait sortir DU plein écran, « raccrocher »
+          compris, qui quitte la séance entière — un pis-aller, pas la sortie
+          que ce point critique exige. Jamais `disabled` : à l'appui, elle agit
+          toujours. */}
+      {inFullscreen && chromeVisible ? (
+        <View style={styles.fullscreenExitRow}>
           <IconButton
-            testID="camera-toggle"
-            icon={cameraOn ? 'video' : 'video-off'}
+            testID="fullscreen-exit-btn"
+            icon="fullscreen-exit"
             iconColor={BAR_ICON_COLOR}
             rippleColor={BAR_RIPPLE_COLOR}
             style={barStyles.button}
             hitSlop={BAR_HIT_SLOP}
-            onPress={handleToggleCamera}
-            accessibilityLabel={t('prejoin.cameraOff')}
-          />
-          <CameraMenu
-            cameras={cameras}
-            activeDeviceId={activeCameraId}
-            onOpen={handleOpenCameraMenu}
-            onSelect={handleSelectCamera}
+            onPress={handleExitFullscreen}
+            accessibilityLabel={t('call.exitFullscreen')}
           />
         </View>
-        <AudioOutputControl
-          mode={routeControl}
-          outputs={outputs}
-          chosen={chosenOutput}
-          onOpen={handleOpenAudioOutput}
-          onSelect={handleSelectAudioOutput}
-          onSystemPicker={handleOpenSystemRoutePicker}
-        />
-        {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
+      ) : null}
+
+      {/* Masquée en plein écran, SAUF commandes rappelées : `chromeVisible` la
+          fait réapparaître par-dessus la tuile seule, exactement comme un
+          lecteur vidéo — voir `handlePressTile`. Elle reste inchangée dans ce
+          cas : mêmes sept boutons, y compris `leave-btn`, qui reste un moyen
+          de quitter la séance entière ; la rangée juste au-dessus est celle
+          qui fait sortir DU plein écran. */}
+      {fullscreenTile === null || chromeVisible ? (
+        <View style={styles.controls}>
+          <IconButton
+            testID="mic-toggle"
+            icon={micOn ? 'microphone' : 'microphone-off'}
+            iconColor={BAR_ICON_COLOR}
+            rippleColor={BAR_RIPPLE_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleToggleMic}
+            accessibilityLabel={t('call.muted')}
+          />
+          {/* La paire caméra : la bascule et le chevron qui lui colle. */}
+          <View style={styles.cameraGroup}>
+            <IconButton
+              testID="camera-toggle"
+              icon={cameraOn ? 'video' : 'video-off'}
+              iconColor={BAR_ICON_COLOR}
+              rippleColor={BAR_RIPPLE_COLOR}
+              style={barStyles.button}
+              hitSlop={BAR_HIT_SLOP}
+              onPress={handleToggleCamera}
+              accessibilityLabel={t('prejoin.cameraOff')}
+            />
+            <CameraMenu
+              cameras={cameras}
+              activeDeviceId={activeCameraId}
+              onOpen={handleOpenCameraMenu}
+              onSelect={handleSelectCamera}
+            />
+          </View>
+          <AudioOutputControl
+            mode={routeControl}
+            outputs={outputs}
+            chosen={chosenOutput}
+            onOpen={handleOpenAudioOutput}
+            onSelect={handleSelectAudioOutput}
+            onSystemPicker={handleOpenSystemRoutePicker}
+          />
+          {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
             demanderait 409. Le partage, seule commande de la barre qu'on
             n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
             porte aussi l'enregistrement et la main levée. Sept cibles avant,
             sept après — et la commande d'enregistrement n'est jamais
             adjacente au bouton quitter. */}
-        <MoreMenu
-          recording={recordingState}
-          canRecord={canRecord}
-          recordingBusy={recordingBusy}
-          handRaised={handRaised}
-          handBusy={handBusy}
-          hands={hands}
-          onShare={handleShare}
-          onStartRecording={handleStartRecording}
-          onStopRecording={handleStopRecording}
-          onToggleHand={handleToggleHand}
-        />
-        <IconButton
-          testID="participants-toggle"
-          icon="account-multiple"
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleToggleParticipants}
-          accessibilityLabel={t('participants.title')}
-        />
-        <IconButton
-          testID="leave-btn"
-          icon="phone-hangup"
-          // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
-          // seuil WCAG AA, et la scène est sombre dans les deux schémas.
-          iconColor={tokens.color.dangerDark}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={handleLeave}
-          accessibilityLabel={t('call.leave')}
-        />
-      </View>
+          <MoreMenu
+            recording={recordingState}
+            canRecord={canRecord}
+            recordingBusy={recordingBusy}
+            handRaised={handRaised}
+            handBusy={handBusy}
+            hands={hands}
+            onShare={handleShare}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleStopRecording}
+            onToggleHand={handleToggleHand}
+          />
+          <IconButton
+            testID="participants-toggle"
+            icon="account-multiple"
+            iconColor={BAR_ICON_COLOR}
+            rippleColor={BAR_RIPPLE_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleToggleParticipants}
+            accessibilityLabel={t('participants.title')}
+          />
+          <IconButton
+            testID="leave-btn"
+            icon="phone-hangup"
+            // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
+            // seuil WCAG AA, et la scène est sombre dans les deux schémas.
+            iconColor={tokens.color.dangerDark}
+            rippleColor={BAR_RIPPLE_COLOR}
+            style={barStyles.button}
+            hitSlop={BAR_HIT_SLOP}
+            onPress={handleLeave}
+            accessibilityLabel={t('call.leave')}
+          />
+        </View>
+      ) : null}
 
       {/* Toujours montée, comme le veut l'exemple de `react-native-paper` :
           seul `visible` bascule. Une seule case pour cinq actions — modération

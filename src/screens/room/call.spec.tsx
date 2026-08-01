@@ -1,5 +1,5 @@
 import { VideoTrack } from '@livekit/react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { Track } from 'livekit-client';
 import React from 'react';
 import { Share } from 'react-native';
@@ -1884,5 +1884,540 @@ describe('CallScreen, main levée', () => {
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
     await waitFor(() => expect(screen.getByTestId('call-notice')).toHaveTextContent(''));
+  });
+});
+
+describe('CallScreen, épinglage', () => {
+  it('épingle la vignette qu’on touche', async () => {
+    // Ada est seule et distante : par la règle ordinaire (`src/call/layout`,
+    // « la scène revient toujours à un distant »), c'est DÉJÀ elle qui est sur
+    // scène, et c'est la propre vignette locale qui commence dans la bande.
+    // La faire monter à son tour prouve le geste, pas la règle par défaut.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+    // I5 : le seul retour visuel de ce geste. Sans lui, l'épinglage est
+    // silencieux — mesuré par la revue de branche : un appui qui fige la
+    // scène sans que rien à l'écran ne le dise.
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('pin-marker')).toBeTruthy();
+  });
+
+  // E1, la seconde issue. Sans CE test, une implémentation qui poserait
+  // `setPin(key)` sans jamais désépingler passerait le précédent.
+  it('désépingle au second appui sur la même tuile', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
+      ).toBeTruthy();
+    });
+    // I5 : le marqueur est là tant que l'épinglage tient.
+    expect(screen.getByTestId('pin-marker')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+    // Et repart avec le désépinglage : un marqueur qui survivrait mentirait
+    // sur l'état réel de la scène.
+    expect(screen.queryByTestId('pin-marker')).toBeNull();
+  });
+});
+
+describe('CallScreen, plein écran', () => {
+  it("n'affiche que la tuile et masque les commandes en plein écran", async () => {
+    // Ada distante, comme les tests d'épinglage ci-dessus : par la règle
+    // ordinaire elle est déjà sur scène, et c'est sa tuile qu'on visera pour
+    // que l'appui long porte sur une tuile déjà présente, sans dépendre du
+    // geste d'épinglage testé plus haut.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+    });
+    // La bande et la barre disparaissent TOUTES LES DEUX : l'une masquée par
+    // `call.tsx` (la barre), l'autre par `CallStage` lui-même (la bande) — deux
+    // sites distincts, voir `stage.spec.tsx` pour la couverture propre au
+    // second.
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    expect(screen.queryByTestId('leave-btn')).toBeNull();
+  });
+
+  it('rend la bande et les commandes hors plein écran', async () => {
+    // Le complément direct du test précédent, même mise en place, sans
+    // l'appui long : sans CE test, une implémentation qui masquerait la barre
+    // et la bande inconditionnellement passerait quand même le test ci-dessus.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy();
+      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+      expect(screen.getByTestId('leave-btn')).toBeTruthy();
+    });
+  });
+
+  // K7 : la clé plein écran ne se résout plus une fois la personne partie.
+  // Sans le `?? null` qui referme la résolution, `fullscreenTile` resterait à
+  // `undefined` — pas `null` — et l'écran continuerait de croire qu'il doit
+  // afficher une tuile qu'il n'a plus.
+  it('retombe sur la disposition normale si la tuile plein écran disparaît', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Ada quitte la séance : sa tuile n'existe plus dans aucune disposition
+    // possible, épinglée ou non.
+    mockRoom.remoteParticipants.delete('u-ada');
+    await emitRoom('participantDisconnected');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filmstrip')).toBeTruthy();
+      expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    });
+    // Seule reste la personne locale : la scène retombe sur elle, par la même
+    // règle ordinaire qu'à la connexion.
+    expect(within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera')).toBeTruthy();
+  });
+
+  // I4, reproduit par la revue : la clé `fullscreen` elle-même n'est JAMAIS
+  // effacée par ce retour à la normale — seule sa RÉSOLUTION
+  // (`fullscreenTile`) retombe à `null`, exactement comme le fait
+  // l'épinglage (`src/call/layout.ts:198-201` : « si elle revient,
+  // l'épinglage reprend tout seul »). Bénin pour l'épinglage, où une tuile
+  // qui revient se déplace, sous les yeux de la personne. Pas bénin ici : si
+  // Bob revient avec la MÊME identité — donc la MÊME clé de tuile —, elle
+  // résout de nouveau, et rejetterait l'écran dans un plein écran sans
+  // commandes sans que personne n'ait rien demandé.
+  it('ne ressuscite pas le plein écran quand la cible revient sans le moindre geste', async () => {
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Bob part : la disposition normale revient, par la résolution ordinaire.
+    mockRoom.remoteParticipants.delete('u-bob');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Bob revient, avec la MÊME identité, donc la MÊME clé de tuile — sans
+    // que personne n'ait pressé quoi que ce soit sur cet écran entre-temps.
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    await emitRoom('participantConnected');
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+
+    // La disposition normale doit tenir : bande et barre restent là.
+    expect(screen.getByTestId('filmstrip')).toBeTruthy();
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+
+  // Trou trouvé par vérification par mutation de cette même tâche : retirer
+  // `setChromeVisible(false)` de la guérison automatique d'I4 (en gardant
+  // `setFullscreen(null)`) laissait les 95 tests de ce fichier verts, parce
+  // qu'aucun scénario existant ne posait `chromeVisible` à `true` avant le
+  // départ de la cible. C'est pourtant exactement la même faute qu'E4 corrige
+  // pour une sortie volontaire (`handleExitFullscreen`) : sans elle, un
+  // PROCHAIN plein écran — sur n'importe quelle autre tuile — hériterait des
+  // commandes déjà visibles, affichées sans le moindre appui.
+  it('repart aussi commandes masquées pour un plein écran ultérieur, après une guérison automatique', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-bob:camera')).toBeTruthy());
+
+    // Bob en plein écran, commandes révélées par un appui.
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
+
+    // Bob part PENDANT que les commandes sont visibles : la guérison
+    // automatique d'I4 doit désarmer `chromeVisible` en même temps que
+    // `fullscreen`.
+    mockRoom.remoteParticipants.delete('u-bob');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Un plein écran FRAIS, sur Ada cette fois : doit repartir commandes
+    // masquées, comme tout premier plein écran.
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+
+  // Trou trouvé par la revue de la tâche 3 : muter la résolution de
+  // `fullscreenTile` de `[layout.stage, ...layout.filmstrip]` à
+  // `[layout.stage]` laissait les 688 tests de la branche verts, parce
+  // qu'aucun scénario existant n'avait plus d'un distant — la règle de scène
+  // n'en place jamais qu'un seul, donc toujours SUR la scène, jamais dans la
+  // bande. Deux distants, appui long sur celui resté dans la bande, ferme le
+  // trou.
+  it('résout la tuile plein écran même quand elle est restée dans la bande', async () => {
+    // Identités choisies pour que la règle de scène ordinaire (parole égale,
+    // `compareStable` départage par identité) place Ada sur la scène et Bob
+    // dans la bande — la précondition qui rend ce test capable de distinguer
+    // les deux résolutions.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+    });
+
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+  });
+});
+
+describe('CallScreen, plein écran, rappel des commandes', () => {
+  // Le minuteur de disparition a besoin d'horloges pilotables, comme la
+  // scrutation de la salle d'attente plus haut. Portée à ce describe seul
+  // pour ne pas changer le comportement des horloges des autres tests.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // E3, ses deux instructions, chacune son côté de l'assertion : un appui
+  // affiche `fullscreen-exit-btn` ET la barre normale, PAR-DESSUS la tuile
+  // seule — la bande, elle, reste absente, rappeler les commandes n'est pas
+  // sortir du plein écran. 4000 ms plus tard, sans rien retoucher, elles se
+  // sont retirées SEULES. `4000` reproduit `CHROME_REVEAL_MS` de `call.tsx`,
+  // non exportée — même convention que `WAITING_POLL_MS` ailleurs dans ce
+  // fichier.
+  it('rappelle les commandes sur un appui, puis les retire seules', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    // Encore masquées à l'entrée : sans appui, rien ne les rappelle.
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy();
+      expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('filmstrip')).toBeNull();
+
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+    // Toujours en plein écran : seules les commandes sont parties, pas
+    // l'état lui-même.
+    expect(
+      within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+    ).toBeTruthy();
+  });
+
+  // I3, reproduit par la revue de branche : `setChromeVisible(true)` sur une
+  // valeur déjà `true` est un no-op pour React, qui court-circuite le rendu —
+  // le `useEffect` dont c'est l'unique dépendance ne se rejoue donc pas, et le
+  // `setTimeout` qu'il porte n'est ni annulé ni réarmé. Un second appui
+  // pendant que les commandes sont déjà visibles doit pourtant prolonger leur
+  // présence de CHROME_REVEAL_MS de plus, comme le ferait tout lecteur vidéo.
+  // Mesuré sans le correctif : appui à t=0, appui à t=3500, les commandes
+  // disparaissent quand même à t=4000 — ce test avance le temps en deux fois
+  // pour le prouver.
+  it('réarme le minuteur à chaque appui, même quand les commandes sont déjà visibles', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Premier appui, à t=0 : échéance à t=4000 si rien ne la prolonge.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('mic-toggle')).toBeTruthy());
+
+    await act(async () => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+
+    // Second appui, à t=3500, pendant que les commandes sont toujours là :
+    // doit réarmer le minuteur pour 4000 ms de PLUS, donc une échéance à
+    // t=7500, jamais à t=4000.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+
+    await act(async () => {
+      jest.advanceTimersByTime(3500);
+    });
+    // t=7000 : l'échéance du PREMIER cycle (t=4000) est largement dépassée —
+    // sans réarmement, les commandes auraient déjà disparu depuis longtemps.
+    // Celle du second cycle (t=7500) ne l'est pas encore.
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+    // t=7500 : l'échéance du second cycle, atteinte cette fois.
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+  });
+
+  // E4. Un minuteur qui fire naturellement n'a besoin d'aucun nettoyage pour
+  // se déclencher au bon moment — c'est pourquoi le test précédent, à lui
+  // seul, ne mord pas sur un `useEffect` sans fonction de nettoyage. Ici, le
+  // premier cycle est coupé court par une SORTIE, avant sa propre échéance ;
+  // s'il n'est pas désarmé, il se déclenche quand même, à SA propre échéance,
+  // et éteint alors les commandes d'un second cycle légitime qui n'a pas fini
+  // le sien. Décaler les deux cycles d'une seconde rend leurs échéances
+  // distinctes, et donc l'écart observable.
+  it('désarme le minuteur quand on quitte le plein écran', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Premier cycle, rappelé à t=0 : échéance à t=4000 si rien ne le coupe.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy());
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    // La sortie, à t=1000 : coupe le premier cycle avant son échéance. E4,
+    // sa première instruction.
+    await fireEvent.press(screen.getByTestId('fullscreen-exit-btn'));
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Reprise du plein écran, toujours à t=1000.
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+    // E4, sa seconde instruction : si `handleExitFullscreen` avait oublié
+    // `setChromeVisible(false)`, les commandes seraient déjà là sans le
+    // moindre appui.
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+
+    // Second cycle, rappelé de nouveau à t=1000 : échéance à t=5000.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy());
+
+    // t=4000 : l'échéance du PREMIER cycle, orpheline si non désarmée — le
+    // second, lui, ne l'atteint qu'à t=5000. Un minuteur qui fuit se
+    // déclenche quand même, à SA propre échéance : il éteindrait ici les
+    // commandes du second cycle, en avance sur la sienne.
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy();
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+  });
+
+  // Le point de conception tranché dans `call.tsx`, à l'épreuve : un appui
+  // SUR LA TUILE PLEIN ÉCRAN ne doit plus jamais épingler, même en secret.
+  // Bob reste dans la bande par la règle ordinaire (voir le test de résolution
+  // ci-dessus) : s'il se retrouvait épinglé par cet appui, il prendrait la
+  // scène à la sortie du plein écran, à la place d'Ada.
+  it("un appui sur la tuile plein écran ne l'épingle pas en secret", async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() =>
+      expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy(),
+    );
+
+    await fireEvent(screen.getByTestId('tile-u-bob:camera'), 'longPress');
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
+      ).toBeTruthy();
+    });
+
+    // L'appui qui devrait seulement rappeler les commandes.
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+    await waitFor(() => expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('fullscreen-exit-btn'));
+
+    // Ada, jamais Bob : la règle ordinaire décide encore, aucun épinglage
+    // caché ne l'a supplantée.
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-bob:camera')).toBeTruthy();
+  });
+
+  // Trou trouvé pendant la vérification par mutation de cette tâche, pas
+  // annoncé par le brief : muter `inFullscreen` de `fullscreenTile !== null`
+  // à `fullscreen !== null` (la clé BRUTE, jamais effacée par ce repli — K7,
+  // voir le describe précédent) laissait les 90 tests de ce fichier verts.
+  // Aucun scénario existant ne touchait une tuile APRÈS que sa cible plein
+  // écran ait disparu ; celui-ci le fait, avec un troisième distant pour
+  // qu'il en reste un dans la bande une fois la cible partie.
+  it('un appui redevient un épinglage ordinaire une fois la cible du plein écran disparue', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+    mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
+    mockRoom.remoteParticipants.set('u-carl', remoteParticipant('u-carl', 'Carl'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('filmstrip')).getByTestId('tile-u-carl:camera'),
+      ).toBeTruthy(),
+    );
+
+    // Carl, en plein écran, puis parti : `fullscreen` reste posé à
+    // `u-carl:camera` quand `fullscreenTile`, résolu, retombe à `null`.
+    await fireEvent(screen.getByTestId('tile-u-carl:camera'), 'longPress');
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-carl:camera'),
+      ).toBeTruthy(),
+    );
+    mockRoom.remoteParticipants.delete('u-carl');
+    await emitRoom('participantDisconnected');
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+
+    // Un appui ordinaire sur Bob, resté dans la bande : doit épingler, pas
+    // rappeler des commandes qui n'ont plus cours sur cet écran.
+    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-bob:camera'),
+      ).toBeTruthy();
+    });
+    // Et surtout pas la sortie de plein écran, qui n'a aucun sens ici.
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+
+  // Trou trouvé pendant la vérification par mutation, distinct du précédent :
+  // muter `inFullscreen && chromeVisible` en `chromeVisible` seul, pour la
+  // rangée de sortie, laissait les 91 tests de ce fichier verts. Une cible
+  // plein écran qui disparaît PENDANT que les commandes sont visibles laisse
+  // `chromeVisible` à `true` sans que `fullscreenTile` ne résolve plus (K7) :
+  // `fullscreen-exit-btn` resterait alors affiché, flottant au-dessus d'un
+  // écran pourtant redevenu normal.
+  it('efface le bouton de sortie si sa cible disparaît pendant que les commandes sont visibles', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('fullscreen-exit-btn')).toBeTruthy());
+
+    // Ada part alors que les commandes sont encore affichées.
+    mockRoom.remoteParticipants.delete('u-ada');
+    await emitRoom('participantDisconnected');
+
+    await waitFor(() => expect(screen.getByTestId('filmstrip')).toBeTruthy());
+    expect(screen.queryByTestId('fullscreen-exit-btn')).toBeNull();
+  });
+});
+
+// C1, le constat CRITIQUE de la revue de branche, arbre à l'appui : ouvrir le
+// panneau des participants depuis le plein écran démonte `CallStage`, qui
+// porte le SEUL `Pressable` capable de rappeler les commandes
+// (`handlePressTile`). Le minuteur, lui, continue de tourner — il vit dans
+// `call.tsx`, pas dans la coquille — et quand il s'écoule, `chromeVisible`
+// retombe à `false` : la rangée de sortie ET la barre normale se démontent
+// TOUTES LES DEUX, et il ne reste plus un seul bouton atteignable sur l'écran
+// entier. Ni `BackHandler`, ni en-tête natif : le seul recours restant est le
+// retour matériel d'Android, que `call.tsx:819-828` désigne lui-même comme
+// « un pis-aller, pas la sortie que ce point critique exige » — et rien du
+// tout sur iOS.
+describe('CallScreen, plein écran, enfermement', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('laisse une sortie atteignable après avoir ouvert le panneau des participants en plein écran', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent(screen.getByTestId('tile-u-ada:camera'), 'longPress');
+    await waitFor(() => expect(screen.queryByTestId('filmstrip')).toBeNull());
+
+    // Rappel des commandes, comme le ferait quiconque cherche le panneau des
+    // participants depuis le plein écran.
+    await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
+    await waitFor(() => expect(screen.getByTestId('participants-toggle')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
+
+    // L'échéance du minuteur armé par le rappel ci-dessus, atteinte pendant que
+    // le panneau est ouvert : c'est exactement l'instant reproduit par la
+    // revue.
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    // Une sortie doit rester atteignable : raccrocher, ou au moins refermer le
+    // panneau pour retrouver la scène.
+    expect(screen.getByTestId('leave-btn')).toBeTruthy();
+    expect(screen.getByTestId('participants-toggle')).toBeTruthy();
   });
 });
