@@ -2,6 +2,7 @@ import { VideoTrack } from '@livekit/react-native';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -78,51 +79,81 @@ type VideoTileProps = {
   // Ce que la PLACE veut, quand la source n'impose rien.
   readonly fitWhenCamera: 'cover' | 'contain';
   readonly size: StyleProp<ViewStyle>;
+  // Relayés tels quels : la vignette ne décide ni qui monte sur scène ni ce
+  // qu'un appui long signifie, elle ne fait que rapporter le geste avec la clé
+  // de SA tuile — voir `CallStage`, qui ferme la clé dans la fermeture.
+  readonly onPress: () => void;
+  readonly onLongPress: () => void;
 };
 
 // Aucune décision ici : la vignette pose ce qu'on lui donne. Tout ce qui se
 // choisit — qui, dans quel ordre, en miroir ou non — a été décidé par
 // `src/call/layout`, le seul endroit vérifiable.
-function VideoTile({ tile, fitWhenCamera, size }: VideoTileProps): React.ReactElement {
+function VideoTile({
+  tile,
+  fitWhenCamera,
+  size,
+  onPress,
+  onLongPress,
+}: VideoTileProps): React.ReactElement {
   const { t } = useTranslation();
   // La sélection nettoie le nom : il n'y a qu'une absence à traiter, et jamais
   // d'identifiant brut à l'écran.
   const label = tile.name === '' ? t('call.unnamedParticipant') : tile.name;
 
   return (
-    <View
-      testID={`tile-${tile.key}`}
-      // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
-      // vidéo. Il le porte donc dans les deux cas, image ou non.
-      accessibilityLabel={label}
-      style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
-    >
-      {tile.track === null ? (
-        // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
-        // d'une panne, et faire disparaître la vignette sortirait la personne de
-        // la liste des présents alors qu'elle est bien là.
-        <View testID={`tile-placeholder-${tile.key}`} style={styles.placeholder}>
-          <Text style={styles.placeholderText} numberOfLines={2}>
-            {label}
-          </Text>
-        </View>
-      ) : (
-        <VideoTrack
-          trackRef={tile.track}
-          style={styles.video}
-          // Un écran ne se rogne jamais, où qu'il soit posé : un texte coupé est
-          // un texte perdu, et c'est précisément ce qu'on partage. La place ne
-          // décide que pour une caméra.
-          objectFit={tile.source === 'screen' ? 'contain' : fitWhenCamera}
-          mirror={tile.mirror}
-        />
-      )}
-    </View>
+    // `size` est répété ici : sans lui, ce `Pressable` — dépourvu de toute
+    // dimension propre — se rétrécirait à son contenu, et la vue dimensionnée
+    // qu'il enveloppe ne récupère JAMAIS sa taille depuis un enfant. C'est ce
+    // qui viderait la scène (`flex: 1`) à hauteur nulle, et réduirait chaque
+    // vignette de la bande à la largeur de son texte. Le `testID`, lui, reste
+    // sur la vue qu'il a toujours désigné : les tests existants l'interrogent,
+    // et `fireEvent.press` atteint `onPress` en remontant jusqu'à ce `Pressable`
+    // quel que soit l'élément visé par la requête.
+    <Pressable style={size} onPress={onPress} onLongPress={onLongPress}>
+      <View
+        testID={`tile-${tile.key}`}
+        // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
+        // vidéo. Il le porte donc dans les deux cas, image ou non.
+        accessibilityLabel={label}
+        style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
+      >
+        {tile.track === null ? (
+          // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
+          // d'une panne, et faire disparaître la vignette sortirait la personne de
+          // la liste des présents alors qu'elle est bien là.
+          <View testID={`tile-placeholder-${tile.key}`} style={styles.placeholder}>
+            <Text style={styles.placeholderText} numberOfLines={2}>
+              {label}
+            </Text>
+          </View>
+        ) : (
+          <VideoTrack
+            trackRef={tile.track}
+            style={styles.video}
+            // Un écran ne se rogne jamais, où qu'il soit posé : un texte coupé est
+            // un texte perdu, et c'est précisément ce qu'on partage. La place ne
+            // décide que pour une caméra.
+            objectFit={tile.source === 'screen' ? 'contain' : fitWhenCamera}
+            mirror={tile.mirror}
+          />
+        )}
+      </View>
+    </Pressable>
   );
 }
 
 export type CallStageProps = {
   readonly layout: CallLayout;
+  // La clé de la tuile touchée, `${identity}:${source}`. La coquille ne décide
+  // rien du sens d'un appui : elle le rapporte, et `call.tsx` seul choisit ce
+  // qu'il produit — voir `handlePressTile`, qui épingle et désépingle.
+  readonly onPressTile: (key: string) => void;
+  // Encore inerte : le geste arrive avec cette tâche, ce qu'il déclenche
+  // (plein écran) avec la suivante. La scène est pressable comme les autres
+  // tuiles dès maintenant, pour que cette tâche-là n'ait plus à toucher au
+  // contrat de `CallStageProps`.
+  readonly onLongPressTile: (key: string) => void;
 };
 
 // La coquille de rendu, tenue aussi bête que possible : personne ne peut la
@@ -132,7 +163,11 @@ export type CallStageProps = {
 // La bande reste posée même vide plutôt que d'apparaître au premier arrivant :
 // la scène garderait sinon la même hauteur pour deux dispositions différentes,
 // et se redimensionnerait sous une vidéo en cours de lecture.
-export function CallStage({ layout }: CallStageProps): React.ReactElement {
+export function CallStage({
+  layout,
+  onPressTile,
+  onLongPressTile,
+}: CallStageProps): React.ReactElement {
   const { width, height } = useWindowDimensions();
   // Les dimensions de la fenêtre, jamais une API d'orientation : sur un
   // pliable elles changent SANS rotation — Pixel 10 Pro Fold, couverture
@@ -154,7 +189,13 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
             écran en portrait jusqu'à n'en montrer que 26 % — mesuré sur
             1080×2364. Aucune des deux valeurs n'est bonne ; les bandes noires
             sont un défaut de MISE EN PAGE, que la refonte de la grille traitera. */}
-        <VideoTile tile={layout.stage} fitWhenCamera="contain" size={styles.stageTile} />
+        <VideoTile
+          tile={layout.stage}
+          fitWhenCamera="contain"
+          size={styles.stageTile}
+          onPress={() => onPressTile(layout.stage.key)}
+          onLongPress={() => onLongPressTile(layout.stage.key)}
+        />
       </View>
 
       {/* Une bande de longueur inconnue : au-delà de trois vignettes, les
@@ -178,6 +219,8 @@ export function CallStage({ layout }: CallStageProps): React.ReactElement {
             tile={tile}
             fitWhenCamera="cover"
             size={landscape ? styles.thumbnailTileColumn : styles.thumbnailTile}
+            onPress={() => onPressTile(tile.key)}
+            onLongPress={() => onLongPressTile(tile.key)}
           />
         ))}
       </ScrollView>

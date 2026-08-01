@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, IconButton, Snackbar, Text } from 'react-native-paper';
@@ -196,12 +196,33 @@ export function CallScreen(): React.ReactElement {
   // les sorties anticipées ci-dessous : il n'y a pas de rendu où l'écran aurait
   // le droit de ne pas l'appeler.
   //
+  // La clé de la tuile épinglée, jamais un participant : depuis le partage
+  // d'écran, une personne produit deux tuiles, `${identity}:camera` et
+  // `${identity}:screen` — épingler LA PERSONNE serait ambigu entre les deux.
+  // `CallStage` est démontée quand le panneau des participants s'ouvre (voir
+  // plus bas) : un état tenu dans la coquille serait perdu à chaque
+  // ouverture, il vit donc ici.
+  const [pin, setPin] = useState<string | null>(null);
+
+  // Une seule instruction, DEUX issues : un second appui sur la tuile déjà
+  // épinglée la désépingle — c'est ce qui rend le geste réversible sans rien
+  // apprendre de plus. Chacune des deux issues veut son propre test : sans
+  // celui du désépinglage, une implémentation qui écrirait `setPin(key)` sans
+  // jamais repasser à `null` passerait quand même le premier.
+  const handlePressTile = useCallback((key: string): void => {
+    setPin((current) => (current === key ? null : key));
+  }, []);
+
+  // Le plein écran arrive avec une tâche suivante ; ce geste ne fait rien pour
+  // l'instant. `CallStageProps` l'exige déjà — pour que cette tâche-ci rende la
+  // scène et la bande pressables une fois pour toutes, sans que la suivante
+  // ait à retoucher le contrat entre les deux fichiers.
+  const handleLongPressTile = useCallback((): void => undefined, []);
+
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
   // n'a plus qu'une liste de vignettes à passer à sa coquille de rendu.
-  // Rien n'est encore épinglé depuis cet écran : le geste qui pose la clé
-  // arrive dans une tâche suivante. `null` retombe sur la règle ordinaire.
-  const layout = useCallLayout(session.getRoom(), facing, null);
+  const layout = useCallLayout(session.getRoom(), facing, pin);
 
   // Un compte frais à chaque rendu, comme au premier rendu de `failure`
   // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
@@ -679,7 +700,11 @@ export function CallScreen(): React.ReactElement {
       ) : (
         // Parti pris mobile : locuteur actif en grand, vignettes en bande. La
         // grille du web rend chaque visage illisible sur un écran de téléphone.
-        <CallStage layout={layout} />
+        <CallStage
+          layout={layout}
+          onPressTile={handlePressTile}
+          onLongPressTile={handleLongPressTile}
+        />
       )}
 
       {/* La reconnexion se dit : sans cela la personne regarde une image figée

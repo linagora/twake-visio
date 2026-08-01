@@ -1,5 +1,5 @@
 import { VideoTrack } from '@livekit/react-native';
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import type { CallLayout, VideoTrackRef, Tile } from 'src/call/layout';
@@ -50,6 +50,20 @@ function layout(stage: Tile, filmstrip: readonly Tile[] = []): CallLayout {
   return { stage, pinned: false, filmstrip };
 }
 
+// `onPressTile`/`onLongPressTile` sont désormais obligatoires : la plupart des
+// tests de ce fichier ne portent pas sur le geste et n'ont besoin que d'un
+// bouchon qui satisfasse le type. Ceux qui portent sur le geste passent leur
+// propre espion.
+function renderStage(
+  layoutValue: CallLayout,
+  onPressTile: (key: string) => void = jest.fn(),
+  onLongPressTile: (key: string) => void = jest.fn(),
+): ReturnType<typeof render> {
+  return render(
+    <CallStage layout={layoutValue} onPressTile={onPressTile} onLongPressTile={onLongPressTile} />,
+  );
+}
+
 function propsFor(sid: string): Record<string, unknown> | undefined {
   return jest
     .mocked(VideoTrack)
@@ -79,14 +93,8 @@ beforeEach(() => {
 
 describe('CallStage', () => {
   it('pose la vignette de scène et toutes celles de la bande', async () => {
-    await render(
-      <CallStage
-        layout={layout(tile('ada:camera'), [
-          tile('me:camera'),
-          tile('bob:camera'),
-          tile('cid:camera'),
-        ])}
-      />,
+    await renderStage(
+      layout(tile('ada:camera'), [tile('me:camera'), tile('bob:camera'), tile('cid:camera')]),
     );
 
     expect(screen.getByTestId('active-speaker')).toBeTruthy();
@@ -102,7 +110,7 @@ describe('CallStage', () => {
   it('transmet à VideoTrack la piste que la sélection a choisie', async () => {
     const camera = fakeCamera('ts-choisie');
 
-    await render(<CallStage layout={layout(tile('ada:camera', { track: camera }))} />);
+    await renderStage(layout(tile('ada:camera', { track: camera })));
 
     expect(jest.mocked(VideoTrack).mock.calls[0]?.[0].trackRef).toBe(camera);
   });
@@ -110,13 +118,11 @@ describe('CallStage', () => {
   it('transmet le miroir décidé par la sélection, vignette par vignette', async () => {
     // Le miroir n'est pas une propriété de la surface : la vignette locale est
     // retournée, celle des autres non, et les deux cohabitent dans la bande.
-    await render(
-      <CallStage
-        layout={layout(tile('ada:camera'), [
-          tile('me:camera', { isLocal: true, mirror: true }),
-          tile('bob:camera'),
-        ])}
-      />,
+    await renderStage(
+      layout(tile('ada:camera'), [
+        tile('me:camera', { isLocal: true, mirror: true }),
+        tile('bob:camera'),
+      ]),
     );
 
     expect(propsFor('ts-me:camera')?.mirror).toBe(true);
@@ -127,14 +133,14 @@ describe('CallStage', () => {
     // `cover` sur la scène couperait les deux tiers d'un visage filmé en
     // paysage sur un écran tenu en portrait ; `contain` sur une vignette de
     // cent pixels n'y laisserait qu'une bande.
-    await render(<CallStage layout={layout(tile('ada:camera'), [tile('me:camera')])} />);
+    await renderStage(layout(tile('ada:camera'), [tile('me:camera')]));
 
     expect(propsFor('ts-ada:camera')?.objectFit).toBe('contain');
     expect(propsFor('ts-me:camera')?.objectFit).toBe('cover');
   });
 
   it('pose un carton nommé, et aucune vidéo, quand il n’y a pas de piste', async () => {
-    await render(<CallStage layout={layout(tile('ada:camera', { track: null }))} />);
+    await renderStage(layout(tile('ada:camera', { track: null })));
 
     expect(screen.getByTestId('tile-placeholder-ada:camera')).toHaveTextContent('ada:camera');
     expect(VideoTrack).not.toHaveBeenCalled();
@@ -143,7 +149,7 @@ describe('CallStage', () => {
   it('nomme une personne sans nom par une chaîne traduite', async () => {
     // Jamais d'identité brute ni de vide à l'écran : les deux se lisent comme
     // un défaut d'affichage.
-    await render(<CallStage layout={layout(tile('ada:camera', { track: null, name: '' }))} />);
+    await renderStage(layout(tile('ada:camera', { track: null, name: '' })));
 
     expect(screen.getByTestId('tile-placeholder-ada:camera')).toHaveTextContent(
       'call.unnamedParticipant',
@@ -153,14 +159,67 @@ describe('CallStage', () => {
   it('donne son nom à chaque vignette pour qui ne voit pas l’image', async () => {
     // Une piste vidéo ne dit rien à un lecteur d'écran : le nom est tout ce
     // qu'il reste, et il doit être là avec ou sans image.
-    await render(
-      <CallStage
-        layout={layout(tile('ada:camera'), [tile('bob:camera', { track: null, name: 'Bob' })])}
-      />,
+    await renderStage(
+      layout(tile('ada:camera'), [tile('bob:camera', { track: null, name: 'Bob' })]),
     );
 
     expect(screen.getByTestId('tile-ada:camera')).toHaveProp('accessibilityLabel', 'ada:camera');
     expect(screen.getByTestId('tile-bob:camera')).toHaveProp('accessibilityLabel', 'Bob');
+  });
+});
+
+// La scène et la bande passent toutes deux par `VideoTile`, mais `CallStage`
+// les câble à deux endroits distincts du fichier — un `VideoTile` isolé pour
+// la scène, une boucle `.map` pour la bande. Rien ne garantit qu'oublier l'un
+// des deux se voie ailleurs : `call.spec.tsx` ne presse que des vignettes
+// atteintes en pratique par son scénario, jamais les deux surfaces par
+// construction. Pire pour l'appui long : la seule tâche qui consomme
+// `onLongPressTile` pour de vrai (le plein écran) arrive après celle-ci, donc
+// aucun test d'intégration ne peut aujourd'hui distinguer un `onLongPress`
+// bien câblé d'un `onLongPress` oublié — seul ce bloc le peut.
+//
+// `fireEvent.press` n'atteint que `onPress`, jamais `onLongPress` ;
+// `fireEvent(el, 'longPress')` atteint `onLongPress` et jamais `onPress` —
+// vérifié par exécution avant d'écrire ces tests.
+describe('gestes de tuile', () => {
+  it('relaie un appui simple avec la clé de la tuile touchée, scène et bande', async () => {
+    const onPressTile = jest.fn();
+
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), onPressTile);
+
+    await fireEvent.press(screen.getByTestId('tile-ada:camera'));
+    await fireEvent.press(screen.getByTestId('tile-bob:camera'));
+
+    expect(onPressTile).toHaveBeenCalledWith('ada:camera');
+    expect(onPressTile).toHaveBeenCalledWith('bob:camera');
+  });
+
+  it('relaie un appui long avec la clé de la tuile touchée, scène et bande', async () => {
+    const onLongPressTile = jest.fn();
+
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]), undefined, onLongPressTile);
+
+    await fireEvent(screen.getByTestId('tile-ada:camera'), 'longPress');
+    await fireEvent(screen.getByTestId('tile-bob:camera'), 'longPress');
+
+    expect(onLongPressTile).toHaveBeenCalledWith('ada:camera');
+    expect(onLongPressTile).toHaveBeenCalledWith('bob:camera');
+  });
+
+  it('ne confond pas les deux gestes sur la même tuile', async () => {
+    const onPressTile = jest.fn();
+    const onLongPressTile = jest.fn();
+
+    await renderStage(
+      layout(tile('bob:camera'), [tile('ada:camera')]),
+      onPressTile,
+      onLongPressTile,
+    );
+
+    await fireEvent.press(screen.getByTestId('tile-ada:camera'));
+
+    expect(onPressTile).toHaveBeenCalledWith('ada:camera');
+    expect(onLongPressTile).not.toHaveBeenCalled();
   });
 });
 
@@ -172,7 +231,7 @@ describe('cadrage par source', () => {
     const scene = tile('alice:screen', { source: 'screen', track: fakeCamera('scr-1') });
     const vignette = tile('bob:screen', { source: 'screen', track: fakeCamera('scr-2') });
 
-    await render(<CallStage layout={layout(scene, [vignette])} />);
+    await renderStage(layout(scene, [vignette]));
 
     expect(propsFor('scr-1')?.objectFit).toBe('contain');
     expect(propsFor('scr-2')?.objectFit).toBe('contain');
@@ -186,7 +245,7 @@ describe('cadrage par source', () => {
     const scene = tile('bob:camera', { source: 'camera', track: fakeCamera('cam-1') });
     const vignette = tile('ada:camera', { source: 'camera', track: fakeCamera('cam-2') });
 
-    await render(<CallStage layout={layout(scene, [vignette])} />);
+    await renderStage(layout(scene, [vignette]));
 
     expect(propsFor('cam-1')?.objectFit).toBe('contain');
     expect(propsFor('cam-2')?.objectFit).toBe('cover');
@@ -202,7 +261,7 @@ describe('cadrage par source', () => {
     const scene = tile('alice:screen', { source: 'screen', track: fakeCamera('scr-3') });
     const vignette = tile('alice:camera', { source: 'camera', track: fakeCamera('cam-3') });
 
-    await render(<CallStage layout={layout(scene, [vignette])} />);
+    await renderStage(layout(scene, [vignette]));
 
     expect(propsFor('cam-3')?.objectFit).toBe('cover');
   });
@@ -220,7 +279,7 @@ describe('orientation', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
   });
@@ -233,7 +292,7 @@ describe('orientation', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', false);
   });
@@ -255,7 +314,7 @@ describe('axe de la bande, pas seulement sens de défilement', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'contentContainerStyle',
@@ -271,7 +330,7 @@ describe('axe de la bande, pas seulement sens de défilement', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'contentContainerStyle',
@@ -295,7 +354,7 @@ describe('la scène reçoit la place libérée en paysage', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('active-speaker').parent).not.toHaveStyle({ flexDirection: 'row' });
   });
@@ -308,7 +367,7 @@ describe('la scène reçoit la place libérée en paysage', () => {
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('active-speaker').parent).toHaveStyle({ flexDirection: 'row' });
   });
@@ -329,7 +388,7 @@ describe('la bande et sa vignette échangent une dimension fixe, pas seulement u
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'style',
@@ -346,7 +405,7 @@ describe('la bande et sa vignette échangent une dimension fixe, pas seulement u
       fontScale: 1,
     });
 
-    await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
     expect(screen.getByTestId('filmstrip')).toHaveProp(
       'style',
@@ -363,7 +422,7 @@ describe('la bande et sa vignette échangent une dimension fixe, pas seulement u
 // de suite après un bloc paysage, pour que l'ordre de déclaration par défaut
 // de Jest le fasse mordre de façon fiable si la fuite revient.
 it('ne pose aucune dimension et voit donc le préréglage portrait du banc de test', async () => {
-  await render(<CallStage layout={layout(tile('bob:camera'), [tile('ada:camera')])} />);
+  await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
 
   expect(screen.getByTestId('filmstrip')).toHaveProp('horizontal', true);
 });

@@ -1,5 +1,5 @@
 import { VideoTrack } from '@livekit/react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { Track } from 'livekit-client';
 import React from 'react';
 import { Share } from 'react-native';
@@ -1884,5 +1884,52 @@ describe('CallScreen, main levée', () => {
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
     await waitFor(() => expect(screen.getByTestId('call-notice')).toHaveTextContent(''));
+  });
+});
+
+describe('CallScreen, épinglage', () => {
+  it('épingle la vignette qu’on touche', async () => {
+    // Ada est seule et distante : par la règle ordinaire (`src/call/layout`,
+    // « la scène revient toujours à un distant »), c'est DÉJÀ elle qui est sur
+    // scène, et c'est la propre vignette locale qui commence dans la bande.
+    // La faire monter à son tour prouve le geste, pas la règle par défaut.
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-u-ada:camera')).toBeTruthy();
+  });
+
+  // E1, la seconde issue. Sans CE test, une implémentation qui poserait
+  // `setPin(key)` sans jamais désépingler passerait le précédent.
+  it('désépingle au second appui sur la même tuile', async () => {
+    mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-me:camera'),
+      ).toBeTruthy();
+    });
+
+    await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('active-speaker')).getByTestId('tile-u-ada:camera'),
+      ).toBeTruthy();
+    });
+    expect(within(screen.getByTestId('filmstrip')).getByTestId('tile-me:camera')).toBeTruthy();
   });
 });
