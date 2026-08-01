@@ -53,6 +53,15 @@ const styles = StyleSheet.create({
   // apparaît quand quelqu'un parle rognerait l'image de deux pixels à chaque
   // mot.
   tile: {
+    // `flex: 1` pour REMPLIR le `Pressable` qui l'enveloppe, et non pour
+    // participer à une disposition. Sans lui, une vignette s'effondre à une
+    // hauteur nulle : son `size` ne porte qu'une largeur, le `Pressable` prend
+    // bien sa hauteur de l'étirement de la bande, mais cette vue-ci n'a alors
+    // ni `flex` ni `height` et se dimensionne sur son contenu — un `VideoTrack`
+    // en `flex: 1`, donc de base nulle. Constaté sur appareil : la bande
+    // rendait deux tuiles invisibles pendant que la sélection y plaçait bien
+    // deux tuiles. La scène y échappait, son `size` valant `{ flex: 1 }`.
+    flex: 1,
     overflow: 'hidden',
     backgroundColor: tokens.color.surfaceDark,
     borderWidth: 2,

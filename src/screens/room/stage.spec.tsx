@@ -542,6 +542,33 @@ describe('la bande et sa vignette échangent une dimension fixe, pas seulement u
   });
 });
 
+// Constaté SUR APPAREIL, en séance : la bande était VIDE alors que la sélection
+// y plaçait bien deux tuiles — établi par un relevé posé à la frontière, qui
+// affichait `bande=[mmaudet:camera, …:camera]` pendant qu'aucun pixel de la
+// bande ne dépassait la couleur de fond. Le défaut vivait donc dans le rendu,
+// pas dans la règle.
+//
+// Cause : le `Pressable` qui enveloppe chaque tuile porte `size`, et pour une
+// vignette `size` ne contient QU'UNE LARGEUR. Le `Pressable` reçoit bien sa
+// hauteur de l'étirement de la bande, mais la `View` intérieure n'a alors ni
+// `flex` ni `height` : sa hauteur vient de son contenu, or son contenu est un
+// `VideoTrack` en `flex: 1`, de base nulle. Elle s'effondre à zéro.
+//
+// La scène y échappait parce que son `size` vaut `{ flex: 1 }` — posé sur les
+// deux vues. C'est pourquoi le défaut n'a touché QUE les vignettes, et pourquoi
+// il a survécu à quatre tâches et deux revues : tous les tests interrogent des
+// `testID`, qu'une vue de hauteur nulle porte exactement comme une autre.
+//
+// Aucun test ne peut prouver qu'une tuile est VISIBLE — Jest ne dispose pas les
+// vues. Celui-ci garde la seule chose gardable : la propriété qui la fait
+// remplir son parent n'a pas été retirée.
+it('donne à chaque tuile de quoi remplir son pressable, sans quoi la bande est vide', async () => {
+  await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+
+  expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ flex: 1 });
+  expect(screen.getByTestId('tile-bob:camera')).toHaveStyle({ flex: 1 });
+});
+
 // Garde contre la fuite que `jest.restoreAllMocks()`, dans le `beforeEach`
 // ci-dessus, referme : sans lui, ce test — qui ne pose lui-même AUCUNE
 // dimension — hérite du dernier `800×400` posé par le test paysage
