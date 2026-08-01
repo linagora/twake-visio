@@ -17,7 +17,7 @@ export type BottomSheetProps = {
 //
 // Ce que `Modal` apporte sans qu'on écrive une ligne : l'appui sur le fond
 // referme (`dismissable`, `Modal.tsx:104`), le bouton retour d'Android referme
-// aussi (`Modal.tsx:159-178`) — ce que `Menu` ne faisait PAS —, les encarts de
+// aussi (`Modal.tsx:160-178`) — ce que `Menu` ne faisait PAS —, les encarts de
 // zone sûre sont reportés en marges (`Modal.tsx:118, 213`), et rien n'est monté
 // à l'état fermé (`Modal.tsx:182`).
 //

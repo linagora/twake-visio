@@ -258,7 +258,7 @@ export type BottomSheetProps = {
 //
 // Ce que `Modal` apporte sans qu'on écrive une ligne : l'appui sur le fond
 // referme (`dismissable`, `Modal.tsx:104`), le bouton retour d'Android referme
-// aussi (`Modal.tsx:159-178`) — ce que `Menu` ne faisait PAS —, les encarts de
+// aussi (`Modal.tsx:160-178`) — ce que `Menu` ne faisait PAS —, les encarts de
 // zone sûre sont reportés en marges (`Modal.tsx:118, 213`), et rien n'est monté
 // à l'état fermé (`Modal.tsx:182`).
 //
@@ -407,13 +407,21 @@ describe('BottomSheet', () => {
 
 > **Ce dernier test existe parce qu'une sonde l'a exigé, contre ce que ce plan disait
 > d'abord.** La première rédaction affirmait que l'étiquette du fond « n'est gardée par
-> rien » et prescrivait de ne pas écrire ce test — le raisonnement étant que `Modal.tsx:196`
-> pose l'`accessibilityLabel` sur un `TouchableWithoutFeedback` sans `testID` propre. **Le
-> raisonnement était juste et la conclusion fausse** : `getByLabelText` ne passe pas par les
-> `testID`. Exécuté contre HEAD avant d'être écrit ici : le test passe, et retirer
-> `overlayAccessibilityLabel` donne **1 rouge, celui-là seul**. C'est la première
-> application de la règle « le code de test qu'un plan prescrit doit avoir été exécuté »,
-> et elle s'est payée du premier coup.
+> rien » et prescrivait de ne pas écrire ce test, au motif que Paper poserait
+> l'`accessibilityLabel` sur un `TouchableWithoutFeedback` dépourvu de `testID` propre.
+>
+> **Trois affirmations, et les trois étaient fausses.** L'élément est un
+> `AnimatedPressable` (`Modal.tsx:195`), il **porte** bien un `testID`
+> (`` `${testID}-backdrop` ``, `Modal.tsx:208`), et `getByLabelText` ne passe de toute
+> façon pas par les `testID`. La première rédaction de cet encadré ajoutait « le
+> raisonnement était juste, seule la conclusion était fausse » : c'était encore faux, et
+> c'est la revue de la tâche 1 qui l'a relevé en ouvrant la source.
+>
+> **C'est exactement pourquoi la règle porte sur l'exécution et non sur la relecture.** Un
+> raisonnement peut être élégant, cohérent, et bâti sur trois prémisses qu'on n'a pas
+> ouvertes. Exécuté contre HEAD avant d'être écrit ici : le test passe, et retirer
+> `overlayAccessibilityLabel` donne **1 rouge, celui-là seul** — mesuré deux fois, par
+> l'auteur du plan puis indépendamment par la revue.
 
 - [ ] **Step 5 : barre complète**
 
@@ -435,7 +443,7 @@ Committer d'abord. Puis, une mutation à la fois, `git checkout --` entre chaque
 
 À écrire dans le rapport, pas à contourner :
 
-- **Que le bouton retour d'Android referme la feuille** (`Modal.tsx:159-178`) : aucun test
+- **Que le bouton retour d'Android referme la feuille** (`Modal.tsx:160-178`) : aucun test
   de composant ne déclenche un `BackHandler`.
 - **Que le fond assombrit la scène** : `theme.colors.backdrop` vient de Paper, depuis une
   valeur qu'aucun de nos fichiers ne porte. L'asserter mesurerait la version installée.
