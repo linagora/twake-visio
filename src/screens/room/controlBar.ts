@@ -62,7 +62,18 @@ export const sheetStyles = StyleSheet.create({
     borderTopLeftRadius: tokens.radius.lg,
     borderTopRightRadius: tokens.radius.lg,
     paddingVertical: tokens.spacing.sm,
+    // `Menu` bornait sa hauteur (`Menu.tsx:496-539`) ; `Modal` ne borne rien.
+    // Sans cette ligne, une feuille assez longue — la file des mains levées est
+    // la seule ici qui n'a aucune limite en amont — pousse son propre titre
+    // hors de l'écran, et rien ne permet de l'y ramener. 80 % laisse toujours
+    // voir la scène derrière, ce qui dit qu'on est dans une feuille et non sur
+    // un nouvel écran.
+    maxHeight: '80%',
   },
+  // `flexShrink: 1` et non `flex: 1` : la feuille doit rester HAUTE COMME SON
+  // CONTENU tant qu'il tient, et ne se contraindre qu'au-delà. Avec `flex: 1`,
+  // une feuille de deux lignes occuperait d'emblée 80 % de l'écran.
+  scroll: { flexShrink: 1 },
   // Le titre de la feuille. Il porte son propre espacement plutôt que celui
   // d'une ligne : une ligne est pressable et veut une cible haute, un titre ne
   // l'est pas.

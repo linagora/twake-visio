@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, within } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider, Text } from 'react-native-paper';
 
@@ -87,5 +87,36 @@ describe('BottomSheet', () => {
     await render(sheet(true));
 
     expect(screen.getByLabelText('call.closeSheet')).toBeTruthy();
+  });
+
+  // `Menu` bornait sa hauteur et faisait défiler au-delà d'un seuil
+  // (`Menu.tsx:496-539`, `:687-693`) ; `Modal` ne fait ni l'un ni l'autre. Sans
+  // ces deux propriétés, une file de mains levées assez longue pousse le titre
+  // de la feuille hors de l'écran, sans moyen de l'y ramener — environ trois
+  // lignes suffisent en paysage.
+  //
+  // Aucun test ne peut prouver qu'on atteint le bas d'une liste : Jest ne
+  // dispose pas les vues et ne fait défiler rien. Ceux-ci prouvent la seule
+  // chose gardable — que la borne et le conteneur défilant n'ont pas été
+  // retirés.
+  it('borne la hauteur de la feuille', async () => {
+    await render(sheet(true));
+
+    expect(screen.getByTestId('test-sheet-surface')).toHaveStyle({ maxHeight: '80%' });
+  });
+
+  it('fait défiler son contenu sans emporter son titre', async () => {
+    await render(sheet(true));
+
+    // `within` plutôt que `toContainElement` : ce dernier vient de
+    // `jest-native`, dont les types attendent le `ReactTestInstance` de l'ancien
+    // rendu de test, quand RNTL 14 rend le sien. Le matcher fonctionnerait à
+    // l'exécution, `tsc` refuse. `within` porte la même assertion et se type.
+    const scroll = within(screen.getByTestId('test-sheet-scroll'));
+
+    // Le titre est HORS du conteneur défilant : ce qui nomme la feuille ne doit
+    // pas pouvoir sortir de l'écran quand son contenu s'allonge.
+    expect(scroll.queryByTestId('test-sheet-title')).toBe(null);
+    expect(scroll.getByTestId('child')).toBeTruthy();
   });
 });

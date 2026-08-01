@@ -94,4 +94,15 @@ describe('SheetRow', () => {
 
     expect(screen.getByLabelText('Une étiquette')).toBeTruthy();
   });
+
+  // La troisième chose que `Menu.Item` donnait gratuitement (`MenuItem.tsx:194`),
+  // et la seule qui ne se voie pas : `TouchableRipple` ne pose AUCUN rôle par
+  // défaut. Sans elle, chaque ligne de feuille est annoncée comme du texte
+  // quelconque — rien ne dit qu'on peut appuyer dessus. Relevée par la revue de
+  // branche, jamais par un test : d'où celui-ci.
+  it('annonce un rôle de bouton, que Menu.Item posait', async () => {
+    await render(withPaper(<SheetRow testID="row" title="Un titre" onPress={jest.fn()} />));
+
+    expect(screen.getByTestId('row')).toHaveProp('accessibilityRole', 'button');
+  });
 });
