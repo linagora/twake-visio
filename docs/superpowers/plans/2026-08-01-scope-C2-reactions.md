@@ -171,7 +171,7 @@ tokens que C1 et `controlBar.ts` — pas de nouvelle paire à recalculer) :
 
 | Élément livré ici | Prop | Valeur | Fond | Ratio |
 |---|---|---|---|---|
-| `reaction-picker-title` (`Text` labelSmall) | `style` | `barStyles.menuNote` (`textDark`) | `surfaceDark` (contenu du `Menu`) | **15,86:1** — repris de `controlBar.ts:29-35`, jamais recalculé : même paire de tokens |
+| `reaction-picker-title` (`Text` labelSmall) | `style` | `barStyles.menuNote` (`textDark`) — **livré `sheetStyles.note`, voir la Tâche 4** | `surfaceDark` (contenu du `Menu`) — **d'une feuille inférieure** | **15,86:1** — repris de `controlBar.ts:29-35`, jamais recalculé : même paire de tokens |
 | `reaction-bubble-*` (`View`) | `backgroundColor` | `tokens.color.surfaceDark` | — | nouvelle surface, posée **et** motivée ci-dessous |
 | `reaction-bubble-name-*` (`Text`) | `style` | `tokens.color.textDark` | `surfaceDark` (la bulle elle-même, pas `backgroundDark`) | **15,86:1** — même paire que la ligne du dessus |
 | glyphe emoji (`reaction-${key}`, `reaction-bubble-*` glyphe) | — | **aucune couleur posée**, délibérément | — | sans objet : un emoji Unicode pleine couleur (Apple Color Emoji, Noto Color Emoji) ignore la prop `color` de `Text` — ce n'est pas un texte au sens où la doctrine de contraste s'applique |
@@ -609,6 +609,16 @@ npx tsc --noEmit
 23 tests verts (5 `REACTION_KEYS`+`reactionGlyph`+`encodeReaction` confondus, 8 `parseReaction`, 3
 `admitSend`, 2 `appendReaction`, 3 `pruneReactions`). `tsc` propre : cette tâche est **autonome**,
 aucune autre ne la précède.
+
+> **Corrigé : ce sont 18 tests, pas 23.** Ce qui a été livré au commit `f8d334c`, et ce que HEAD
+> porte encore : 1 `REACTION_KEYS` + 1 `reactionGlyph` + 1 `encodeReaction` + 7 `parseReaction` +
+> 3 `admitSend` + 2 `appendReaction` + 3 `pruneReactions` = **18**
+> (`npx jest src/call/reactions.spec.ts`). Le nombre en tête était faux **et** son propre détail ne
+> l'atteignait pas : 5 + 8 + 3 + 2 + 3 fait 21. Un chiffre qui ne se recompte pas depuis sa propre
+> parenthèse n'a été relevé nulle part.
+>
+> Aucun test ne manque pour autant : les trois premières lignes en font **une** chacune, pas cinq à
+> elles trois, et `parseReaction` en a sept, pas huit. La barre à atteindre est 18/18.
 
 - [ ] **Step 4 : committer**
 
@@ -1344,6 +1354,36 @@ qui est exactement ce qu'il ne faut pas. `TouchableRipple` (`react-native-paper`
 dépendance) est le bon niveau : un `Pressable` avec ondulation Material, sans le comportement
 « ligne de menu » qu'apporterait `Menu.Item`.
 
+> ### Corrigé : `barStyles.menuNote` n'existe pas, et il n'y a plus de `Menu` de Paper dans `src/`
+>
+> **Cette tâche a été écrite contre un `Menu` de Paper que le lot des feuilles inférieures avait
+> déjà remplacé.** Les trois menus de la barre sont devenus des `BottomSheet` (`chore: Merge the
+> in-call bottom sheets`), et `9fc7552` a retiré les styles qu'ils portaient — `barStyles.menuNote`
+> et `barStyles.menuTitle` avec eux. `grep -rn "menuNote" src/` ne rend rien.
+>
+> **Substitution exacte : `sheetStyles.note`** (`src/screens/room/controlBar.ts:143-147`), même
+> paire de tokens, donc **le 15,86:1 de la table de contraste reste juste** — il n'y a rien à
+> recalculer, seulement une source à corriger. C'est ce que porte `reactionPicker.tsx:66`, et le
+> fichier livré écrit lui-même pourquoi (`:56-60`). L'import devient
+> `import { BAR_RIPPLE_COLOR, sheetStyles } from 'src/screens/room/controlBar';` — `barStyles` n'est
+> plus consommé du tout par ce composant.
+>
+> **Conséquences sur le reste de la tâche :**
+>
+> - **L'extrait de la Step 2 ne compile pas** : `barStyles.menuNote` n'est pas une propriété de
+>   `barStyles`, et `tsc` s'arrête là. Un implémenteur qui le recopierait tel quel serait bloqué par
+>   `npm run typecheck`, que lefthook exécute en pre-commit.
+> - **La mutation n° 4 de la Step 5** vise donc la mauvaise prop : c'est
+>   `style={sheetStyles.note}` qu'il faut retirer pour faire rougir _« porte une couleur explicite
+>   sur son titre de section »_. Le test lui-même est juste, et il est resté tel quel.
+> - **Le raisonnement « pas de `Menu.Item` » survit intégralement** — il faut seulement le relire
+>   avec `SheetRow` à la place : c'est `SheetRow` qui est aujourd'hui la « ligne » qui referme la
+>   feuille, et `ReactionPicker` n'en est délibérément pas une. Voir la correction de la Tâche 6.
+> - **La largeur de 200 dp reste motivée**, mais plus par le même fait : ce n'est plus « le contenu
+>   d'un `Menu` est intrinsèque » — une feuille inférieure occupe toute la largeur de l'écran. Sans
+>   largeur posée, les huit cibles s'aligneraient sur une seule rangée d'autant plus facilement. Le
+>   nombre et son calcul (`4 × 44 + 3 × 8 = 200`) n'ont pas bougé, le motif est à reformuler.
+
 **Largeur explicite, motivée.** Le contenu d'un `Menu` de Paper est intrinsèque (mesuré par le
 périmètre C1 lui-même, dans son analyse de `audioOutputControl.tsx`) : sans largeur posée, huit
 cibles de 44 dp s'aligneraient sur une seule rangée dès qu'un écran est assez large, au lieu des
@@ -1795,6 +1835,37 @@ npx tsc --noEmit
     **construit et élargi dans le même fichier**, par la même tâche : aucun voisin n'a besoin
     d'être touché.
 
+> ### Corrigé : cette prop ne peut PAS être requise dans cette tâche. Le commit est physiquement bloqué.
+>
+> « Aucun voisin n'a besoin d'être touché » est vrai du **type** et faux du **projet**. `call.tsx`
+> est le seul constructeur de `MoreMenuProps` hors des tests, et il ne passe pas encore
+> `onSendReaction` — c'est la Tâche 7 qui le câble. Or `npm run typecheck` est `tsc --noEmit`, qui
+> tourne sur **tout le projet, jamais fichier par fichier**, et lefthook l'exécute en pre-commit
+> (`lefthook.yml`). Rendre la prop requise ici ne produit donc pas un plan de compilation discutable
+> : cela **empêche le commit de partir**, et `--no-verify` est interdit par ce même plan.
+>
+> **Ce qui a été livré** (`8975c89`) : la prop **optionnelle**, avec un repli inerte à la
+> destructuration —
+>
+> ```tsx
+>   readonly onSendReaction?: (key: ReactionKey) => void;
+> …
+>   // Repli inerte : voir le commentaire sur `MoreMenuProps.onSendReaction`.
+>   onSendReaction = () => undefined,
+> ```
+>
+> — puis **rendue obligatoire une fois le câblage atterri**, ce qu'elle est aujourd'hui
+> (`src/screens/room/moreMenu.tsx:42`). Le commentaire qui vit au-dessus d'elle
+> (`moreMenu.tsx:36-41`) consigne la dérogation et sa levée : laisser une prop optionnelle plus
+> longtemps que nécessaire rend un site d'appel oublié **silencieusement inerte**, ce qui est
+> exactement le défaut que ce plan cherchait à éviter en la voulant requise.
+>
+> **La leçon, et elle vaut au-delà de cette tâche** : « le type est construit et élargi dans le même
+> fichier » ne dit **rien** de la compilation du projet. La question à poser est « qui CONSTRUIT ce
+> type, et cette tâche le touche-t-elle ? » — ici `call.tsx`, qu'elle ne touche pas. Voir aussi la
+> ligne 6 du tableau « Vérification que chaque tâche est committable seule », qui répond « oui » et
+> se trompe pour cette raison.
+
 **Quatrième entrée, jamais fermée sur l'appui — à l'inverse des trois précédentes.** `share-btn`,
 `RecordingControl` et `HandControl` enveloppent chacun leur rappel d'un `setVisible(false)` posé
 par `MoreMenu` lui-même (pas par le composant enfant). `ReactionPicker` reçoit `onSendReaction`
@@ -1868,6 +1939,18 @@ juste après `<HandControl .../>` :
 Aucune enveloppe `() => { setVisible(false); ... }` : `onSendReaction` passe tel quel, à
 l'inverse des trois lignes qui précèdent.
 
+> **Corrigé** : ce n'est pas le corps d'un `<Menu>` mais celui d'un `<BottomSheet>`
+> (`src/screens/room/moreMenu.tsx:107-162`) — la ligne d'insertion et le raisonnement sont les
+> mêmes, le composant hôte a changé. Ses trois voisines ne sont plus des `Menu.Item` non plus :
+> `share-btn` et `chat-btn` sont des `SheetRow`, et `RecordingControl` / `HandControl` en rendent un
+> chacun. Chacune reçoit son `() => { setVisible(false); … }` **écrit une fois par entrée**, ce qui
+> est précisément ce qui permet à la quatrième de ne pas en avoir — le contraste que cette tâche
+> décrit est intact.
+>
+> Note pour un implémenteur qui lirait la Step 1 : `moreMenu.spec.tsx` a un `open()` **et** un
+> `settleMenus()` depuis les feuilles ; les `waitFor` de ses tests ne sont pas décoratifs, un
+> `Modal` de Paper n'apparaît pas au rendu synchrone.
+
 - [ ] **Step 3 : lancer et vérifier**
 
 ```
@@ -1879,6 +1962,11 @@ npx eslint src/screens/room/moreMenu.tsx --ext .tsx
 Tous les tests existants du fichier (15, avant cette tâche) plus les 2 nouveaux, verts — sans
 qu'aucune assertion existante n'ait dû être modifiée : le prop par défaut de `menu()` couvre tous
 les appels déjà écrits.
+
+> **Corrigé : 16 avant cette tâche, donc 18 après.** Relevé sur les deux commits qui l'encadrent —
+> `8975c89^` en portait 16, `8975c89` en porte 18. La **propriété** annoncée, elle, est exacte et
+> c'est elle qui compte : aucune assertion existante n'a dû être modifiée. Le fichier en compte 23
+> aujourd'hui, les cinq de plus venant des lots du chat et des feuilles.
 
 - [ ] **Step 4 : committer**
 
@@ -2067,6 +2155,21 @@ describe('CallScreen, réactions', () => {
     expect(screen.getByTestId('call-notice').props.visible).toBe(false);
   });
 
+  // CORRIGÉ : la dernière assertion ci-dessus est VERTE CONTRE UNE IMPLÉMENTATION
+  // NULLE, et c'est le pire cas — elle rassure sans rien garder.
+  //
+  // `Snackbar` de Paper déstructure `visible` hors de `...rest`, donc
+  // `props.visible` sur le nœud hôte que rend `getByTestId` vaut TOUJOURS
+  // `undefined`, et `undefined !== false` ferait d'ailleurs échouer cette
+  // égalité stricte à la première exécution. C'est une des trois instances
+  // mesurées le 2026-08-01 et consignées depuis dans `AGENTS.md` — « Une prop
+  // qu'un composant CONSOMME lui-même n'atteint jamais l'élément hôte ».
+  //
+  // Ce que `call.spec.tsx:2832` porte à la place : `queryByTestId('call-notice')`
+  // et `.toBeNull()`. La surface n'existe pas du tout dans l'arbre tant que
+  // `visible` n'est jamais devenu vrai — `handleSendReaction` n'appelle jamais
+  // `setNotice` ici — donc « rendu ou pas rendu » est à la fois observable et
+  // suffisant.
   it('affiche une bulle avec le nom quand un autre participant réagit', async () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
     await render(withPaper(<CallScreen />));
@@ -2340,8 +2443,14 @@ délibérément, **aucun** cas de la classe de bogue que C1 a payée deux fois s
 | 3 | rien (JSON seul) | sans objet — insérable à n'importe quel point de la séquence |
 | 4 | 1 | oui |
 | 5 | 1 | oui |
-| 6 | 1, 4 | oui |
+| 6 | 1, 4 | **non — voir la correction en tête de la Tâche 6** |
 | 7 | 1, 2, 5, 6 | oui |
+
+> **Corrigé sur la ligne 6.** `MoreMenuProps.onSendReaction` rendue **requise** casse la
+> compilation de `call.tsx`, qui ne la passe qu'à la Tâche 7 — et `tsc --noEmit` tourne sur tout le
+> projet. Livrée optionnelle avec un repli inerte, puis rendue obligatoire une fois le câblage
+> atterri. La vérification que ce tableau prétendait faire n'a pas été faite ; le raisonnement qui
+> l'aurait attrapée est écrit dans la Tâche 6, à l'endroit de la ligne fautive.
 
 Aucune tâche ne laisse le dépôt dans un état où `npm test`/`npm run typecheck` échoue entre son
 commit et le suivant — propriété que C1 n'avait **pas** pour sa tâche 1 (`tsc` restait rouge
