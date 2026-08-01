@@ -1,7 +1,7 @@
 import type { Room, TextStreamReader } from 'livekit-client';
 
 import { CHAT_TOPIC } from 'src/call/chat';
-import { createChatStore } from 'src/call/chatStore';
+import { CHAT_LOG_MAX_MESSAGES, createChatStore } from 'src/call/chatStore';
 
 type StreamHandler = (reader: TextStreamReader, info: { identity: string }) => void;
 
@@ -320,6 +320,56 @@ describe('createChatStore', () => {
     store.markRead();
 
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('borne le fil à CHAT_LOG_MAX_MESSAGES messages, en retirant les plus anciens', async () => {
+    const probe = fakeRoom({ 'u-ada': 'Ada' });
+    const store = createChatStore(probe.room);
+
+    for (let i = 0; i <= CHAT_LOG_MAX_MESSAGES; i += 1) {
+      probe.handlerFor(CHAT_TOPIC)?.(reader(`s-${i}`, 1_000 + i, `msg ${i}`), {
+        identity: 'u-ada',
+      });
+    }
+    await settle();
+
+    const { log } = store.getSnapshot();
+    expect(log).toHaveLength(CHAT_LOG_MAX_MESSAGES);
+    expect(log[0]?.id).toBe('s-1');
+    expect(log[log.length - 1]?.id).toBe(`s-${CHAT_LOG_MAX_MESSAGES}`);
+  });
+
+  it('oublie la clé lue d’un message évincé par la troncature, sans la faire hériter à un rejoueur', async () => {
+    const probe = fakeRoom({ 'u-ada': 'Ada' });
+    const store = createChatStore(probe.room);
+
+    probe.handlerFor(CHAT_TOPIC)?.(reader('s-1', 1_000, 'bonjour'), { identity: 'u-ada' });
+    await settle();
+    store.markRead();
+
+    // Assez de nouveaux messages pour évincer 's-1' du fil borné.
+    for (let i = 0; i < CHAT_LOG_MAX_MESSAGES; i += 1) {
+      probe.handlerFor(CHAT_TOPIC)?.(reader(`s-filler-${i}`, 2_000 + i, 'suite'), {
+        identity: 'u-ada',
+      });
+    }
+    await settle();
+    expect(store.getSnapshot().log.some((message) => message.id === 's-1')).toBe(false);
+    // Les messages de la rafale sont eux-mêmes non lus : les marquer avant de
+    // rejouer 's-1' isole la seule chose que ce test vérifie — sans ce
+    // marquage, ils écraseraient l'assertion finale sous leur propre compte.
+    store.markRead();
+    expect(store.getSnapshot().unread).toBe(0);
+
+    // Même identifiant que le message évincé : `appendMessage` ne trouve plus
+    // l'original dans le fil tronqué, et l'ajoute donc comme un message NEUF
+    // plutôt que de le fusionner. Si la clé lue n'avait pas été oubliée avec
+    // le message qu'elle marquait, cette nouvelle apparition hériterait à
+    // tort de son statut « lu ».
+    probe.handlerFor(CHAT_TOPIC)?.(reader('s-1', 999_000, 'rejoué'), { identity: 'u-ada' });
+    await settle();
+
+    expect(store.getSnapshot().unread).toBe(1);
   });
 
   it('détache exactement ce qu’il a attaché', () => {
