@@ -23,3 +23,28 @@ export async function ensureMediaPermissions(): Promise<boolean> {
     granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED
   );
 }
+
+// Le manifeste déclare BLUETOOTH et BLUETOOTH_ADMIN — permissions d'avant
+// Android 12, héritées d'AudioSwitch — et désormais BLUETOOTH_CONNECT, ajoutée
+// par `app.json`. Sur l'API 31 et au-delà, cette dernière est une permission
+// d'EXÉCUTION : sans cette demande, AudioSwitch retire silencieusement
+// 'bluetooth' de son énumération (`PermissionsCheckStrategy`, dont le jar porte
+// la chaîne « Bluetooth unsupported, permissions not granted »). Aucun plantage,
+// aucun message : la route manque, sans se signaler — et
+// `audioOutputControl.tsx` ne rend qu'une ligne par catégorie PRÉSENTE, donc pas
+// même une ligne grisée pour la signaler.
+//
+// SÉPARÉE de `ensureMediaPermissions`, jamais fusionnée avec elle : un
+// `requestMultiple` commun ferait échouer l'entrée en séance sur un refus
+// Bluetooth. Le résultat est donc facultatif pour l'appelant — un refus ne prive
+// que d'une entrée du menu de sortie audio, la séance se tient au haut-parleur.
+export async function ensureBluetoothPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  // BLUETOOTH_CONNECT n'existe comme permission d'exécution qu'à partir de
+  // l'API 31 : en dessous, BLUETOOTH/BLUETOOTH_ADMIN — déjà déclarées, jamais à
+  // demander — suffisent.
+  if (Platform.Version < 31) return true;
+
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+  return result === PermissionsAndroid.RESULTS.GRANTED;
+}
