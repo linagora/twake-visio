@@ -133,6 +133,32 @@ describe('CameraMenu', () => {
     expect(onSelect).not.toHaveBeenCalledWith(FRONT);
   });
 
+  // Trouvé manquant par mutation (tâche 3) : retirer `setVisible(false)` du
+  // gestionnaire d'appui ne faisait rougir aucun test existant, alors qu'un
+  // `onPress` sans lui laisserait la feuille ouverte après un choix. `Modal`
+  // ne démonte qu'après sa propre animation de fermeture asynchrone
+  // (`hideModalAnimation`, `Modal.tsx:131-144` : le callback de fin de
+  // `Animated.timing` retarde `setVisibleInternal(false)`), d'où le `waitFor`
+  // plutôt qu'une assertion synchrone.
+  it('referme la feuille après un choix', async () => {
+    await render(
+      withPaper(
+        <CameraMenu
+          cameras={[FRONT, BACK]}
+          activeDeviceId={null}
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+    await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+
+    await waitFor(() => expect(screen.queryByTestId('camera-option-cam-back')).toBeNull());
+  });
+
   it('coche la caméra active, et elle seule', async () => {
     await render(
       withPaper(
