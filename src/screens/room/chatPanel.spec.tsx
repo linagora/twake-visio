@@ -173,6 +173,68 @@ describe('ChatPanel', () => {
     });
   });
 
+  // MESURÉ : sans ce test, supprimer `setSending(false)` du `.then` laissait
+  // les quinze autres verts. La garde restait alors posée pour toujours, et le
+  // panneau n'envoyait plus rien après son premier message — sans rien à
+  // l'écran pour le dire, puisque la garde est une valeur et non un `disabled`.
+  // Deux envois, donc, jamais un seul.
+  it('accepte un second envoi une fois le premier résolu', async () => {
+    const onSend = jest.fn(async () => true);
+    await render(<ChatPanel chat={snapshot([])} onSend={onSend} onClose={jest.fn()} />);
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+    await waitFor(() => expect(screen.getByTestId('chat-input').props.value).toBe(''));
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'la suite');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    expect(onSend).toHaveBeenNthCalledWith(2, 'la suite');
+  });
+
+  // MESURÉ : sans ce test, remplacer `.catch(() => setSending(false))` par un
+  // `.catch` inerte laissait les quinze autres verts. `ChatStore.send` ne
+  // rejette pas, mais la coquille ne reçoit pas que lui : un rejet inattendu
+  // figerait la zone de saisie pour le reste de la séance.
+  it('relâche la garde quand l’envoi rejette, plutôt que de rester bloqué', async () => {
+    const onSend = jest.fn(async () => true);
+    onSend.mockRejectedValueOnce(new Error('inattendu'));
+    await render(<ChatPanel chat={snapshot([])} onSend={onSend} onClose={jest.fn()} />);
+
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    expect(onSend).toHaveBeenCalledTimes(2);
+  });
+
+  // MESURÉ : sans ce test, remplacer `.reverse()` par un `.slice()` laissait
+  // les quinze autres verts. `inverted` rend l'index 0 EN BAS : les rangées
+  // sont construites dans l'ordre du fil — celui que `startsGroup` attend —
+  // puis renversées une fois. Sans ce renversement, le message le plus récent
+  // se retrouve hors de l'écran dès que le fil s'allonge. RNTL ne met rien en
+  // page et ne peut donc pas dire ce qui apparaît en bas ; l'ORDRE des `testID`
+  // dans l'arbre, lui, est observable.
+  it('donne à la liste le plus récent en premier, qu’un rendu inversé pose en bas', async () => {
+    await render(
+      <ChatPanel
+        chat={snapshot([
+          message({ id: 's-1', sentAt: 1_000 }),
+          message({ id: 's-2', sentAt: 2_000 }),
+        ])}
+        onSend={sent}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(screen.getAllByTestId(/^chat-message-/).map((node) => node.props.testID)).toEqual([
+      'chat-message-u-ada#s-2',
+      'chat-message-u-ada#s-1',
+    ]);
+  });
+
   it('borne la saisie à la longueur maximale', async () => {
     await render(<ChatPanel chat={snapshot([])} onSend={sent} onClose={jest.fn()} />);
 
