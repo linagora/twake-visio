@@ -1285,6 +1285,51 @@ describe('CallScreen, échec de modération', () => {
       expect(screen.queryByTestId('call-notice')).toBeNull();
     });
   });
+
+  // L'AUTRE moitié de la règle ci-dessus, et celle qui manquait : « un succès
+  // efface une erreur d'un essai précédent » ne vaut que pour un essai de LA
+  // MÊME FAMILLE. Une seule Snackbar sert six fonctions — modération,
+  // enregistrement, main levée, admission, changement de périphérique, chat —
+  // et chacune posait `null` sans regarder ce qu'elle effaçait. Un message de
+  // chat parti effaçait donc en silence un refus de modération que personne
+  // n'avait encore lu : le geste qui l'efface n'a rien à voir avec lui.
+  //
+  // Le couple choisi est celui du symptôme relevé. Il tient au `kind` porté
+  // avec la clé, et non à la clé : un couple différent l'exercerait pareil.
+  it('garde une erreur de modération quand un envoi de chat, lui, réussit', async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await openParticipantActions();
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+    await waitFor(() => {
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
+    });
+
+    // Le panneau se referme, puis le chat s'ouvre : les deux corps s'excluent,
+    // mais la Snackbar vit hors d'eux et traverse le changement.
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('chat-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toBeTruthy());
+
+    // Un envoi qui RÉUSSIT : `mockSendText` résout par défaut.
+    await fireEvent.changeText(screen.getByTestId('chat-input'), 'bonjour');
+    await fireEvent.press(screen.getByTestId('chat-send'));
+
+    // Le message est parti — la zone est vidée, ce que seul un succès fait —
+    // et le refus de modération est toujours là.
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveProp('value', ''));
+    expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
+  });
 });
 
 describe('CallScreen, choix de la caméra', () => {

@@ -96,6 +96,18 @@ function toApiErrorMessage(error: ApiError): MessageKey {
   }
 }
 
+// Les six familles de gestes qui peuvent poser un message dans l'unique
+// Snackbar de cet écran. Ce n'est PAS une taxonomie d'erreurs — deux familles
+// peuvent poser la même clé (`error.forbidden` vaut pour la modération comme
+// pour l'admission) — c'est la PROVENANCE, et elle ne sert qu'à décider ce
+// qu'un succès a le droit d'effacer.
+type NoticeKind = 'device' | 'hand' | 'chat' | 'lobby' | 'moderation' | 'recording';
+
+type Notice = {
+  readonly kind: NoticeKind;
+  readonly key: MessageKey;
+};
+
 // `reason` est le texte brut du SDK : ni traduit, ni stable d'une version de
 // livekit-client à l'autre, ni lisible par la personne à qui on le montrerait.
 // Il ne s'affiche jamais. `closed` est le seul motif que `src/call/connection`
@@ -386,10 +398,42 @@ export function CallScreen(): React.ReactElement {
   // `ApiResult<void>` rend son échec ordinaire — un salon dont on n'est plus
   // administrateur, un 403 — comme une *valeur* (`{ ok: false }`), jamais
   // comme un rejet : un simple `.catch()` sur ces trois actions ne le
-  // verrait donc jamais passer. Une seule case pour cinq actions — les trois
-  // de modération et les deux canaux d'échec du changement de caméra — qui ne
-  // se déclenchent qu'un geste à la fois.
-  const [notice, setNotice] = useState<MessageKey | null>(null);
+  // verrait donc jamais passer. Une seule case, six familles de gestes.
+  //
+  // Le `kind` est porté AVEC la clé, et il ne sert qu'à une chose : décider ce
+  // qu'un succès a le droit d'effacer. Sans lui, chaque famille posait `null`
+  // sans regarder ce qu'elle effaçait, et un message de chat parti effaçait en
+  // silence un refus de modération que personne n'avait encore lu. Le geste qui
+  // efface n'avait alors rien à voir avec ce qu'il effaçait.
+  //
+  // Une SEULE Snackbar reste : deux se superposeraient au même endroit de
+  // l'écran. C'est donc la mémoire de la provenance qui est ajoutée, pas une
+  // seconde surface.
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  // Poser ou effacer un message, du point de vue d'UNE famille.
+  //
+  //   - une clé  ⇒ elle pose la sienne, quelle que soit celle qui s'affichait.
+  //     Un échec plus récent est le plus intéressant, et il n'y a qu'une case ;
+  //   - `null`   ⇒ elle vient de RÉUSSIR, donc elle n'efface que SON propre
+  //     message, et laisse intact celui d'une autre.
+  //
+  // Une mise à jour FONCTIONNELLE, jamais une lecture de `notice` dans la
+  // fermeture : ces rappels partent depuis des promesses résolues bien après le
+  // rendu qui les a créés, et liraient sinon un `notice` périmé — celui qui
+  // s'affichait au moment du geste, pas celui qui s'affiche à la réponse.
+  //
+  // Une fonction simple, pas un `useCallback` : elle ne descend dans aucune
+  // liste de dépendances, et le compilateur React refuse une mémoïsation
+  // manuelle dont il ne peut pas reproduire les dépendances
+  // (`react-hooks/preserve-manual-memoization`). Même forme que les onze autres
+  // gestionnaires de cet écran.
+  const postNotice = (kind: NoticeKind, key: MessageKey | null): void => {
+    setNotice((current) => {
+      if (key !== null) return { kind, key };
+      return current !== null && current.kind === kind ? null : current;
+    });
+  };
 
   // Une deuxième lecture de la Room, indépendante de `useCallLayout` :
   // celle-ci choisit qui a la scène et réordonne la bande sous le doigt à
@@ -620,11 +664,11 @@ export function CallScreen(): React.ReactElement {
     )
       .then((result) => {
         setHandBusy(false);
-        setNotice(result.ok ? null : 'call.handFailed');
+        postNotice('hand', result.ok ? null : 'call.handFailed');
       })
       .catch(() => {
         setHandBusy(false);
-        setNotice('call.handFailed');
+        postNotice('hand', 'call.handFailed');
       });
   };
 
@@ -717,7 +761,7 @@ export function CallScreen(): React.ReactElement {
   // efface l'erreur d'un essai précédent, comme les cinq autres actions.
   const handleSendChat = async (body: string): Promise<boolean> => {
     const ok = await chatStore.send(body);
-    setNotice(ok ? null : 'chat.sendFailed');
+    postNotice('chat', ok ? null : 'chat.sendFailed');
     return ok;
   };
 
@@ -732,8 +776,8 @@ export function CallScreen(): React.ReactElement {
   // n'entrait jamais.
   const handleAnswerEntry = (id: string, allow: boolean): void => {
     answer(id, allow)
-      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setNotice('error.network'));
+      .then((result) => postNotice('lobby', result.ok ? null : toApiErrorMessage(result.error)))
+      .catch(() => postNotice('lobby', 'error.network'));
   };
 
   // Les trois actions de modération portent l'identité LiveKit que
@@ -764,22 +808,28 @@ export function CallScreen(): React.ReactElement {
   const handleMuteParticipant = (identity: string, trackSid: string): void => {
     if (account === null || roomId === null || access === null) return;
     muteParticipant(account.instance.serverUrl, access.token, roomId, identity, trackSid)
-      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setNotice('error.network'));
+      .then((result) =>
+        postNotice('moderation', result.ok ? null : toApiErrorMessage(result.error)),
+      )
+      .catch(() => postNotice('moderation', 'error.network'));
   };
 
   const handleRemoveParticipant = (identity: string): void => {
     if (account === null || roomId === null) return;
     removeParticipant(account, roomId, identity)
-      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setNotice('error.network'));
+      .then((result) =>
+        postNotice('moderation', result.ok ? null : toApiErrorMessage(result.error)),
+      )
+      .catch(() => postNotice('moderation', 'error.network'));
   };
 
   const handleChangeParticipantRole = (identity: string, role: ParticipantRole): void => {
     if (account === null || roomId === null) return;
     updateParticipantRole(account, roomId, identity, role)
-      .then((result) => setNotice(result.ok ? null : toApiErrorMessage(result.error)))
-      .catch(() => setNotice('error.network'));
+      .then((result) =>
+        postNotice('moderation', result.ok ? null : toApiErrorMessage(result.error)),
+      )
+      .catch(() => postNotice('moderation', 'error.network'));
   };
 
   // `result.ok` d'abord, un `.catch()` séparé pour l'exception inattendue :
@@ -795,11 +845,11 @@ export function CallScreen(): React.ReactElement {
     startRecording(account, roomId)
       .then((result) => {
         setRecordingBusy(false);
-        setNotice(result.ok ? null : recordingErrorMessage('start', result.error));
+        postNotice('recording', result.ok ? null : recordingErrorMessage('start', result.error));
       })
       .catch(() => {
         setRecordingBusy(false);
-        setNotice('error.network');
+        postNotice('recording', 'error.network');
       });
   };
 
@@ -811,11 +861,11 @@ export function CallScreen(): React.ReactElement {
     stopRecording(account, roomId)
       .then((result) => {
         setRecordingBusy(false);
-        setNotice(result.ok ? null : recordingErrorMessage('stop', result.error));
+        postNotice('recording', result.ok ? null : recordingErrorMessage('stop', result.error));
       })
       .catch(() => {
         setRecordingBusy(false);
-        setNotice('error.network');
+        postNotice('recording', 'error.network');
       });
   };
 
@@ -948,7 +998,10 @@ export function CallScreen(): React.ReactElement {
         defaultMicOn={mic !== '0'}
         defaultCameraOn={camera !== '0'}
         onFacingChange={setFacing}
-        onNotice={setNotice}
+        // La barre ne connaît pas les six familles : elle n'en est qu'une, et
+        // ne dit qu'« échec » ou « réussite » sur le changement de
+        // périphérique. C'est ici, à sa frontière, que sa provenance est posée.
+        onNotice={(key) => postNotice('device', key)}
         recording={recordingState}
         canRecord={canRecord}
         recordingBusy={recordingBusy}
@@ -987,7 +1040,7 @@ export function CallScreen(): React.ReactElement {
           et changement de caméra — qui ne partent qu'un geste à la fois. Deux
           Snackbars se superposeraient au même endroit de l'écran. */}
       <Snackbar testID="call-notice" visible={notice !== null} onDismiss={() => setNotice(null)}>
-        {notice !== null ? t(notice) : ''}
+        {notice !== null ? t(notice.key) : ''}
       </Snackbar>
     </KeyboardAvoidingView>
   );
