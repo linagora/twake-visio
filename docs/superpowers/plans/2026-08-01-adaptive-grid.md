@@ -29,6 +29,10 @@ useCallLayout(room, facing, box, pin) ─────▶  layout: CallLayout | n
 setPin(key)                 ◀───────────────  onPinTile(key), appui sur une tuile
 ```
 
+**La dernière ligne de ce schéma a été corrigée depuis** : `onPinTile` n'est plus câblé sur « une
+tuile » mais sur la **vignette de bande** seule. Une cellule de grille ouvre le plein écran. Le
+raisonnement, mesuré, est dans la correction de la Tâche 2, section « Le geste ».
+
 **La coquille reste bête** : elle mesure, elle remonte, elle rend ce qu'on lui donne. Elle ne décide
 ni le nombre de colonnes, ni la taille des tuiles, ni le mode, ni l'axe de la bande.
 
@@ -345,6 +349,45 @@ le premier épingle et la porte sur la scène, le second bascule le plein écran
 artifice de test : c'est le parcours réel, et c'est la conséquence directe du fait qu'un appui sur
 une cellule ne peut pas vouloir dire deux choses.
 
+> ### Corrigé après implémentation : la grille N'ÉPINGLE PLUS, et le parcours en deux appuis a été supprimé
+>
+> Le parcours en deux appuis ci-dessus a bien été livré, puis **retiré le jour même** : c'est le
+> point 6 de « Ce qui reste à constater sur appareil » qui l'a fait tomber, et la géométrie a
+> répondu avant l'appareil. Ce que HEAD porte :
+>
+> | Surface | Rappel | Effet |
+> | --- | --- | --- |
+> | cellule de grille | `onFullscreenTile(key)` (`stage.tsx:448`) | **plein écran sur elle**, en un seul appui |
+> | vignette de bande | `onPinTile(key)` (`stage.tsx:560`) | épingle — **le seul site qui épingle encore** |
+> | scène du mode `focus` | `onPressStageTile()` (`stage.tsx:526`) | plein écran sur la tuile en scène |
+> | badge `pin-marker` | `onUnpinTile()` (`stage.tsx:274`) | désépingle — le seul geste qui le fasse |
+>
+> **Le défaut du parcours en deux appuis n'était visible que par la géométrie.** Épingler
+> **redispose l'écran sous le doigt** : la tuile touchée quitte la grille pour la scène, et tout le
+> reste se réarrange autour. Le second appui ne tombait donc plus sur la même chose. À cinq en
+> portrait, une bande d'environ 92 dp apparaissait en bas et le second appui épinglait **quelqu'un
+> d'autre** ; à trois participants ou moins, il tombait sur le badge d'épinglage et **désépinglait**
+> — effet net nul, deux appuis pour revenir au point de départ. Un seul appui supprime le problème
+> au lieu de le border. Le raisonnement est consigné dans `call.tsx:326-338`.
+>
+> **La phrase « la bande et la grille disent exactement la même chose » est donc devenue fausse**,
+> et c'est ce qui justifie que les deux rappels aient des noms — et des types identiques — distincts
+> : un site branché sur l'autre rougit (`CallStageProps.onPinTile`, `stage.tsx:321-322`).
+>
+> **Conséquence produit qu'il faut dire tout haut, parce qu'elle n'est pas évidente : la bande
+> n'existe qu'en mode `focus`, donc épingler n'est désormais atteignable que pendant qu'on partage
+> un écran** (ou sous un épinglage déjà posé, qui force lui-même le mode `focus`). C'est assumé et
+> cohérent : épingler sert à ramener un visage que le partage a chassé dans la bande ; hors partage
+> la grille montre déjà tout le monde, et il n'y a rien à défaire. Le commentaire de `call.tsx:316-320`
+> le dit dans le code.
+>
+> **Et l'épinglage a gagné une guérison qui n'était pas prévue ici.** `selectLayout` résout la clé à
+> chaque rendu sans jamais l'effacer, ce qui laissait une clé périmée survivre à la personne
+> qu'elle désignait : rien ne la marquait plus (le badge vit sur la tuile épinglée, qui n'existe
+> plus), rien ne pouvait donc l'effacer, et si la personne revenait sous la même identité la scène
+> lui sautait dessus. `call.tsx:304-306` efface l'épinglage **pendant le rendu** dès que
+> `layout.pinned` retombe à faux.
+
 ### Le fait qui commande toute la spec d'écran, et qu'il faut lire avant d'écrire une ligne
 
 **Sous Jest, `onLayout` ne part JAMAIS tout seul** — RNTL ne dispose aucune vue. Sans mesure,
@@ -482,6 +525,13 @@ des deux pris seul.
 les **treize** tests qui supposaient une scène par défaut, réécrits vers `grid`. Un seul change de
 sens, et c'est instructif :
 
+> **Corrigé** : `enterFullscreen(key)` ne fait plus deux appuis, parce qu'un appui sur une cellule
+> de grille ouvre directement le plein écran (voir la correction de la section « Le geste »
+> ci-dessus). Un extrait de test qui enchaînerait deux `fireEvent.press` sur la même tuile
+> n'entrerait pas en plein écran puis n'en sortirait pas : il y entrerait au premier appui et **en
+> sortirait au second** (`stage.tsx:494` → `onExitFullscreen`). Le résultat observé serait la
+> disposition ordinaire, pas le plein écran — et l'échec ne nommerait pas sa cause.
+
 ```ts
 // Les deux clés se comportent DIFFÉREMMENT, et c'est tout l'objet de ce test.
 // L'ÉPINGLAGE reprend quand la personne revient : comportement voulu et écrit.
@@ -550,6 +600,14 @@ Portée `npx jest src/call src/screens/room` (539 cas) sauf mention. Rouges **ob
 | w | `rowsOf` ignore `columns` : une seule rangée | **2** (portée `src/screens/room`) |
 | x | une cellule ne relaie plus l'épinglage | **12** |
 | y | la grille n'est jamais rendue | **30** |
+
+> **Corrigé** : la mutation `x` n'a plus de cible sous cette forme — une cellule ne relaie plus
+> l'épinglage mais le plein écran (`stage.tsx:448`). Son équivalent aujourd'hui est « une cellule
+> ne relaie plus `onFullscreenTile` », et la mutation qui la complète, absente de ce tableau parce
+> qu'elle n'existait pas encore, est « la cellule est câblée sur `onPinTile` au lieu de
+> `onFullscreenTile` » — deux props de signature identique, précisément pour que ce mauvais câblage
+> rougisse. **Les vingt-quatre autres lignes de ce tableau restent valables** : elles portent sur
+> l'arithmétique, la mesure et l'axe de la bande, qu'aucune décision ultérieure n'a touchés.
 
 **Les mutations c à g sont les cinq branches de `stripAxis`, prises une par une : un rouge chacune.**
 C'est ce que `AGENTS.md` demande — muter la branche, jamais le prédicat qui l'alimente. La mutation a,
@@ -707,7 +765,12 @@ git commit -m "feat(call): Count the participants the grid could not show"
 4. **Le rapport d'image que publient réellement les participants.** Si une majorité de sources se
    révélait en portrait, **c'est `TILE_ASPECT` qu'il faudrait revoir en premier**, pas la formule.
 5. **Le budget de décodage et la thermique** à cinq tuiles, `adaptiveStream` désactivé.
-6. **Le parcours en deux appuis** vers le plein écran : se découvre-t-il ?
+6. ~~**Le parcours en deux appuis** vers le plein écran : se découvre-t-il ?~~ — **tranché sans
+   attendre l'appareil, et par la géométrie** : le second appui ne tombait pas sur la même chose,
+   puisque le premier redispose l'écran. Un appui suffit désormais depuis une cellule de grille.
+   Voir la correction de la Tâche 2, section « Le geste ». La question qui la remplace :
+   **trouve-t-on comment épingler**, sachant que la bande — seul endroit d'où l'on épingle — n'existe
+   que pendant un partage d'écran ?
 
 ## Auto-relecture
 
