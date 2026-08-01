@@ -332,6 +332,27 @@ quand même au rouge. Muter `styles.filmstripColumn → styles.filmstrip` ne rou
 Une mutation en amont du branchement teste la **somme** des gardes. Une mutation sur la
 branche teste **cette** garde. Seule la seconde localise un trou.
 
+### Un composant à toi ne doit JAMAIS nommer une prop comme l'événement d'un composant hôte
+
+Mesuré sur ce dépôt, et invisible autrement. `fireEvent.press` de RNTL 14 ne se contente pas
+de chercher un gestionnaire sur l'élément visé : il **remonte l'arbre de fibres React**
+(`findEventHandlerFromFiber`) et ne s'arrête qu'au premier ancêtre **hôte** rencontré. Or ni
+`Pressable` ni un composant à nous ne sont des composants hôtes.
+
+Conséquence : un `VideoTile` qui recevait une prop nommée `onPress` — le même nom que celui
+de `Pressable` — voyait `fireEvent.press` trouver et appeler la fermeture **sur sa propre
+fibre**, sans jamais traverser son corps. Le test passait donc que le composant transmette
+la prop ou non.
+
+**Mesuré : la mutation « ne pas câbler `onPress` au `Pressable` » donnait ZÉRO rouge.**
+Renommer la prop en `onTilePress` a restauré la détection — **quatre rouges** sur la même
+mutation. La même cécité frappait `onLongPress`, et serait restée invisible jusqu'à ce
+qu'un consommateur en dépende.
+
+> **Donc : préfixe les props de geste de tes propres composants** (`onTilePress`,
+> `onRowPress`), et ne reprends jamais tels quels `onPress`, `onLongPress`, `onChangeText`.
+> Un nom repris rend le test **vert par accident**, et aucune relecture ne le voit.
+
 ### Espionner un export de module : `import * as X` ne suffit pas, et c'est indétectable
 
 `jest.spyOn(RN, 'useWindowDimensions')` posé sur `import * as RN from 'react-native'`
