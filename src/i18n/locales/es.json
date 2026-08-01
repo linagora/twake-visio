@@ -83,5 +83,9 @@
   "recording.errorStartFailed": "No se pudo iniciar la grabación",
   "recording.errorStopFailed": "No se pudo detener la grabación",
   "error.network": "No se puede conectar",
-  "error.unauthorized": "Sesión expirada, vuelva a iniciar sesión"
+  "error.unauthorized": "Sesión expirada, vuelva a iniciar sesión",
+  "error.forbidden": "Acción rechazada: permisos insuficientes",
+  "error.notFound": "No encontrado en el servidor",
+  "error.badRequest": "El servidor rechazó la solicitud",
+  "error.serverError": "Error del servidor"
 }

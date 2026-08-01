@@ -67,21 +67,49 @@ import { tokens } from 'src/ui/tokens';
 type MessageKey =
   | 'error.network'
   | 'error.unauthorized'
+  | 'error.forbidden'
+  | 'error.notFound'
+  | 'error.badRequest'
+  | 'error.serverError'
   | 'call.ended'
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
   | RecordingMessageKey;
 
-// La même distinction grossière sert deux appelants : l'accès initial au
-// salon (où c'est là, et là seulement, qu'un jeton refusé se distingue d'une
-// panne — `lobby` voudrait dire que l'accès a été retiré entre le pré-écran
-// et ici, et le plan ne décrit aucun retour vers la salle d'attente depuis la
-// séance, ce cas est donc traité comme les autres refus plutôt qu'inventé) et
-// les trois actions de modération plus bas, dont l'échec ordinaire arrive de
-// la même façon : une valeur `ApiResult`, jamais une exception.
+// Sert deux appelants : l'accès initial au salon, et les trois actions de
+// modération plus bas, dont l'échec ordinaire arrive de la même façon — une
+// valeur `ApiResult`, jamais une exception.
+//
+// Une case par variante d'`ApiError`, et c'est le point : cette fonction
+// rendait `error.network` — « Connexion impossible » — pour TOUT ce qui
+// n'était pas `unauthorized`. Un 403, un 404, un 400 et un 500 affichaient
+// donc la même phrase, et cette phrase était fausse pour les quatre : le
+// réseau marchait, puisque la réponse était arrivée. Mesuré sur appareil, un
+// « Couper le micro » en échec disait « Connexion impossible » pendant que la
+// séance LiveKit tournait sans accroc à côté — et ni la personne devant
+// l'écran ni celle qui débogue ne pouvaient savoir ce que le serveur avait
+// refusé.
+//
+// `lobby` reste avec `network` : il ne vient d'aucun statut — `fetchRoomAccess`
+// le construit depuis l'absence du bloc livekit — et voudrait dire que l'accès
+// a été retiré entre le pré-écran et ici, un cas qu'aucun retour vers la salle
+// d'attente ne rattrape.
 function toApiErrorMessage(error: ApiError): MessageKey {
-  return error.kind === 'unauthorized' ? 'error.unauthorized' : 'error.network';
+  switch (error.kind) {
+    case 'unauthorized':
+      return 'error.unauthorized';
+    case 'forbidden':
+      return 'error.forbidden';
+    case 'not-found':
+      return 'error.notFound';
+    case 'validation':
+      return 'error.badRequest';
+    case 'server':
+      return 'error.serverError';
+    default:
+      return 'error.network';
+  }
 }
 
 // `reason` est le texte brut du SDK : ni traduit, ni stable d'une version de
