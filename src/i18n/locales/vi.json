@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "Không thể bắt đầu ghi",
   "recording.errorStopFailed": "Không thể dừng ghi",
   "error.network": "Không thể kết nối",
-  "error.unauthorized": "Phiên đã hết hạn, vui lòng đăng nhập lại"
+  "error.unauthorized": "Phiên đã hết hạn, vui lòng đăng nhập lại",
+  "error.forbidden": "Hành động bị từ chối: không đủ quyền",
+  "error.notFound": "Không tìm thấy trên máy chủ",
+  "error.badRequest": "Máy chủ đã từ chối yêu cầu",
+  "error.serverError": "Lỗi máy chủ",
+  "participants.actions": "Hành động với người này"
 }

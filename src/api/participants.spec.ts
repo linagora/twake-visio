@@ -108,15 +108,32 @@ describe('answerEntry', () => {
 });
 
 describe('actions de modération', () => {
-  it('coupe un micro par identité LiveKit', async () => {
-    const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({ ok: true, value: {} });
+  // La seule des quatre qui passe par `livekitFetch`, et la seule qui envoie
+  // deux champs. Mesuré sur une instance réelle : avec le porteur OIDC elle
+  // rendait 403 là où une expulsion réussissait au même instant, et sans
+  // `track_sid` le sérialiseur du serveur refuse la requête.
+  it('coupe un micro par le jeton LiveKit, jamais par le porteur du compte', async () => {
+    const livekit = jest.spyOn(client, 'livekitFetch').mockResolvedValue({ ok: true, value: {} });
+    const authed = jest.spyOn(client, 'authedFetch').mockResolvedValue({ ok: true, value: {} });
 
-    const result = await muteParticipant(ACCOUNT, 'r-1', 'PA_abc');
+    const result = await muteParticipant(
+      'https://meet.example.org',
+      'lk-token',
+      'r-1',
+      'PA_abc',
+      'TR_xyz',
+    );
 
-    expect(spy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/r-1/mute-participant/');
-    const init = spy.mock.calls[0]?.[2] as RequestInit;
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ participant_identity: 'PA_abc' });
+    // Le porteur du compte n'est PAS emprunté : sans cette ligne, un appel qui
+    // ferait les deux passerait le reste du test.
+    expect(authed).not.toHaveBeenCalled();
+    expect(livekit).toHaveBeenCalledWith(
+      'https://meet.example.org',
+      'lk-token',
+      'r-1',
+      'mute-participant',
+      { participant_identity: 'PA_abc', track_sid: 'TR_xyz' },
+    );
     expect(result).toEqual({ ok: true, value: undefined });
   });
 

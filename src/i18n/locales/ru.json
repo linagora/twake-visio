@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "Не удалось начать запись",
   "recording.errorStopFailed": "Не удалось остановить запись",
   "error.network": "Не удалось подключиться",
-  "error.unauthorized": "Сессия истекла, войдите снова"
+  "error.unauthorized": "Сессия истекла, войдите снова",
+  "error.forbidden": "Действие отклонено: недостаточно прав",
+  "error.notFound": "Не найдено на сервере",
+  "error.badRequest": "Сервер отклонил запрос",
+  "error.serverError": "Ошибка сервера",
+  "participants.actions": "Действия с этим участником"
 }

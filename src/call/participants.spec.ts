@@ -36,6 +36,16 @@ function person(identity: string, options: PersonOptions = {}): Participant {
   } as unknown as Participant;
 }
 
+function microphone(overrides: Partial<FakePublication> = {}): FakePublication {
+  return {
+    trackSid: 'ts-mic',
+    source: Track.Source.Microphone,
+    isMuted: false,
+    track: { id: 'audio' },
+    ...overrides,
+  };
+}
+
 function camera(overrides: Partial<FakePublication> = {}): FakePublication {
   return {
     trackSid: 'ts-1',
@@ -547,5 +557,53 @@ describe('createRoomViewStore', () => {
     first();
     second();
     expect(subscribedEvents()).toEqual([]);
+  });
+});
+
+// `mute-participant` du serveur meet exige un `track_sid` en plus de
+// l'identité — mesuré : sans lui son sérialiseur refuse la requête. La vue est
+// le seul endroit qui puisse le porter, puisque c'est elle qui lit le SDK.
+describe('trackSid du micro', () => {
+  it('rend le sid du micro publié', async () => {
+    const room = fakeRoom(person('u-local', { name: 'Ada', isLocal: true }), [
+      person('u-bob', {
+        name: 'Bob',
+        publications: { [Track.Source.Microphone]: microphone({ trackSid: 'ts-bob-mic' }) },
+      }),
+    ]);
+
+    const view = readRoomView(room.room);
+
+    expect(view.remotes[0]?.micTrackSid).toBe('ts-bob-mic');
+  });
+
+  it('rend null quand aucun micro n’est publié', async () => {
+    // La condition doit être vraie ET fausse : sans ce second cas,
+    // `micTrackSid` pourrait être une constante et le premier test passerait.
+    const room = fakeRoom(person('u-local', { name: 'Ada', isLocal: true }), [
+      person('u-bob', { name: 'Bob' }),
+    ]);
+
+    const view = readRoomView(room.room);
+
+    expect(view.remotes[0]?.micTrackSid).toBeNull();
+  });
+
+  it('garde le sid d’un micro que son émetteur a coupé', async () => {
+    // Distinct de `camera`/`screen`, qui rendent `null` sur `isMuted` : une
+    // publication coupée garde son sid, et couper côté serveur reste possible.
+    // C'est l'ABSENCE de publication, et elle seule, qui rend l'action vide.
+    const room = fakeRoom(person('u-local', { name: 'Ada', isLocal: true }), [
+      person('u-bob', {
+        name: 'Bob',
+        publications: {
+          [Track.Source.Microphone]: microphone({ trackSid: 'ts-muted', isMuted: true }),
+        },
+      }),
+    ]);
+
+    const view = readRoomView(room.room);
+
+    expect(view.remotes[0]?.micTrackSid).toBe('ts-muted');
   });
 });

@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "Non è stato possibile avviare la registrazione",
   "recording.errorStopFailed": "Non è stato possibile interrompere la registrazione",
   "error.network": "Impossibile connettersi",
-  "error.unauthorized": "Sessione scaduta, accedi di nuovo"
+  "error.unauthorized": "Sessione scaduta, accedi di nuovo",
+  "error.forbidden": "Azione rifiutata: permessi insufficienti",
+  "error.notFound": "Non trovato sul server",
+  "error.badRequest": "Il server ha rifiutato la richiesta",
+  "error.serverError": "Errore del server",
+  "participants.actions": "Azioni per questo partecipante"
 }

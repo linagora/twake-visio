@@ -1,4 +1,4 @@
-import { authedFetch } from 'src/api/client';
+import { authedFetch, livekitFetch } from 'src/api/client';
 import * as session from 'src/auth/session';
 import type { Account } from 'src/auth/accounts';
 
@@ -186,5 +186,111 @@ describe('authedFetch, erreurs de champ', () => {
     const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/', { method: 'POST' });
 
     expect(result).toEqual({ ok: false, error: { kind: 'server', status: 500 } });
+  });
+});
+
+// `mute-participant` est la seule route de meet qui refuse le porteur OIDC :
+// mesuré sur une instance réelle, elle rendait 403 là où une EXPULSION,
+// gardée par la seule permission `HasPrivilegesOnRoom`, réussissait au même
+// instant sur le même salon avec le même compte. Voir `src/api/participants.ts`.
+describe('livekitFetch', () => {
+  it('porte le jeton LiveKit, et ne touche jamais à celui du compte', async () => {
+    // `getAccessToken` doit rester INAPPELÉ : c'est tout l'intérêt de ce
+    // chemin, et un appel qui l'emprunterait quand même passerait le reste du
+    // test sans cette assertion.
+    const token = jest.spyOn(session, 'getAccessToken');
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+      async () => new Response(JSON.stringify({}), { status: 200 }),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    const result = await livekitFetch(
+      'https://meet.linagora.com',
+      'lk-jwt',
+      'r-1',
+      'mute-participant',
+      { participant_identity: 'PA_1', track_sid: 'TR_1' },
+    );
+
+    expect(token).not.toHaveBeenCalled();
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      'https://meet.linagora.com/api/v1.0/rooms/r-1/mute-participant/',
+    );
+    const init = spy.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer lk-jwt');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      participant_identity: 'PA_1',
+      track_sid: 'TR_1',
+    });
+    expect(result).toEqual({ ok: true, value: {} });
+  });
+
+  it("échappe l'identifiant de salon plutôt que de le coller tel quel", async () => {
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+      async () => new Response(JSON.stringify({}), { status: 200 }),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    await livekitFetch('https://meet.linagora.com', 'lk', 'r 1/x', 'mute-participant', {});
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      'https://meet.linagora.com/api/v1.0/rooms/r%201%2Fx/mute-participant/',
+    );
+  });
+
+  it('mappe 403 sur forbidden, comme authedFetch', async () => {
+    // Le statut exact que l'instance mesurée renvoyait. Sans ce mappage,
+    // l'écran dirait « Connexion impossible » pour un refus arrivé par le
+    // réseau — le défaut que `toApiErrorMessage` vient de corriger.
+    globalThis.fetch = (async () => new Response('{}', { status: 403 })) as unknown as typeof fetch;
+
+    const result = await livekitFetch(
+      'https://meet.linagora.com',
+      'lk',
+      'r-1',
+      'mute-participant',
+      {},
+    );
+
+    expect(result).toEqual({ ok: false, error: { kind: 'forbidden' } });
+  });
+
+  it('rend les champs refusés d’un 400 plutôt qu’un statut nu', async () => {
+    // Le cas réel : sans `track_sid`, le sérialiseur du serveur refuse. Ce 400
+    // était masqué par le 403 tant que le mauvais justificatif était envoyé.
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ track_sid: ['This field is required.'] }), {
+        status: 400,
+      })) as unknown as typeof fetch;
+
+    const result = await livekitFetch(
+      'https://meet.linagora.com',
+      'lk',
+      'r-1',
+      'mute-participant',
+      {},
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'validation', fields: { track_sid: ['This field is required.'] } },
+    });
+  });
+
+  it('mappe une panne de transport sur network', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('offline');
+    }) as unknown as typeof fetch;
+
+    const result = await livekitFetch(
+      'https://meet.linagora.com',
+      'lk',
+      'r-1',
+      'mute-participant',
+      {},
+    );
+
+    expect(result).toEqual({ ok: false, error: { kind: 'network' } });
   });
 });

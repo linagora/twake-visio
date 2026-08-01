@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "L'enregistrement n'a pas pu démarrer",
   "recording.errorStopFailed": "L'enregistrement n'a pas pu être arrêté",
   "error.network": "Connexion impossible",
-  "error.unauthorized": "Session expirée, reconnectez-vous"
+  "error.unauthorized": "Session expirée, reconnectez-vous",
+  "error.forbidden": "Action refusée : droits insuffisants",
+  "error.notFound": "Introuvable sur le serveur",
+  "error.badRequest": "Requête refusée par le serveur",
+  "error.serverError": "Erreur du serveur",
+  "participants.actions": "Actions sur cette personne"
 }

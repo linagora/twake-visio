@@ -30,6 +30,13 @@ export type ParticipantView = {
   // Millisecondes depuis l'époque. Le SDK ne le garantit pas : `null` est un
   // cas réel, pas une précaution.
   readonly joinedAt: number | null;
+  // Le trackSid du micro, `null` si la personne n'en publie aucun. Exigé par
+  // `MuteParticipantSerializer` du serveur meet EN PLUS de l'identité — ce que
+  // le client n'envoyait pas. Distinct de `isMuted` à dessein : une piste
+  // coupée par son émetteur garde sa publication et son sid, et un modérateur
+  // peut vouloir la couper côté serveur quoi qu'il en soit ; c'est l'ABSENCE
+  // de publication qui rend l'action sans objet.
+  readonly micTrackSid: string | null;
   // `null` quand la caméra n'est pas publiée, qu'elle est coupée, ou que la
   // piste n'est pas souscrite. Les trois se ressemblent à l'écran : il n'y a
   // pas d'image.

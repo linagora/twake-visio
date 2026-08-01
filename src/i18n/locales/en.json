@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "The recording could not be started",
   "recording.errorStopFailed": "The recording could not be stopped",
   "error.network": "Cannot connect",
-  "error.unauthorized": "Session expired, please sign in again"
+  "error.unauthorized": "Session expired, please sign in again",
+  "error.forbidden": "Action refused by the server",
+  "error.notFound": "Not found on the server",
+  "error.badRequest": "The server rejected the request",
+  "error.serverError": "Server error",
+  "participants.actions": "Actions for this participant"
 }

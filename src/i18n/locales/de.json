@@ -83,5 +83,10 @@
   "recording.errorStartFailed": "Die Aufzeichnung konnte nicht gestartet werden",
   "recording.errorStopFailed": "Die Aufzeichnung konnte nicht beendet werden",
   "error.network": "Verbindung nicht möglich",
-  "error.unauthorized": "Sitzung abgelaufen, bitte melden Sie sich erneut an"
+  "error.unauthorized": "Sitzung abgelaufen, bitte melden Sie sich erneut an",
+  "error.forbidden": "Aktion abgelehnt: keine ausreichenden Rechte",
+  "error.notFound": "Auf dem Server nicht gefunden",
+  "error.badRequest": "Der Server hat die Anfrage abgelehnt",
+  "error.serverError": "Serverfehler",
+  "participants.actions": "Aktionen für diese Person"
 }

@@ -100,7 +100,12 @@ function remoteParticipant(
     isLocal: false,
     isSpeaking: false,
     attributes,
-    getTrackPublication: () => undefined,
+    // Un micro publié : c'est le cas ordinaire d'une personne en séance, et
+    // c'est ce qui rend « Couper le micro » disponible — le serveur exige le
+    // `track_sid`, donc l'action n'a pas de sens sans publication. Les tests
+    // qui veulent l'ABSENCE de micro construisent leur propre coquille.
+    getTrackPublication: (source: unknown) =>
+      source === Track.Source.Microphone ? { trackSid: `TR_${identity}` } : undefined,
   };
 }
 
@@ -314,6 +319,22 @@ beforeEach(() => {
   jest.spyOn(audioRoute, 'selectAudioOutput').mockResolvedValue();
   jest.spyOn(audioRoute, 'openSystemRoutePicker').mockResolvedValue();
 });
+
+// Les trois actions de modération vivent désormais dans une feuille inférieure,
+// ouverte par la seule cible que porte la ligne. `Modal` ne monte rien à l'état
+// fermé (`Modal.tsx:182`) : sans cette ouverture, aucune des trois n'existe
+// dans l'arbre. C'est voulu — voir `participantsPanel.tsx`, où trois boutons
+// posés sur la ligne écrasaient le nom à 39 px sur un écran réel.
+async function openParticipantActions(index = 0): Promise<void> {
+  await waitFor(() =>
+    expect(screen.getAllByTestId('participant-actions').length).toBeGreaterThan(index),
+  );
+  await fireEvent.press(nth(screen.getAllByTestId('participant-actions'), index));
+  // Le TITRE de la feuille, jamais l'une des actions : « Couper le micro »
+  // n'existe que si la personne publie un micro, et attendre celle-là ferait
+  // expirer tout test portant sur quelqu'un qui n'en publie pas.
+  await waitFor(() => expect(screen.getByTestId('participant-sheet-title')).toBeTruthy());
+}
 
 describe('CallScreen', () => {
   it("lit l'état courant à l'initialisation, que `subscribe` ne pousse pas", async () => {
@@ -734,7 +755,7 @@ describe('CallScreen, salle d’attente', () => {
     await fireEvent.press(screen.getByTestId('waiting-admit'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
     });
   });
 });
@@ -771,11 +792,22 @@ describe('CallScreen, panneau des participants', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getAllByTestId('participant-mute')).toHaveLength(2));
+    // La SECONDE ligne : `openParticipantActions(0)` donnerait Alice, et le
+    // test ne distinguerait plus rien.
+    await openParticipantActions(1);
 
-    await fireEvent.press(nth(screen.getAllByTestId('participant-mute'), 1));
+    await fireEvent.press(screen.getByTestId('participant-mute'));
 
-    expect(muteSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
+    // Le jeton LiveKit et le trackSid du micro visé, jamais le compte : la
+    // route `mute-participant` refuse le porteur OIDC (mesuré, 403) et exige
+    // `track_sid` (mesuré, sérialiseur du serveur).
+    expect(muteSpy).toHaveBeenCalledWith(
+      ACCOUNT.instance.serverUrl,
+      'lk',
+      'r-1',
+      'bob-identity',
+      'TR_bob-identity',
+    );
   });
 
   it('expulse et promeut par la même identité LiveKit, pas par la première', async () => {
@@ -798,10 +830,12 @@ describe('CallScreen, panneau des participants', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getAllByTestId('participant-remove')).toHaveLength(2));
-
-    await fireEvent.press(nth(screen.getAllByTestId('participant-remove'), 1));
-    await fireEvent.press(nth(screen.getAllByTestId('participant-promote'), 1));
+    // Une action referme la feuille : on la rouvre entre les deux, toujours
+    // celle de la seconde ligne.
+    await openParticipantActions(1);
+    await fireEvent.press(screen.getByTestId('participant-remove'));
+    await openParticipantActions(1);
+    await fireEvent.press(screen.getByTestId('participant-promote'));
 
     expect(removeSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity');
     expect(roleSpy).toHaveBeenCalledWith(ACCOUNT, 'r-1', 'bob-identity', 'administrator');
@@ -864,20 +898,22 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
     });
   });
 
   it("distingue un refus d'autorisation d'une panne réseau", async () => {
-    // Même mécanisme que `toAccessMessage`/`toApiErrorMessage` pour l'accès
-    // initial : seul `unauthorized` a sa propre clé, le reste retombe sur
-    // `error.network`. Ce test vérifie que la branche `unauthorized` est bien
-    // atteignable depuis ce nouvel appelant, pas seulement depuis l'ancien.
+    // `toApiErrorMessage` a une case par variante d'`ApiError` : ce test et les
+    // quatre qui le suivent en couvrent une chacun, plus `forbidden` juste
+    // au-dessus et `network` par le `.catch()` plus bas. La fonction rendait
+    // `error.network` pour tout sauf `unauthorized` ; sans un test PAR
+    // variante, un retour en arrière vers ce repli unique ne rougirait que sur
+    // la seule branche observée.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     jest
@@ -887,12 +923,69 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
     await waitFor(() => {
       expect(screen.getByTestId('call-notice')).toHaveTextContent('error.unauthorized');
+    });
+  });
+
+  // Une case de `toApiErrorMessage` par test, chacune avec la variante
+  // d'`ApiError` qui la sélectionne. `not-found` et `validation` sont des cas
+  // mesurés, pas hypothétiques : `mute-participant` du serveur meet exige un
+  // `track_sid` en plus de l'identité — un corps incomplet est donc un 400,
+  // et il ne doit pas se lire « Connexion impossible » alors que la réponse
+  // est bien arrivée.
+  it.each([
+    ['not-found', { kind: 'not-found' } as const, 'error.notFound'],
+    [
+      'validation',
+      { kind: 'validation', fields: { track_sid: ['required'] } } as const,
+      'error.badRequest',
+    ],
+    ['server', { kind: 'server', status: 502 } as const, 'error.serverError'],
+  ])('rend une clé propre à %s, jamais le repli réseau', async (_name, error, expected) => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest.spyOn(participants, 'muteParticipant').mockResolvedValue({ ok: false, error });
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await openParticipantActions();
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('call-notice')).toHaveTextContent(expected);
+    });
+  });
+
+  // Le repli lui-même veut son test. Mesuré : muter `default` vers une autre
+  // clé ne rougissait RIEN sur les 709. Le test « exception inattendue » plus
+  // bas assertait pourtant bien `error.network` — mais il l'atteint par le
+  // `.catch()`, qui pose la clé EN DUR sans jamais traverser
+  // `toApiErrorMessage`. Assertion sur le résultat, branche jamais exercée :
+  // le trou exact que décrit `AGENTS.md`. Il faut une panne de transport
+  // RÉSOLUE en `{ ok: false }`, pas une promesse rejetée.
+  it('garde le repli réseau pour une panne de transport résolue', async () => {
+    mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    jest
+      .spyOn(participants, 'muteParticipant')
+      .mockResolvedValue({ ok: false, error: { kind: 'network' } });
+
+    await render(withPaper(<CallScreen />));
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await openParticipantActions();
+
+    await fireEvent.press(screen.getByTestId('participant-mute'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
     });
   });
 
@@ -908,12 +1001,12 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-remove')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-remove'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
     });
   });
 
@@ -927,12 +1020,12 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-promote')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-promote'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
     });
   });
 
@@ -946,7 +1039,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
@@ -972,7 +1065,7 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
     await act(async () => {
@@ -996,14 +1089,16 @@ describe('CallScreen, échec de modération', () => {
     await render(withPaper(<CallScreen />));
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('participants-toggle'));
-    await waitFor(() => expect(screen.getByTestId('participant-mute')).toBeTruthy());
+    await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
     await waitFor(() => {
-      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.network');
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('error.forbidden');
     });
 
     muteSpy.mockResolvedValueOnce({ ok: true, value: undefined });
+    // Le premier appui a refermé la feuille : la rouvrir fait partie du geste.
+    await openParticipantActions();
     await fireEvent.press(screen.getByTestId('participant-mute'));
 
     await waitFor(() => {

@@ -55,6 +55,55 @@ function mapStatus(status: number): ApiResult<never> {
   return { ok: false, error: { kind: 'server', status } };
 }
 
+// La lecture de la réponse, partagée par les deux appelants ci-dessous : même
+// mappage de statut, même distinction entre un 400 de validation et le reste.
+async function readResponse<T>(response: Response): Promise<ApiResult<T>> {
+  if (response.status === 400) return await readValidation(response);
+  if (!response.ok) return mapStatus(response.status);
+
+  try {
+    return { ok: true, value: (await response.json()) as T };
+  } catch {
+    return { ok: false, error: { kind: 'server', status: response.status } };
+  }
+}
+
+// Le jeton LiveKit en porteur, jamais celui du compte, et aucun rafraîchissement :
+// ce jeton est émis pour UNE séance et vit exactement le temps de celle-ci.
+// S'il expire, la séance est déjà finie et l'écran n'est plus monté.
+//
+// Un seul appelant aujourd'hui — `muteParticipant`, dont le commentaire porte
+// la mesure qui justifie ce chemin. Ce n'est pas une généralisation faite
+// d'avance : c'est la seule route de meet qui refuse le porteur OIDC.
+//
+// Pas de 401 rejoué ici pour la même raison : il n'y a rien à rafraîchir, et un
+// rejeu à l'identique ne ferait que doubler la requête.
+export async function livekitFetch<T>(
+  serverUrl: string,
+  livekitToken: string,
+  roomId: string,
+  action: string,
+  body: unknown,
+): Promise<ApiResult<T>> {
+  let response: Response;
+  try {
+    response = await fetch(`${serverUrl}/api/v1.0/rooms/${encodeURIComponent(roomId)}/${action}/`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${livekitToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, error: { kind: 'network' } };
+  }
+
+  return await readResponse<T>(response);
+}
+
 export async function authedFetch<T>(
   account: Account,
   path: string,
@@ -98,12 +147,5 @@ export async function authedFetch<T>(
     return { ok: false, error: { kind: 'network' } };
   }
 
-  if (response.status === 400) return await readValidation(response);
-  if (!response.ok) return mapStatus(response.status);
-
-  try {
-    return { ok: true, value: (await response.json()) as T };
-  } catch {
-    return { ok: false, error: { kind: 'server', status: response.status } };
-  }
+  return await readResponse<T>(response);
 }
