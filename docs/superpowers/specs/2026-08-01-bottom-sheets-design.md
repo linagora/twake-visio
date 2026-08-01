@@ -617,6 +617,22 @@ quel repli la fait échouer.
 6. **Que le bouton retour d'Android referme la feuille.** `Modal.tsx:160-180` pose un
    `BackHandler`, qu'aucun test de composant ne déclenche.
 
+> **M1 est prise, et le bug est fermé.** Constaté le 2026-08-01 sur le Pixel 10 Pro Fold,
+> écran de couverture en paysage, en pleine séance avec un écran partagé : le panneau monte
+> du bas, pleine largeur, et **la note comme les deux entrées sont entièrement lisibles**.
+> Aucune troncature à gauche, là où la capture d'origine montrait « Haut-parleur »,
+> « Écouteur » et la note coupés.
+>
+> Et le cas mesuré est le **pire** : la note affichée était `call.outputManualUntilEnd`, la
+> variante de 68 caractères qui suit un choix manuel — la plus longue des deux. Elle tient
+> sur une ligne.
+>
+> **Un défaut d'ergonomie relevé au passage, et qui n'est pas dans ce périmètre :**
+> le partenaire n'a pas identifié la commande. L'ancre est une icône de haut-parleur
+> (`volume-high`), que l'on lit spontanément comme un réglage de **volume**, pas comme un
+> choix de **sortie**. La feuille corrige le débordement ; elle ne rend pas la commande plus
+> trouvable. À traiter avec la barre de contrôle, pas ici.
+
 **Trois mesures à faire sur appareil, nommées — et AUCUNE des trois n'a été prise à la
 fusion du lot.** C'est écrit ici parce que c'est le seul endroit versionné qui puisse le
 porter : les journaux d'exécution sont ignorés par git et disparaissent avec la branche. Une
@@ -627,7 +643,7 @@ elle ne l'est pas.
 
 | # | Mesure | Où |
 | --- | --- | --- |
-| M1 | Reprise de la capture d'origine : les quatre lignes du panneau de sortie audio entièrement visibles | Pixel 10 Pro Fold, écran de couverture, 443 dp |
+| M1 | ~~Reprise de la capture d'origine~~ — **FAITE le 2026-08-01, elle passe** | Pixel 10 Pro Fold, écran de couverture, paysage |
 | M2 | La feuille « plus » avec trois mains levées et un nom long — la file ne pousse plus rien hors champ | téléphone 360 dp, celui où §2.3 prédit −29,5 dp aujourd'hui |
 | M3 | La bande de fond sous la feuille à cause de `marginBottom` (§4.1) — acceptable ou non | iPhone à barre d'accueil |
 
