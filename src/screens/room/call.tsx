@@ -984,12 +984,18 @@ export function CallScreen(): React.ReactElement {
           DÉLIBÉRÉMENT HORS de la garde de plein écran, à l'inverse des trois
           bandeaux et des bulles juste au-dessus — et ce n'est pas un oubli.
           La règle arbitrée est « en plein écran, une tuile et rien d'autre,
-          sans exception », mais elle porte sur ce qui offre une COMMANDE. Ce
-          bandeau n'en offre aucune : il décrit l'état du monde. Le masquer
-          n'allègerait pas l'écran, il le rendrait incompréhensible — une image
-          figée sans rien qui dise pourquoi se lit exactement comme un
-          plantage, ce que la phrase ci-dessus dit déjà. Même raison pour le
-          `Snackbar` plus bas. Arbitré explicitement, pas hérité. */}
+          sans exception ». Ce qui y survit n'est donc PAS « ce qui n'offre
+          aucune commande » — `RecordingIndicator` n'en offre aucune et il est
+          bien masqué, quelques lignes plus haut. Le critère exact est plus
+          étroit : survit ce dont l'absence rendrait l'écran TROMPEUR, et non
+          ce qui serait seulement manqué. Une image figée sans rien qui dise
+          pourquoi se lit exactement comme un plantage ; une demande
+          d'admission, elle, est manquée sans que rien ne mente. Même raison
+          pour le `Snackbar` plus bas. Arbitré explicitement, pas hérité.
+
+          (La première rédaction de ce commentaire disait « ce qui offre une
+          COMMANDE », ce qui décrivait mal le code : la revue de la
+          spécification de la main levée l'a relevé, et elle avait raison.) */}
       {callState.status === 'reconnecting' ? (
         <View style={styles.banner}>
           <Text testID="call-reconnecting" style={styles.bannerText}>
