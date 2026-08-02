@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { Button, HelperText, RadioButton, Text, TextInput } from 'react-native-paper';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Button, HelperText, TextInput } from 'react-native-paper';
 
 import { createRoom, grantRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
@@ -11,12 +11,72 @@ import { getActiveAccount } from 'src/auth/accounts';
 import { rememberRoomTitle } from 'src/rooms/titles';
 import { readPreferences } from 'src/settings/preferences';
 import type { AccessLevel } from 'src/call/types';
+import { SectionLabel } from 'src/ui/sectionLabel';
+import { SurfaceCard } from 'src/ui/surfaceCard';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
-  root: { padding: tokens.spacing.md, gap: tokens.spacing.md },
-  option: { gap: tokens.spacing.xs },
+  candidate: { paddingVertical: 4 },
+  dot: {
+    alignItems: 'center',
+    borderColor: tokens.color.textChevron,
+    borderRadius: 10,
+    borderWidth: 2,
+    height: 20,
+    justifyContent: 'center',
+    marginTop: 1,
+    width: 20,
+  },
+  dotFill: { borderRadius: 5, height: 10, width: 10 },
+  dotSelected: { borderColor: tokens.color.brand },
+  group: { gap: 9 },
+  option: {
+    alignItems: 'flex-start',
+    borderColor: tokens.color.fieldBorder,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 11,
+    padding: 14,
+  },
+  optionDesc: {
+    color: tokens.color.textMeta,
+    fontFamily: tokens.font.medium,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  optionSelected: {
+    backgroundColor: tokens.color.brandWash,
+    borderColor: tokens.color.brand,
+  },
+  optionText: { flex: 1, gap: 2 },
+  optionTitle: {
+    color: tokens.color.textPrimary,
+    fontFamily: tokens.font.bold,
+    fontSize: 14.5,
+  },
+  root: {
+    backgroundColor: tokens.color.appBackground,
+    gap: 18,
+    padding: 18,
+  },
+  selected: {
+    color: tokens.color.textPrimary,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 14,
+    paddingVertical: 4,
+  },
+  submit: { borderRadius: 16 },
 });
+
+// Le nom COURT du niveau, ajouté au Lot 1 pour l'écran Réglages. Les libellés
+// de `ACCESS_COPY` disent la conséquence — « Seules les personnes authentifiées
+// entrent directement » — et deviennent donc la description, pas le titre.
+const ACCESS_NAME: Readonly<Record<AccessLevel, string>> = {
+  public: 'settings.options.accessPublic',
+  trusted: 'settings.options.accessTrusted',
+  restricted: 'settings.options.accessRestricted',
+};
 
 const ACCESS_LEVELS = ['public', 'trusted', 'restricted'] as const;
 
@@ -138,69 +198,111 @@ export function CreateRoomScreen(): React.ReactElement {
 
   return (
     <ScrollView contentContainerStyle={styles.root}>
-      <TextInput
-        testID="room-name-input"
-        label={t('room.name')}
-        value={name}
-        onChangeText={setName}
-      />
+      <View style={styles.group}>
+        <SectionLabel label={t('room.name')} testID="create-name-label" />
+        <TextInput
+          label={t('room.name')}
+          onChangeText={setName}
+          testID="room-name-input"
+          value={name}
+        />
+      </View>
 
-      <RadioButton.Group value={accessLevel} onValueChange={handleAccessLevelChange}>
-        {ACCESS_LEVELS.map((level) => (
-          <View key={level} style={styles.option}>
-            <RadioButton.Item
+      <View style={styles.group}>
+        <SectionLabel label={t('settings.rows.defaultAccess')} testID="create-access-label" />
+        {/* `Pressable` plutôt qu'un `RadioButton.Item`, mais avec sa SÉMANTIQUE :
+            `accessibilityRole="radio"` et `accessibilityState.checked`. C'est ce
+            que `toBeChecked()` observe, et c'est aussi ce qu'un lecteur d'écran
+            annonce — un `Pressable` nu perdrait les deux. */}
+        {ACCESS_LEVELS.map((level) => {
+          const selected = accessLevel === level;
+          return (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected }}
+              key={level}
+              onPress={() => handleAccessLevelChange(level)}
+              style={[styles.option, selected ? styles.optionSelected : null]}
               testID={`access-${level}`}
-              label={t(ACCESS_COPY[level])}
-              value={level}
-            />
-          </View>
-        ))}
-      </RadioButton.Group>
+            >
+              <View style={[styles.dot, selected ? styles.dotSelected : null]}>
+                {selected ? (
+                  <View style={[styles.dotFill, { backgroundColor: tokens.color.brand }]} />
+                ) : null}
+              </View>
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle} testID={`access-${level}-title`}>
+                  {t(ACCESS_NAME[level])}
+                </Text>
+                {/* La CONSÉQUENCE, jamais le seul nom : « trusted » ne dit pas à
+                    l'organisateur que ses invités externes resteront à la porte. */}
+                <Text style={styles.optionDesc} testID={`access-${level}-desc`}>
+                  {t(ACCESS_COPY[level])}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
 
-      {accessLevel !== 'public' ? (
-        <HelperText type="info" testID="moderator-warning" visible>
-          {t('lobby.noModerator')}
-        </HelperText>
-      ) : null}
+        {accessLevel !== 'public' ? (
+          <HelperText type="info" testID="moderator-warning" visible>
+            {t('lobby.noModerator')}
+          </HelperText>
+        ) : null}
+      </View>
 
-      <Text variant="labelLarge">{t('room.coOwners')}</Text>
-      <TextInput
-        testID="co-owner-input"
-        label={t('room.coOwnerSearch')}
-        value={coOwnerQuery}
-        onChangeText={setCoOwnerQuery}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        onSubmitEditing={handleSearch}
-      />
+      {/* Les co-organisateurs restent ICI, et c'est la raison pour laquelle cet
+          écran n'est pas devenu une feuille : le mockup n'avait prévu que deux
+          champs, et transposer sa feuille telle quelle aurait supprimé une
+          exigence produit — `perform_create` n'attribue `owner` qu'au créateur. */}
+      <View style={styles.group}>
+        <SectionLabel label={t('room.coOwners')} testID="create-coowners-label" />
+        <TextInput
+          autoCapitalize="none"
+          keyboardType="email-address"
+          label={t('room.coOwnerSearch')}
+          onChangeText={setCoOwnerQuery}
+          onSubmitEditing={handleSearch}
+          testID="co-owner-input"
+          value={coOwnerQuery}
+        />
 
-      {candidates.map((user) => (
-        <Button
-          key={user.id}
-          testID="co-owner-candidate"
-          mode="text"
-          onPress={() => handleAddCoOwner(user)}
-        >
-          {user.email}
-        </Button>
-      ))}
-
-      {coOwners.map((user) => (
-        <Text key={user.id} testID="co-owner-selected">
-          {user.email}
-        </Text>
-      ))}
+        {candidates.length === 0 && coOwners.length === 0 ? null : (
+          <SurfaceCard testID="create-coowners-card">
+            {candidates.map((user) => (
+              <Button
+                key={user.id}
+                mode="text"
+                onPress={() => handleAddCoOwner(user)}
+                style={styles.candidate}
+                testID="co-owner-candidate"
+                textColor={tokens.color.brandStrong}
+              >
+                {user.email}
+              </Button>
+            ))}
+            {coOwners.map((user) => (
+              <Text key={user.id} style={styles.selected} testID="co-owner-selected">
+                {user.email}
+              </Text>
+            ))}
+          </SurfaceCard>
+        )}
+      </View>
 
       <HelperText type="error" visible={failure !== null} testID="create-error">
         {failure === null ? '' : t(failure)}
       </HelperText>
 
       <Button
-        mode="contained"
-        testID="submit-btn"
-        onPress={handleSubmit}
-        loading={busy}
+        buttonColor={tokens.color.brandStrong}
         disabled={busy}
+        loading={busy}
+        mode="contained"
+        onPress={handleSubmit}
+        style={styles.submit}
+        testID="submit-btn"
+        textColor={tokens.color.onBrand}
       >
         {t('home.create')}
       </Button>
