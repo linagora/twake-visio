@@ -2,7 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import { tokens } from 'src/ui/tokens';
-import { HandBanner } from './handBanner';
+import {
+  HAND_SIGNAL_BORDER,
+  HAND_SIGNAL_SURFACE,
+  HAND_SIGNAL_TEXT,
+  HandBanner,
+} from './handBanner';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -53,13 +58,14 @@ describe('HandBanner', () => {
   });
 
   it('porte une couleur explicite sur son texte et sur son action', async () => {
-    // `call.tsx` force un fond sombre dans les deux schémas alors que le thème
-    // Paper suit le schéma système : sans couleur explicite, 1,08:1.
+    // `call.tsx` force un fond sombre alors que `makeTheme` rend désormais le
+    // thème TOUJOURS clair : sans couleur explicite, 1,17:1 sur ce lavis.
     await render(<HandBanner raised position={2} onLower={jest.fn()} />);
 
-    expect(screen.getByTestId('hand-banner-text')).toHaveStyle({ color: tokens.color.textDark });
+    // 10,33:1 sur le lavis ambre une fois composé sur `backgroundDark`.
+    expect(screen.getByTestId('hand-banner-text')).toHaveStyle({ color: HAND_SIGNAL_TEXT });
     expect(screen.getByTestId('hand-banner-position')).toHaveStyle({
-      color: tokens.color.textDark,
+      color: HAND_SIGNAL_TEXT,
     });
     expect(screen.getByTestId('hand-lower')).toHaveTextContent('call.lowerHand');
     // Le `Text` interne d'un `Button` Paper porte un `testID` (`${testID}-text`,
@@ -68,9 +74,23 @@ describe('HandBanner', () => {
     // contraire), et déjà le précédent établi par
     // `participantsPanel.spec.tsx:240-248` pour ce même `mode="text"`. Sans
     // `textColor` explicite, `mode="text"` retombe sur `theme.colors.primary` —
-    // 2,86:1 sur ce fond.
+    // #177E44 sur ce lavis, 3,00:1. `primaryDark` y donne 5,39:1, et il tranche
+    // avec l'ambre du libellé, ce qui distingue l'action de l'état.
     expect(screen.getByTestId('hand-lower-text')).toHaveStyle({
       color: tokens.color.primaryDark,
+    });
+  });
+
+  // On force la SURFACE et le TEXTE, ou ni l'un ni l'autre. Le lavis vaut ici
+  // couleur d'état : ambre = « une main est levée », et c'est le seul signal de
+  // l'écran à en porter une.
+  it('pose le lavis ambre et son filet', async () => {
+    await render(<HandBanner raised position={2} onLower={jest.fn()} />);
+
+    expect(screen.getByTestId('hand-banner')).toHaveStyle({
+      backgroundColor: HAND_SIGNAL_SURFACE,
+      borderColor: HAND_SIGNAL_BORDER,
+      borderRadius: 13,
     });
   });
 });

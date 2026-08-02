@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { reactionGlyph, type Reaction } from 'src/call/reactions';
+import { CALL_SURFACE_HAIRLINE } from 'src/screens/room/callHeader';
 import { CHAT_FOOTER_HEIGHT } from 'src/screens/room/chatPanel';
 import { BAR_HEIGHT } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
@@ -53,23 +54,30 @@ const styles = StyleSheet.create({
   // objet en ligne, pour que la mutation « poser `root` ici » soit disponible
   // et localise la garde.
   rootWithChat: { paddingBottom: BOTTOM_GUARD_WITH_CHAT },
+  // Le seul fond OPAQUE de tout ce sous-lot, et c'est délibéré : les bandeaux se
+  // posent sur le `backgroundDark` que `call.tsx` force, dont on connaît la
+  // valeur, quand une bulle se pose sur de la VIDÉO, dont on ne connaît ni la
+  // couleur ni la luminance. Un lavis translucide y serait illisible une image
+  // sur deux. Le filet lui rend le bord que le lavis lui aurait donné, pour les
+  // images où la vidéo derrière est elle-même sombre.
   bubble: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: tokens.spacing.xs,
     backgroundColor: tokens.color.surfaceDark,
+    borderColor: CALL_SURFACE_HAIRLINE,
     borderRadius: tokens.radius.pill,
+    borderWidth: 1,
     paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.xs,
+    paddingVertical: 5,
     marginTop: tokens.spacing.xs,
   },
   glyph: { fontSize: 24 },
-  // Cet écran force un fond sombre dans les deux schémas alors que le thème
-  // Paper suit le schéma système : sans couleur explicite, ce texte
-  // retomberait sur `onSurface`, quasi-noir en schéma clair. Voir `AGENTS.md`.
-  // Forcée en même temps que `bubble.backgroundColor` ci-dessus, jamais
-  // l'une sans l'autre.
-  name: { color: tokens.color.textDark },
+  // Cet écran force un fond sombre dans les deux schémas alors que `makeTheme`
+  // rend le thème TOUJOURS clair : sans couleur explicite, ce texte retomberait
+  // sur `onSurface`, quasi-noir. Voir `AGENTS.md`. Forcée en même temps que
+  // `bubble.backgroundColor` ci-dessus, jamais l'une sans l'autre.
+  name: { color: tokens.color.textDark, fontFamily: tokens.font.semiBold, fontSize: 12.5 },
 });
 
 export type ReactionOverlayProps = {

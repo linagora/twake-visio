@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import type { RaisedHand } from 'src/call/hands';
-import { tokens } from 'src/ui/tokens';
+import { HAND_SIGNAL_BORDER, HAND_SIGNAL_SURFACE, HAND_SIGNAL_TEXT } from './handBanner';
 import { RaisedHandsBanner } from './raisedHandsBanner';
 
 // Interpolation rendue visible, comme dans `handBanner.spec.tsx` : sans elle,
@@ -80,17 +80,31 @@ describe('RaisedHandsBanner', () => {
   });
 
   it('porte une couleur explicite sur ses deux textes', async () => {
-    // `call.tsx` force un fond sombre dans les deux schémas alors que le thème
-    // Paper suit le schéma système : sans couleur explicite, 1,08:1. RNTL ne
-    // rastérise rien — ce test garde que la CAUSE n'a pas été retirée, jamais
-    // que le texte est lisible.
+    // `call.tsx` force un fond sombre alors que `makeTheme` rend désormais le
+    // thème TOUJOURS clair : sans couleur explicite, 1,17:1. RNTL ne rastérise
+    // rien — ce test garde que la CAUSE n'a pas été retirée, jamais que le
+    // texte est lisible. 10,33:1 sur le lavis ambre composé.
     await render(<RaisedHandsBanner hands={[ADA, BOB]} />);
 
     expect(screen.getByTestId('raised-hands-banner-name')).toHaveStyle({
-      color: tokens.color.textDark,
+      color: HAND_SIGNAL_TEXT,
     });
     expect(screen.getByTestId('raised-hands-banner-others')).toHaveStyle({
-      color: tokens.color.textDark,
+      color: HAND_SIGNAL_TEXT,
+    });
+  });
+
+  // Le MÊME lavis que `handBanner`, importé de lui et non recopié : l'ambre est
+  // la couleur d'état « une main est levée », et les deux bandeaux disent la
+  // même chose de deux personnes différentes. Les laisser diverger ferait lire
+  // deux signaux là où il n'y en a qu'un.
+  it('pose le lavis ambre du signal, celui-là même que porte sa propre main', async () => {
+    await render(<RaisedHandsBanner hands={[ADA, BOB]} />);
+
+    expect(screen.getByTestId('raised-hands-banner')).toHaveStyle({
+      backgroundColor: HAND_SIGNAL_SURFACE,
+      borderColor: HAND_SIGNAL_BORDER,
+      borderRadius: 13,
     });
   });
 
