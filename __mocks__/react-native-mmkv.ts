@@ -12,15 +12,39 @@
  * Placed adjacent to `node_modules`, so Jest substitutes it automatically.
  * Same mechanism as `__mocks__/expo-crypto.ts`.
  */
-class FakeMMKV {
-  private readonly entries = new Map<string, string>();
+/**
+ * Signatures copied from the real module rather than guessed:
+ * `node_modules/react-native-mmkv/lib/specs/MMKV.nitro.d.ts:45-62` declares
+ * `set(key, boolean | string | number | ArrayBuffer)` and one typed getter per
+ * kind, each returning `undefined` when the key is absent.
+ *
+ * Only the three kinds this app stores are modelled. A getter that returned the
+ * wrong kind — `getBoolean` handing back the string `"false"`, which is truthy —
+ * would be worse than none at all, so each one checks the stored type and
+ * returns `undefined` on a mismatch, exactly as a typed native store does.
+ */
+type Stored = boolean | string | number;
 
-  set(key: string, value: string): void {
+class FakeMMKV {
+  private readonly entries = new Map<string, Stored>();
+
+  set(key: string, value: Stored): void {
     this.entries.set(key, value);
   }
 
   getString(key: string): string | undefined {
-    return this.entries.get(key);
+    const value = this.entries.get(key);
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  getBoolean(key: string): boolean | undefined {
+    const value = this.entries.get(key);
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
+  getNumber(key: string): number | undefined {
+    const value = this.entries.get(key);
+    return typeof value === 'number' ? value : undefined;
   }
 
   remove(key: string): boolean {

@@ -4,8 +4,11 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { reactionGlyph, type Reaction } from 'src/call/reactions';
+import { CALL_SURFACE_HAIRLINE } from 'src/screens/room/callHeader';
 import { CHAT_FOOTER_HEIGHT } from 'src/screens/room/chatPanel';
 import { BAR_HEIGHT } from 'src/screens/room/controlBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { tokens } from 'src/ui/tokens';
 
 // Ce que la plus basse des bulles doit dégager, en dp. CALCULÉ à partir des
@@ -13,19 +16,22 @@ import { tokens } from 'src/ui/tokens';
 // et s'ancre EN BAS À DROITE, c'est-à-dire exactement là où les commandes
 // finissent.
 //
-//     BAR_HEIGHT (52) + tokens.spacing.sm (8) = 60 dp
+//     BAR_HEIGHT (60) + tokens.spacing.sm (8) = 68 dp
 //
 // Le pas d'écart est là pour que la bulle ne colle pas à la barre ; il vient de
 // l'échelle d'espacement, pas d'une appréciation.
 //
 // La valeur d'avant était `tokens.spacing.xl`, soit 32, quand la barre en
-// occupe 52 : la plus basse des bulles se posait donc 20 dp À L'INTÉRIEUR de la
-// barre, alignée à droite — sur `leave-btn`, le bouton pour raccrocher.
+// occupe 60 : la plus basse des bulles se posait donc 28 dp À L'INTÉRIEUR de la
+// barre, alignée à droite — sur `leave-btn`, le bouton pour raccrocher. C'est
+// exactement ce que ce calcul évite : la garde SUIT `BAR_HEIGHT`, elle n'est
+// pas un nombre recopié, et le passage de la cible de 44 à 52 dp ne lui a
+// demandé aucune intervention.
 const BOTTOM_GUARD = BAR_HEIGHT + tokens.spacing.sm;
 
 // La même garde, plus le bas du panneau de discussion quand il est ouvert :
 //
-//     60 + CHAT_FOOTER_HEIGHT (56 + 16) = 132 dp
+//     68 + CHAT_FOOTER_HEIGHT (56 + 16) = 140 dp
 //
 // Sans elle, les bulles se posaient sur `chat-send` dès la deuxième — le
 // panneau occupe toute la région au-dessus de la barre, et sa zone de saisie en
@@ -53,23 +59,30 @@ const styles = StyleSheet.create({
   // objet en ligne, pour que la mutation « poser `root` ici » soit disponible
   // et localise la garde.
   rootWithChat: { paddingBottom: BOTTOM_GUARD_WITH_CHAT },
+  // Le seul fond OPAQUE de tout ce sous-lot, et c'est délibéré : les bandeaux se
+  // posent sur le `backgroundDark` que `call.tsx` force, dont on connaît la
+  // valeur, quand une bulle se pose sur de la VIDÉO, dont on ne connaît ni la
+  // couleur ni la luminance. Un lavis translucide y serait illisible une image
+  // sur deux. Le filet lui rend le bord que le lavis lui aurait donné, pour les
+  // images où la vidéo derrière est elle-même sombre.
   bubble: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: tokens.spacing.xs,
     backgroundColor: tokens.color.surfaceDark,
+    borderColor: CALL_SURFACE_HAIRLINE,
     borderRadius: tokens.radius.pill,
+    borderWidth: 1,
     paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.xs,
+    paddingVertical: 5,
     marginTop: tokens.spacing.xs,
   },
   glyph: { fontSize: 24 },
-  // Cet écran force un fond sombre dans les deux schémas alors que le thème
-  // Paper suit le schéma système : sans couleur explicite, ce texte
-  // retomberait sur `onSurface`, quasi-noir en schéma clair. Voir `AGENTS.md`.
-  // Forcée en même temps que `bubble.backgroundColor` ci-dessus, jamais
-  // l'une sans l'autre.
-  name: { color: tokens.color.textDark },
+  // Cet écran force un fond sombre dans les deux schémas alors que `makeTheme`
+  // rend le thème TOUJOURS clair : sans couleur explicite, ce texte retomberait
+  // sur `onSurface`, quasi-noir. Voir `AGENTS.md`. Forcée en même temps que
+  // `bubble.backgroundColor` ci-dessus, jamais l'une sans l'autre.
+  name: { color: tokens.color.textDark, fontFamily: tokens.font.semiBold, fontSize: 12.5 },
 });
 
 export type ReactionOverlayProps = {
@@ -93,13 +106,25 @@ export function ReactionOverlay({
   chatOpen,
 }: ReactionOverlayProps): React.ReactElement | null {
   const { t } = useTranslation();
+  // AVANT le retour anticipé : `react-hooks/rules-of-hooks` refuse un crochet
+  // qui ne serait pas appelé à chaque rendu.
+  //
+  // La barre de commandes porte désormais l'écart de l'indicateur d'accueil
+  // — la racine de `call.tsx` ne le peut pas, sa `KeyboardAvoidingView` écrase
+  // `paddingBottom`. Elle est donc plus haute de cet écart, et la garde qui
+  // empêche une bulle de se poser sur « raccrocher » doit grandir d'autant.
+  const insets = useSafeAreaInsets();
   if (reactions.length === 0) return null;
 
   return (
     <View
       testID="reaction-overlay"
       pointerEvents="none"
-      style={chatOpen ? [styles.root, styles.rootWithChat] : styles.root}
+      style={[
+        styles.root,
+        chatOpen ? styles.rootWithChat : null,
+        { paddingBottom: (chatOpen ? BOTTOM_GUARD_WITH_CHAT : BOTTOM_GUARD) + insets.bottom },
+      ]}
     >
       {reactions.map((reaction) => {
         const trimmed = reaction.name.trim();

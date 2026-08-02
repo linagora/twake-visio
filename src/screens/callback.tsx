@@ -2,11 +2,16 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
   root: {
+    // Un fond EXPLICITE, et non l'absence de fond qui laissait voir la vue
+    // système. Sans lui, le rembourrage d'encoche posé sur cette racine ne
+    // peindrait rien : une bande blanche, exactement le défaut corrigé.
+    backgroundColor: tokens.color.appBackground,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -31,8 +36,16 @@ const styles = StyleSheet.create({
 export function CallbackScreen(): React.ReactElement {
   const { t } = useTranslation();
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  const insets = useSafeAreaInsets();
   return (
-    <View testID="callback-screen" style={styles.root}>
+    <View
+      testID="callback-screen"
+      style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+    >
       <ActivityIndicator testID="callback-spinner" />
       <Text testID="callback-label">{t('callback.signingIn')}</Text>
     </View>

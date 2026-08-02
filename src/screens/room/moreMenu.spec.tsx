@@ -5,6 +5,7 @@ import { PaperProvider } from 'react-native-paper';
 import type { RaisedHand } from 'src/call/hands';
 import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
+import { SHEET_SURFACE_COLOR } from 'src/screens/room/bottomSheet';
 import { tokens } from 'src/ui/tokens';
 import { MoreMenu } from './moreMenu';
 
@@ -110,7 +111,7 @@ describe('MoreMenu', () => {
     // par défaut de la bibliothèque. `SheetRow` suffixe le sien de `-title`
     // pour son `Text` interne, exactement comme `Menu.Item`.
     expect(screen.getByTestId('more-sheet-surface')).toHaveStyle({
-      backgroundColor: tokens.color.surfaceDark,
+      backgroundColor: SHEET_SURFACE_COLOR,
     });
     expect(screen.getByTestId('share-btn-title')).toHaveStyle({ color: tokens.color.textDark });
   });

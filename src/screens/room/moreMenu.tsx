@@ -43,11 +43,15 @@ export type MoreMenuProps = {
   readonly onOpenChat: () => void;
 };
 
-// La rangée de commandes est pleine : sept cibles de 44 dp tiennent sur 357 dp,
-// une huitième en demanderait 409 sur un écran qui en fait 360. Ce menu prend
-// donc la place du bouton de partage et porte trois commandes : le partage
-// lui-même, l'enregistrement — qu'on ne démarre qu'au début d'une réunion — et
-// la main levée, avec sa file en lecture seule sous elle.
+// Ce menu prend la place du bouton de partage et porte trois commandes : le
+// partage lui-même, l'enregistrement — qu'on ne démarre qu'au début d'une
+// réunion — et la main levée, avec sa file en lecture seule sous elle.
+//
+// La raison d'origine était la LARGEUR : sept cibles de 44 dp remplissaient la
+// rangée à 357 dp sur 360, et une huitième en aurait demandé 409. Le compteur
+// de participants a depuis rejoint l'en-tête ; la rangée est passée à six
+// cibles de 52 dp, soit 353 dp, donc cette raison-là a disparu. Celle qui
+// suit, non.
 //
 // Effet de bord voulu : la commande d'enregistrement n'est plus dans la barre,
 // donc jamais adjacente au combiné raccroché. Deux rouges voisins pendant un
@@ -77,7 +81,7 @@ export function MoreMenu({
   return (
     <>
       {/* Un conteneur sans dimension propre : la pastille est hors flux, la
-          cible reste 44 dp, la rangée reste à 357 dp. */}
+          cible reste 52 dp, la rangée reste à 353 dp. */}
       <View style={barStyles.anchor}>
         <IconButton
           testID="more-btn"

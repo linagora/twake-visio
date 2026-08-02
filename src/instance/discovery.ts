@@ -7,6 +7,10 @@ type RawConfig = {
   recording?: { is_enabled?: boolean };
   subtitle?: { enabled?: boolean };
   telephony?: { enabled?: boolean };
+  // Déclaré par anticipation : aucune instance connue ne le sert au 2026-08-02.
+  // Voir `InstanceFeatures.calendar` pour la mesure et pourquoi la garde reste
+  // fermée plutôt que branchée sur un nom deviné.
+  calendar?: { enabled?: boolean };
   oidc?: { issuer?: string; mobile_client_id?: string };
 };
 
@@ -117,6 +121,10 @@ export async function fetchInstanceConfig(serverUrl: string): Promise<InstanceRe
       recording: raw.recording?.is_enabled === true,
       subtitle: raw.subtitle?.enabled === true,
       telephony: raw.telephony?.enabled === true,
+      // `=== true`, comme ses trois voisins : un champ absent, `null`, ou une
+      // chaîne doivent TOUS fermer la capacité. Aucune instance connue ne
+      // déclare ce champ aujourd'hui — voir `InstanceFeatures.calendar`.
+      calendar: raw.calendar?.enabled === true,
     },
   };
 

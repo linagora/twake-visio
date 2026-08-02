@@ -4,7 +4,7 @@ import React from 'react';
 import { CHAT_MAX_LENGTH, type ChatMessage } from 'src/call/chat';
 import type { ChatSnapshot } from 'src/call/chatStore';
 import { tokens } from 'src/ui/tokens';
-import { ChatPanel } from './chatPanel';
+import { CHAT_BUBBLE_RECEIVED_COLOR, CHAT_BUBBLE_SENT_COLOR, ChatPanel } from './chatPanel';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -301,5 +301,57 @@ describe('ChatPanel', () => {
       backgroundColor: tokens.color.surfaceDark,
     });
     expect(screen.getByTestId('chat-input')).toHaveStyle({ color: tokens.color.textDark });
+  });
+
+  // `isLocal` décide de TROIS choses — le côté, le fond, la couleur du texte —
+  // et chacune est sa propre cible de mutation. Les deux tests qui suivent les
+  // couvrent toutes les trois, DEUX FOIS : une fixture reçue, une fixture
+  // envoyée. Avec un seul des deux, chacune des trois pourrait être une
+  // constante et rien ne rougirait — le défaut recensé huit fois par le lot du
+  // partage d'écran.
+  it('pose le fond, le côté et le texte d’une bulle reçue', async () => {
+    await render(
+      <ChatPanel
+        chat={snapshot([message({ isLocal: false })])}
+        onSend={sent}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-bubble-u-ada#s-1')).toHaveStyle({
+      backgroundColor: CHAT_BUBBLE_RECEIVED_COLOR,
+      // Une bulle qui prend toute la largeur efface la distinction des deux
+      // côtés, qui est tout ce que la forme apporte ici.
+      maxWidth: '85%',
+    });
+    expect(screen.getByTestId('chat-message-u-ada#s-1')).toHaveStyle({ alignItems: 'flex-start' });
+    expect(screen.getByTestId('chat-body-u-ada#s-1')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+
+  it('pose le fond, le côté et le texte d’une bulle envoyée', async () => {
+    // Le blanc franc, pas `textDark` : c'est la seule paire du panneau qui ne
+    // soit pas posée sur du sombre, et la seule mesurée contre `brandStrong`.
+    // Le mockup pose cette bulle sur `brand` (#1FA45C) — 3,22:1 avec du blanc,
+    // sous AA — d'où la substitution, la même que `makeTheme` a déjà faite.
+    await render(
+      <ChatPanel chat={snapshot([message({ isLocal: true })])} onSend={sent} onClose={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId('chat-bubble-u-ada#s-1')).toHaveStyle({
+      backgroundColor: CHAT_BUBBLE_SENT_COLOR,
+    });
+    expect(screen.getByTestId('chat-message-u-ada#s-1')).toHaveStyle({ alignItems: 'flex-end' });
+    expect(screen.getByTestId('chat-body-u-ada#s-1')).toHaveStyle({ color: tokens.color.onBrand });
+  });
+
+  it('n’emprunte pas à `brand`, dont le blanc ne passe pas AA', async () => {
+    // La substitution est la SEULE raison d'être de `CHAT_BUBBLE_SENT_COLOR` ;
+    // sans cette ligne, quelqu'un pourrait la ramener au vert du mockup en
+    // gardant les trois tests ci-dessus verts, puisqu'ils la lisent par son
+    // nom. C'est la seule assertion du fichier qui vise une VALEUR.
+    expect(CHAT_BUBBLE_SENT_COLOR).toBe(tokens.color.brandStrong);
+    expect(CHAT_BUBBLE_SENT_COLOR).not.toBe(tokens.color.brand);
   });
 });

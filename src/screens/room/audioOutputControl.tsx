@@ -111,6 +111,10 @@ export function AudioOutputControl({
               <SheetRow
                 key={device.id}
                 testID={`audio-output-device-${device.id}`}
+                // Le lavis et la coche disent la MÊME chose : même prédicat,
+                // écrit une fois. Voir `ROW_SELECTED_COLOR` — le lavis seul ne
+                // se distingue du fond de repos que par 1,14:1.
+                selected={device.id === currentDeviceId}
                 leading={
                   device.id === currentDeviceId ? (
                     <SheetCheck testID={`audio-output-check-${device.id}`} />
@@ -127,6 +131,10 @@ export function AudioOutputControl({
               <SheetRow
                 key={kind}
                 testID={`audio-output-option-${kind}`}
+                // Le second chemin, et sa propre cible de mutation : ces deux
+                // branches sont structurellement identiques mais distinctes,
+                // et une seule gardée laisserait l'autre libre de figer.
+                selected={kind === chosen}
                 leading={
                   kind === chosen ? <SheetCheck testID={`audio-output-check-${kind}`} /> : undefined
                 }

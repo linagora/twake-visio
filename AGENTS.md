@@ -117,7 +117,7 @@ atteint l'écran, pas de sa nature.** Un glyphe rendu directement avec son propr
 d'un `IconButton` à icône-chaîne (`icon="dots-vertical"`, le cas par défaut) ne l'est
 **jamais** : `IconButton.tsx:211` rend `<IconComponent color={iconColor} source={icon} />`
 **sans lui transmettre de `testID`**, et le chemin par défaut pose en plus
-`accessibilityElementsHidden`. Aucun des sept `IconButton` de la barre ne garde son
+`accessibilityElementsHidden`. Aucun des six `IconButton` de la barre ne garde son
 `iconColor`, `leave-btn` compris ; n'en fabrique pas un. Passer `icon` en fonction rendrait
 la garde possible, mais c'est un changement d'architecture, pas une correction de test.
 

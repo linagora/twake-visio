@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import * as rooms from 'src/api/rooms';
@@ -346,5 +346,93 @@ describe("LobbyScreen, chemin d'admission", () => {
     // Continuer à demander l'entrée après un refus revient à insister auprès
     // du serveur pour une décision déjà prise.
     expect(entry.mock.calls.length).toBe(callsAfterDenial);
+  });
+});
+
+// `app/_layout.tsx` masque l'en-tête du Stack, et on arrive ici par un
+// `replace` depuis le pré-join : sans commande à l'écran, aucun geste ne sort
+// du salon d'attente. Trois de ces cinq états sont TERMINAUX — refusé, aucun
+// modérateur, échec — donc on y restait jusqu'à tuer l'application.
+//
+// Un test par état, et non un seul : le bouton est aujourd'hui posé une fois
+// pour tous, mais c'est justement ce que ces tests doivent garder. Les rendre
+// à nouveau état par état ferait rougir quatre lignes, pas zéro.
+describe('LobbyScreen, la sortie', () => {
+  it("offre une sortie pendant l'attente", async () => {
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
+  });
+
+  it("offre une sortie tant que la demande n'a pas abouti", async () => {
+    // L'état `requesting` se tient en laissant la promesse pendante : c'est le
+    // seul moyen d'observer l'écran avant sa première résolution.
+    jest.spyOn(rooms, 'requestEntry').mockReturnValue(new Promise(() => undefined));
+
+    await render(<LobbyScreen />);
+
+    expect(screen.getByTestId('lobby-loading')).toBeTruthy();
+    expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
+  });
+
+  it('offre une sortie quand aucun modérateur ne peut ouvrir', async () => {
+    jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy());
+    expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
+  });
+
+  it('offre une sortie après un échec', async () => {
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: false, error: { kind: 'network' } });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-error')).toBeTruthy());
+    expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
+  });
+
+  it('offre une sortie après un refus — le pire des cinq', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+        ok: true,
+        value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
+      });
+
+      await render(<LobbyScreen />);
+      await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+      });
+
+      await waitFor(() => expect(screen.getByTestId('lobby-denied')).toBeTruthy());
+      expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("ramène à l'accueil quand on presse la sortie", async () => {
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
   });
 });

@@ -3,8 +3,9 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { ParticipantView } from 'src/call/layout';
+import { SHEET_SURFACE_COLOR } from 'src/screens/room/bottomSheet';
 import { tokens } from 'src/ui/tokens';
-import { ParticipantsPanel } from './participantsPanel';
+import { MIC_OFF_COLOR, ParticipantsPanel } from './participantsPanel';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -473,7 +474,112 @@ describe('ParticipantsPanel', () => {
     await openActions();
 
     expect(screen.getByTestId('participant-sheet-surface')).toHaveStyle({
-      backgroundColor: tokens.color.surfaceDark,
+      backgroundColor: SHEET_SURFACE_COLOR,
     });
+  });
+
+  it('pose un avatar d’initiales devant chaque nom', async () => {
+    // `InitialsAvatar` rend les initiales sous `` `${testID}-text` ``. Deux
+    // personnes, et la SECONDE visée : un avatar rendu une seule fois hors de
+    // la fonction de rendu de ligne passerait avec une seule.
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', 'Ada Lovelace'), view('PA_2', 'Bob Martin')]}
+          canModerate={false}
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+
+    const initials = screen.getAllByTestId('participant-avatar-text');
+    expect(initials.map((node) => node.props.children)).toEqual(['AL', 'BM']);
+  });
+
+  it('ne fabrique aucune initiale à partir du libellé de repli', async () => {
+    // L'avatar reçoit le nom BRUT, jamais le libellé de repli : « Participant
+    // sans nom » donnerait un « P » qui ne désigne personne. Et c'est aussi ce
+    // qui garde vrai l'assertion de contenu textuel de la ligne, plus haut —
+    // `toHaveTextContent` de RNTL 14 compare la chaîne ENTIÈRE.
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', '')]}
+          canModerate={false}
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId('participant-avatar-text')).toHaveTextContent('');
+  });
+
+  it('pose la graisse et la taille du nom', async () => {
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', 'Ada')]}
+          canModerate={false}
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByText('Ada')).toHaveStyle({
+      fontFamily: tokens.font.bold,
+      fontSize: 14.5,
+    });
+  });
+
+  // Les deux côtés de la seule conditionnelle ajoutée à ce fichier, dans UNE
+  // fixture : Ada ne publie aucun micro, Bob en publie un. Avec une liste
+  // homogène, une ligne d'état inconditionnelle — ou jamais rendue — passerait.
+  //
+  // Ce que ce test ne peut pas garder, et que le code dit : il n'y a PAS de
+  // contrepartie verte. `micTrackSid` est indépendant de `isMuted`
+  // (`src/call/participants.ts`), donc « micro actif » n'est pas démontrable
+  // ici et n'est pas affiché.
+  it('ne dit « micro coupé » que pour qui ne publie aucun micro', async () => {
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', 'Ada', false, null), view('PA_2', 'Bob')]}
+          canModerate={false}
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+
+    const states = screen.getAllByTestId('participant-mic-off');
+    expect(states).toHaveLength(1);
+    expect(states[0]).toHaveTextContent('call.muted');
+  });
+
+  it('porte une couleur explicite sur la ligne « micro coupé »', async () => {
+    // `List.Item` ne pose AUCUN `testID` sur le `Text` de sa description
+    // (`ListItem.tsx:190-203`) : sans la forme fonction, cette couleur ne
+    // serait joignable par rien. Et sans elle, Paper la calculerait depuis
+    // `onSurfaceVariant`, sur un fond que `call.tsx` force sombre.
+    await render(
+      withPaper(
+        <ParticipantsPanel
+          participants={[view('PA_1', 'Ada', false, null)]}
+          canModerate={false}
+          onMute={jest.fn()}
+          onRemove={jest.fn()}
+          onRole={jest.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId('participant-mic-off')).toHaveStyle({ color: MIC_OFF_COLOR });
   });
 });

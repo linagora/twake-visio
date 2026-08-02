@@ -21,7 +21,7 @@ const ACCOUNT: Account = {
     issuer: 'https://sso.linagora.com',
     clientId: 'twake-visio',
     livekitUrl: 'https://livekit.linagora.com',
-    features: { recording: true, subtitle: true, telephony: false },
+    features: { recording: true, subtitle: true, telephony: false, calendar: false },
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
@@ -229,5 +229,15 @@ describe('CreateRoomScreen, intitulé lisible', () => {
     // Retenir un intitulé pour un salon qui n'existe pas laisserait une entrée
     // que rien ne viendrait jamais nettoyer.
     expect(findRoomTitle('abc-defg-hij')).toBe(null);
+  });
+
+  // `app/_layout.tsx` masque l'en-tête du Stack : sans cette flèche, l'écran
+  // est un cul-de-sac. Signalé sur appareil, et vrai depuis l'origine.
+  it("offre une sortie vers l'accueil", async () => {
+    await render(<CreateRoomScreen />);
+
+    await fireEvent.press(screen.getByTestId('create-header-back'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
   });
 });
