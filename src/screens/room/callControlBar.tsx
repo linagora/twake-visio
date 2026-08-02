@@ -42,10 +42,19 @@ import { tokens } from 'src/ui/tokens';
 const styles = StyleSheet.create({
   controls: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    // `space-evenly` et non `center` : la rangée mesure 353 dp au MINIMUM, et
+    // un téléphone en fait rarement 360 tout juste — 402 sur un iPhone 17 Pro.
+    // Groupée au centre, elle laissait donc 49 dp inutilisés aux deux bouts et
+    // les commandes se touchaient presque. Répartie, l'écart effectif suit la
+    // largeur : ~9 dp sur un écran de 360, ~17 sur 402.
+    //
+    // Le `gap` ci-dessous reste le PLANCHER — `justifyContent` ne distribue que
+    // l'espace libre, il ne peut pas en retirer. Un écran étroit dégrade donc
+    // vers la rangée serrée d'avant plutôt que de déborder.
+    justifyContent: 'space-evenly',
     alignItems: 'center',
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
-    // six cibles de 44 dp sur 305 dp, donc largement sur un écran de 360.
+    // six cibles de 52 dp sur 353 dp, donc sur un écran de 360.
     //
     // `BAR_PADDING` et non le token directement : `BAR_HEIGHT` en dépend, et
     // `ReactionOverlay` en tire la garde qui empêche une bulle de se poser sur

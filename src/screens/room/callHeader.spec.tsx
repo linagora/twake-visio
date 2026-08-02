@@ -30,8 +30,8 @@ function header(
 
 describe('formatElapsed', () => {
   it('remplit les deux chiffres des minutes comme ceux des secondes', async () => {
-    // `mm:ss`, pas `m:s` : sans le remplissage, le minuteur change de largeur à
-    // chaque dizaine et déplace « · Chiffré » à côté de lui.
+    // `mm:ss`, pas `m:s` : sans le remplissage, le minuteur change de largeur
+    // à chaque dizaine, et l'en-tête entier se décale une fois par seconde.
     expect(formatElapsed(0)).toBe('00:00');
     expect(formatElapsed(9)).toBe('00:09');
     expect(formatElapsed(65)).toBe('01:05');
@@ -88,10 +88,17 @@ describe('CallHeader', () => {
     expect(screen.getByTestId('call-header-timer')).toHaveTextContent('10:01');
   });
 
-  it('annonce le chiffrement par une clé traduite', async () => {
+  // La mention « Chiffré » a été RETIRÉE, et ce test garde son absence.
+  // Elle était inconditionnelle — `t('call.encrypted')`, sans rien qui la
+  // mesure — et rien ne permettait de la mesurer : `new Room()` est construit
+  // sans options E2EE (`connection.ts:76`), et la configuration d'instance
+  // n'expose aucun champ de chiffrement. Le transport est bien chiffré
+  // (DTLS-SRTP, toujours), mais un SFU déchiffre et rechiffre : le mot seul
+  // promettait du bout en bout que l'application ne fait pas.
+  it('ne revendique aucun chiffrement', async () => {
     await render(header());
 
-    expect(screen.getByTestId('call-header-encrypted')).toHaveTextContent('call.encrypted');
+    expect(screen.queryByTestId('call-header-encrypted')).toBe(null);
   });
 
   it('affiche le nombre de participants reçu, pas une constante', async () => {
@@ -133,11 +140,10 @@ describe('CallHeader', () => {
     });
   });
 
-  it('pose la couleur de méta sur le minuteur et sur la mention de chiffrement', async () => {
+  it('pose la couleur de méta sur le minuteur', async () => {
     await render(header());
 
     expect(screen.getByTestId('call-header-timer')).toHaveStyle({ color: CALL_META_TEXT });
-    expect(screen.getByTestId('call-header-encrypted')).toHaveStyle({ color: CALL_META_TEXT });
   });
 
   it('remplit la pastille de présence avec le vert de marque', async () => {

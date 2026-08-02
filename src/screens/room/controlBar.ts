@@ -2,38 +2,30 @@ import { StyleSheet } from 'react-native';
 
 import { tokens } from 'src/ui/tokens';
 
-// SIX cibles sur une rangée. `IconButton` de Paper fait 40 dp de côté plus
-// `margin: 6`, soit 52 dp d'encombrement : six suffisaient à demander 424 dp
-// sur un téléphone qui en fait 360. La marge de Paper est neutralisée par la
-// prop `style`, appliquée en dernier, et la cible ramenée à 44 dp — la
-// recommandation Apple, au lieu des 48 dp de Material. Le coût est nommé, et
-// il est compensé verticalement par le `hitSlop` ci-dessous.
+// SIX cibles sur une rangée, à 52 dp — le gabarit du mockup. `IconButton` de
+// Paper fait 40 dp de côté plus `margin: 6` ; la marge est neutralisée par la
+// prop `style`, appliquée en dernier, et la cible posée explicitement.
 //
-//     6 × 44 + 1 (dans la paire caméra) + 4 × 8 + 2 × 4 = 305 dp
+//     6 × 52 + 1 (dans la paire caméra) + 4 × 8 + 2 × 4 = 353 dp
 //
 // `borderRadius` est relu depuis le `style` aplati par `IconButton`, donc
 // l'ondulation reste ronde.
 //
-// **La rangée en portait SEPT, et le compteur de participants y faisait
-// doublon avec celui de l'en-tête** — le mockup ne le pose qu'à un seul
-// endroit, et le propriétaire a tranché pour l'en-tête. À sept cibles elle
-// demandait 357 dp, et les 52 dp du mockup étaient hors d'atteinte :
+// **Ces 52 dp étaient hors d'atteinte tant que la rangée portait SEPT
+// cibles.** Le compteur de participants y faisait doublon avec celui de
+// l'en-tête ; le propriétaire a tranché pour l'en-tête, et la septième cible
+// est partie. À sept, le mockup aurait demandé :
 //
-//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp   (sept, à 52)
+//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp   sur un écran de 360
 //
-// À six, ce n'est plus vrai — et c'est mesuré, pas supposé :
-//
-//     6 × 52 + 1 + 4 × 8 + 2 × 4 = 353 dp
-//
-// soit MOINS que les 357 dp d'aujourd'hui, pour une cible plus grande. Le
-// gabarit reste néanmoins à 44 dp ici : monter à 52 change `BAR_HEIGHT`, donc
-// la garde de `reactionOverlay` et la boîte que cite `src/call/layout.ts`.
-// C'est un changement à faire d'un bloc, pas un effet de bord de celui-ci.
+// La rangée d'avant tenait à 357 dp parce qu'elle rabotait la cible à 44. Le
+// résultat net du passage à six : 353 dp, soit MOINS de largeur qu'avant pour
+// une cible PLUS GRANDE — et 48 dp de marge sur un écran de 360.
 //
 // La cible tactile d'un bouton de barre, en dp. Nommée plutôt qu'écrite trois
 // fois : `barStyles.button` la pose, `BAR_HEIGHT` s'en déduit, et les deux ne
 // peuvent plus diverger au premier changement de gabarit.
-export const BAR_BUTTON_SIZE = 44;
+export const BAR_BUTTON_SIZE = 52;
 
 // Le rembourrage de la rangée, de part et d'autre. Nommé et EXPORTÉ pour la
 // même raison que la taille du bouton : `callControlBar.tsx` le pose sur
@@ -45,9 +37,9 @@ export const BAR_PADDING = tokens.spacing.xs;
 // La hauteur RÉELLE de la rangée, celle qu'un calque posé par-dessus doit
 // dégager :
 //
-//     4 (padding) + 44 (bouton) + 4 (padding) = 52 dp
+//     4 (padding) + 52 (bouton) + 4 (padding) = 60 dp
 //
-// C'est le même 52 que cite `src/call/layout.ts` à propos de la boîte offerte à
+// C'est le même 60 que cite `src/call/layout.ts` à propos de la boîte offerte à
 // la scène.
 //
 // Lue par `ReactionOverlay`, qui s'ancre en bas à droite — précisément là où
@@ -104,7 +96,7 @@ export const barStyles = StyleSheet.create({
   danger: { backgroundColor: tokens.color.danger },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
-  // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 305 dp —
+  // 52 dp et la pastille est hors flux, donc la rangée vaut toujours 353 dp —
   // le calcul ci-dessus n'a pas bougé d'un dp.
   anchor: { position: 'relative' },
   // Le compteur du mockup : fond vert, texte blanc. Les DEUX couleurs sont

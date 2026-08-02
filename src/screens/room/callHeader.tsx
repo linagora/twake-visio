@@ -20,8 +20,7 @@ import { tokens } from 'src/ui/tokens';
 // la carte du bandeau d'admission (#1D2622). Les confondre est une erreur que
 // ce dépôt a déjà commise et corrigée (voir `AGENTS.md`).
 
-// La couleur du texte SECONDAIRE : minuteur, mention de chiffrement, phrase
-// d'attente. Valeur du mockup, conservée telle quelle — elle passe le seuil de
+// La couleur du texte SECONDAIRE : minuteur, phrase d'attente. Valeur du mockup, conservée telle quelle — elle passe le seuil de
 // 4,5:1 sur les deux fonds : 6,76:1 sur #0B0B0C, 5,34:1 sur #1D2622.
 //
 // `tokens.color.muted` (#6B7280) ne pouvait pas la remplacer : 3,21:1 sur la
@@ -45,7 +44,6 @@ export const CALL_SURFACE_TINT = 'rgba(255, 255, 255, 0.09)';
 export const CALL_SURFACE_HAIRLINE = 'rgba(255, 255, 255, 0.1)';
 
 const styles = StyleSheet.create({
-  encrypted: { color: CALL_META_TEXT, fontFamily: tokens.font.semiBold, fontSize: 12.5 },
   identity: { flexShrink: 1, gap: 3 },
   // La pastille de présence. `tokens.color.brand` (#1FA45C) plutôt que le
   // #28C46E du mockup : le vert du mockup n'existe pas dans `src/ui/tokens`, et
@@ -157,14 +155,6 @@ export function CallHeader({
           <View style={styles.live} testID="call-header-live" />
           <Text style={styles.timer} testID="call-header-timer">
             {formatElapsed(elapsedSeconds)}
-          </Text>
-          {/* Un point médian n'est pas de la copie : les sept locales le posent
-              à l'identique, et le faire passer par `t` demanderait une clé que
-              personne ne traduirait jamais. Il porte la couleur de ce qu'il
-              sépare, sinon il retomberait sur le noir du thème clair. */}
-          <Text style={styles.timer}>·</Text>
-          <Text style={styles.encrypted} testID="call-header-encrypted">
-            {t('call.encrypted')}
           </Text>
         </View>
       </View>

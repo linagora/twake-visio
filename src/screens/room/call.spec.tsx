@@ -3026,15 +3026,18 @@ describe('CallScreen, réactions', () => {
     await fireEvent.press(screen.getByTestId('reaction-red-heart'));
     await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
 
-    // Chat fermé : seule la barre est à dégager.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 60 });
+    // Chat fermé : seule la barre est à dégager. Les deux nombres suivent
+    // `BAR_HEIGHT` — 4 + 52 + 4 = 60, plus 8 d'écart — et `reactionOverlay.spec`
+    // porte la même paire. Deux sites, un seul calcul : celui de
+    // `reactionOverlay.tsx`.
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 68 });
 
     // Une réaction ne referme pas la feuille : `chat-btn` y est encore.
     await fireEvent.press(screen.getByTestId('chat-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
 
     // Chat ouvert : la zone de saisie s'ajoute à la garde.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 132 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 140 });
   });
 
   it("n'affiche aucune bulle et ne montre aucune Snackbar quand la publication échoue", async () => {

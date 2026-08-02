@@ -14,19 +14,22 @@ import { tokens } from 'src/ui/tokens';
 // et s'ancre EN BAS À DROITE, c'est-à-dire exactement là où les commandes
 // finissent.
 //
-//     BAR_HEIGHT (52) + tokens.spacing.sm (8) = 60 dp
+//     BAR_HEIGHT (60) + tokens.spacing.sm (8) = 68 dp
 //
 // Le pas d'écart est là pour que la bulle ne colle pas à la barre ; il vient de
 // l'échelle d'espacement, pas d'une appréciation.
 //
 // La valeur d'avant était `tokens.spacing.xl`, soit 32, quand la barre en
-// occupe 52 : la plus basse des bulles se posait donc 20 dp À L'INTÉRIEUR de la
-// barre, alignée à droite — sur `leave-btn`, le bouton pour raccrocher.
+// occupe 60 : la plus basse des bulles se posait donc 28 dp À L'INTÉRIEUR de la
+// barre, alignée à droite — sur `leave-btn`, le bouton pour raccrocher. C'est
+// exactement ce que ce calcul évite : la garde SUIT `BAR_HEIGHT`, elle n'est
+// pas un nombre recopié, et le passage de la cible de 44 à 52 dp ne lui a
+// demandé aucune intervention.
 const BOTTOM_GUARD = BAR_HEIGHT + tokens.spacing.sm;
 
 // La même garde, plus le bas du panneau de discussion quand il est ouvert :
 //
-//     60 + CHAT_FOOTER_HEIGHT (56 + 16) = 132 dp
+//     68 + CHAT_FOOTER_HEIGHT (56 + 16) = 140 dp
 //
 // Sans elle, les bulles se posaient sur `chat-send` dès la deuxième — le
 // panneau occupe toute la région au-dessus de la barre, et sa zone de saisie en

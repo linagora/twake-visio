@@ -162,7 +162,6 @@
   "home.joinTitle": "Partecipa a una riunione",
   "home.joinSubtitle": "Con un codice stanza o un link",
   "settings.instance": "Server",
-  "call.encrypted": "Crittografato",
   "call.participantCount": "{{count}}",
   "prejoin.title": "Pronto a partecipare?",
   "prejoin.yourName": "Il tuo nome",
