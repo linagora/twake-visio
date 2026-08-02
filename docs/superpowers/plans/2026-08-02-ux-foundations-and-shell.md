@@ -90,6 +90,23 @@ Le chevron `#9AA29D` est un glyphe décoratif, soumis au seuil non textuel : il 
 
 ## Task 1: Jetons et thème toujours clair
 
+> **Corrigé après livraison (commit `b4af52b`).** Les Tasks 1 et 2 ont été
+> livrées **ensemble** : le thème nomme des familles de police, et les committer
+> séparément aurait laissé un thème pointant vers des polices absentes.
+>
+> Et le tableau de contraste ci-dessus était **incomplet**. Le spec réécrit a
+> rougi sur deux paires que je n'avais pas mesurées :
+>
+> | Rôle | Écrit au plan | Mesuré | Retenu |
+> | --- | --- | --- | --- |
+> | `danger` sur le fond | non mesuré | **4,21** | `#D03939` (4,51) |
+> | `outline` sur la surface | `fieldBorder` | **1,26** | `controlOutline` `#7C847F` (3,84) |
+>
+> La seconde est une erreur de conception, pas d'arithmétique : j'avais mis le
+> filet DÉCORATIF d'une carte sur le rôle que Paper emploie pour dessiner le
+> contour d'une COMMANDE, où WCAG 1.4.11 s'applique. Les deux rôles sont
+> désormais des jetons distincts.
+
 **Files:**
 - Modify: `src/ui/tokens/index.ts`
 - Modify: `src/ui/theme.ts:5-41`
@@ -346,6 +363,28 @@ git commit -m "feat(ui): Transcribe the mockup palette and force the light theme
 ---
 
 ## Task 2: Manrope
+
+> **Corrigé après livraison (commit `b4af52b`).** L'étape 1 ci-dessous — `curl`
+> de quatre copies du même fichier variable depuis `google/fonts` — était une
+> mauvaise idée, et sa propre note l'admettait à demi. Ce qui a été fait :
+>
+> ```bash
+> npx expo install expo-font @expo-google-fonts/manrope
+> ```
+>
+> Le paquet livre les **instances statiques** — `Manrope_500Medium`,
+> `_600SemiBold`, `_700Bold`, `_800ExtraBold` — donc aucun fichier à récupérer à
+> la main, aucun `assets/fonts/`, et pas de pari sur le rendu d'une police
+> variable sous Android.
+>
+> **Conséquence sur les jetons** : `tokens.font.*` porte les noms du paquet
+> (`Manrope_500Medium`), pas ceux inventés ici (`Manrope-Medium`). Une clé qui ne
+> correspond pas charge le fichier sous un nom que `fontFamily` ne retrouve
+> jamais — sans erreur, avec un repli silencieux sur la police système.
+>
+> **Effet de bord à connaître** : `npx expo install` depuis ce worktree a
+> remplacé son lien symbolique `node_modules` par un vrai dossier. Le dépôt
+> principal et les treize autres worktrees sont intacts.
 
 **Files:**
 - Create: `assets/fonts/Manrope-{Medium,SemiBold,Bold,ExtraBold}.ttf`
@@ -1240,6 +1279,26 @@ git commit -m "feat(ui): Add the three interactive primitives of the new shell"
 
 ## Task 5: Magasin des préférences
 
+> **Corrigé après livraison (commits `0543ecd`, `1f70719`).** Deux obstacles que
+> le plan n'avait pas vus, tous deux trouvés en exécutant :
+>
+> 1. **Le double MMKV n'a pas de `getBoolean`.** `__mocks__/react-native-mmkv.ts`
+>    n'implémentait que `set`, `getString` et `remove` : `readPreferences`
+>    mourait sur un appel indéfini. Le double a été étendu avec les signatures
+>    **relevées dans le module réel**
+>    (`lib/specs/MMKV.nitro.d.ts:45-62`), et chaque accesseur typé rend
+>    `undefined` sur une valeur d'un autre type — un `getBoolean` qui renverrait
+>    la chaîne `"false"`, laquelle est vraie, serait pire que pas d'accesseur.
+> 2. **La boucle d'import était réelle.** Elle est rompue par
+>    `src/i18n/supported.ts`, un module SANS import qui porte `SUPPORTED_LOCALES`,
+>    `SupportedLocale` et `isSupportedLocale`. `src/i18n/index.ts` les réexporte
+>    pour ses appelants existants.
+>
+> Et une correction de goût : `writeRawLanguage` emploie un **import nommé
+> ordinaire**, pas l'idiome `require` d'`AGENTS.md`. Celui-ci ne sert qu'à
+> ESPIONNER un export de module ; ici on ne fait qu'appeler la fonction, et le
+> `require` ne faisait qu'ajouter un avertissement de lint.
+
 **Files:**
 - Create: `src/settings/preferences.ts` + `src/settings/preferences.spec.ts`
 
@@ -1550,7 +1609,19 @@ git commit -m "feat(rooms): Journal joined meetings on the device"
 - Modify: `src/instance/discovery.ts:5-11` et `:116-122`
 - Create: `src/call/agenda.ts` + `src/call/agenda.spec.ts`
 - Modify: `src/instance/discovery.spec.ts` (ajout)
-- Modify: `src/screens/room/call.tsx:137` — **une seule ligne**, l'objet `features` littéral d'un test-double y gagne `calendar: false`
+- Modify: **onze** sites qui construisent un `InstanceFeatures` — voir la correction ci-dessous
+
+> **Corrigé après livraison (commit `a374ee8`).** Le plan annonçait **un** site à
+> réparer. `tsc` en a trouvé **onze** : un vrai site de construction
+> (`discovery.ts`) et dix doubles de test, dont
+> `src/instance/emailResolution.spec.ts` que j'avais d'abord manqué en dérivant
+> ma liste d'un `head -10` tronqué.
+>
+> Le champ reste **requis** et non optionnel : un registre de capacités doit
+> forcer chaque site de construction à décider, et c'est exactement ce mécanisme
+> qui vient de fonctionner. Neuf des dix doubles sont dans des fichiers
+> qu'aucune branche ne touche ; celui de `call.tsx` est dans `NO_ACCOUNT`, une
+> constante de module, pas dans la partie que quatorze branches modifient.
 
 **Interfaces:**
 - Consumes: `InstanceFeatures`
@@ -1699,7 +1770,27 @@ git commit -m "feat(instance): Gate the agenda on a calendar capability, closed 
 - Consumes: `tokens`
 - Produces: les routes `/home`, `/historique`, `/reglages`
 
-**Fait vérifié.** `@react-navigation` est absent de `node_modules`, et ce n'est **pas** le piège `legacy-peer-deps` : expo-router 57 ne le déclare ni en `dependencies` ni en `peerDependencies`. Il embarque `standard-navigation` et exporte `Tabs`. Rien à installer.
+**Fait vérifié.** `@react-navigation` est absent de `node_modules`, et ce n'est **pas** le piège `legacy-peer-deps` : expo-router 57 ne le déclare ni en `dependencies` ni en `peerDependencies`. Rien à installer.
+
+> **Corrigé après livraison (commit `ac77899`).** Trois précisions, dont deux qui
+> changent le code à écrire :
+>
+> 1. **L'import est `expo-router/js-tabs`.** Celui depuis `expo-router` marche
+>    mais son entrée est marquée `@deprecated` en 57 (`build/exports.d.ts:41`).
+> 2. **expo-router ne « embarque pas standard-navigation » au sens où je
+>    l'écrivais : il VENDORISE React Navigation**, sous
+>    `build/react-navigation/bottom-tabs`. La conclusion — rien à installer —
+>    tient, la raison était fausse.
+> 3. **Pas de `tabBar` custom.** Les teintes, le fond et la typographie du
+>    libellé sont tous des `screenOptions` ; seule la pastille ne l'est pas. Elle
+>    est rendue par `tabBarIcon`, et vit dans `src/ui/tabBarIcon.tsx` avec son
+>    spec — un fichier sous `app/` ne porte aucune logique. Écrire un `tabBar`
+>    entier aurait voulu dire câbler `state`, `descriptors` et `navigation` à la
+>    main pour un seul aplat.
+>
+> **Et l'étape 1 ci-dessous est déjà faite** : les clés des sept locales ont été
+> ajoutées en amont du lot (commit `c56031b`), pour les trois écrans à la fois.
+> Passer directement à l'étape 3.
 
 **Fait vérifié.** Un groupe entre parenthèses n'apparaît pas dans l'URL : `/home` reste `/home`, donc les quatre appelants — `app/index.tsx:8`, `src/screens/welcome.tsx:26`, `src/screens/server.tsx:57`, `src/screens/room/call.tsx:639` — **ne sont pas modifiés**.
 
@@ -1899,7 +1990,25 @@ git commit -m "feat(nav): Add the three-tab shell with a custom tab bar"
 
 **Interfaces:**
 - Consumes: `listVisits`, `MeetingVisit` (Task 6) ; `AppHeader`, `SearchField`, `SectionLabel`, `SurfaceCard`, `InitialsAvatar`, `EmptyState` (Tasks 3-4)
-- Produces: `HistoriqueScreen`, et `filterVisits(visits, query): readonly MeetingVisit[]` exporté pour être testé seul
+- Produces: `HistoriqueScreen`, `filterVisits(visits, query)`, `formatVisitMoment(joinedAt, language)`
+
+> **Corrigé après livraison (commit `606b7fd`).** L'étape 1 (clés de locale) est
+> déjà faite, commit `c56031b`. Deux autres choses :
+>
+> 1. **La suite ne se chargeait pas du tout.** Importer `expo-router` pour de
+>    vrai tire `standard-navigation`, de l'ESM que `transformIgnorePatterns` ne
+>    couvre pas. Sept specs d'écran mockent déjà `expo-router` pour cette raison
+>    exacte ; celle-ci le fait aussi. **Ouvrir un spec voisin avant d'écrire le
+>    préambule**, comme la Task 7 le dit déjà pour `discovery.spec.ts`.
+> 2. **Une mutation a révélé une ligne qu'aucun test ne pouvait couvrir.**
+>    Retirer le court-circuit `needle.length === 0` de `filterVisits` donnait
+>    **zéro rouge** : avec une aiguille vide, `includes('')` est vrai pour tout,
+>    donc le CONTENU rendu est identique. La ligne n'est observable que par
+>    l'IDENTITÉ du tableau, `filter` allouant toujours une copie. Deux tests
+>    assertissent donc `toBe(visits)`, et la mutation rougit désormais deux fois.
+>    C'est la forme générale du cas : quand une mutation ne rougit rien, se
+>    demander d'abord si le code est seulement **indistinguable par le
+>    comportement observé**, avant de conclure au trou de couverture.
 
 - [ ] **Step 1: Ajouter les clés dans les sept locales**
 
@@ -2042,8 +2151,26 @@ git commit -m "feat(history): Add the Historique tab over the device journal"
 - Modify: `src/i18n/locales/*.json` — clés `settings.*`
 
 **Interfaces:**
-- Consumes: `readPreferences`, `writePreference`, `DEFAULT_PREFERENCES` (Task 5) ; `SettingRow`, `SettingOption`, `AppHeader`, `SurfaceCard`, `SectionLabel`, `InitialsAvatar` (Tasks 3-4)
+- Consumes: `readPreferences`, `writePreference` (Task 5) ; `chooseLanguage` (`src/i18n`) ; `SettingRow`, `SettingOption`, `AppHeader`, `SurfaceCard`, `SectionLabel`, `InitialsAvatar` (Tasks 3-4)
 - Produces: `ReglagesScreen`
+
+> **Corrigé après livraison (commit `a2ed7fd`).** L'étape 1 (clés de locale) est
+> déjà faite, commit `c56031b` — et `settings.rows.camOnJoinHint` **n'existe
+> pas** : il répétait mot pour mot celui du micro, sous la rangée voisine.
+> `SettingRow.hint` est donc **optionnel**.
+>
+> **La langue ne passe pas par `writePreference`.** Elle appelle
+> `chooseLanguage(locale | null)`, exporté par `src/i18n`, qui écrit ET rebascule
+> i18next : `writePreference` seul rangerait le choix et laisserait l'interface
+> dans l'ancienne langue. L'identifiant `'system'` n'existe que pour que la
+> rangée puisse le cocher — ce qui est **stocké** est `null`.
+>
+> **Un test existant a rougi, et il avait raison.** `prejoin.spec.tsx` attendait
+> `mic=1` : le micro était un `useState(false)` codé en dur, il vient des
+> Réglages dont le défaut est « coupé ». Ce n'est pas une régression, c'est le
+> comportement voulu par le mockup. Le spec pose maintenant un double explicite
+> de `readPreferences` — lire le vrai MMKV ferait dépendre le résultat de l'ordre
+> des fichiers de spec — et couvre chaque préférence dans ses deux états.
 
 - [ ] **Step 1: Ajouter les clés dans les sept locales**
 
