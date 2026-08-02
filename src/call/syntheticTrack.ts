@@ -1,5 +1,5 @@
 import { MediaStreamTrack } from '@livekit/react-native-webrtc';
-import type { Room } from 'livekit-client';
+import { Track, type Room } from 'livekit-client';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
 // ÉTAPE 3 du chantier « flou d'arrière-plan » : la PLOMBERIE, prouvée seule.
@@ -89,7 +89,16 @@ export async function createSyntheticTrack(
  * `simulcast: false` : notre source ne produit qu'une définition, et laisser
  * LiveKit en dériver trois ferait encoder deux flux que personne ne demandera.
  * Ce sera à revoir à l'étape 4, quand la source sera une vraie caméra.
+ *
+ * **`source: Camera` n'est pas décoratif.** Sans lui, LiveKit publie une piste
+ * de source INCONNUE, et le serveur refuse : `PublishTrackError: failed to
+ * publish track, insufficient permissions`. Le jeton n'autorise que des sources
+ * nommées — mesuré, pas supposé : c'est le premier essai, sans `source`, qui a
+ * produit ce message. Le refus venait du serveur, pas de la chaîne.
  */
 export async function publishSyntheticTrack(room: Room, track: MediaStreamTrack): Promise<void> {
-  await room.localParticipant.publishTrack(track as never, { simulcast: false });
+  await room.localParticipant.publishTrack(track as never, {
+    simulcast: false,
+    source: Track.Source.Camera,
+  });
 }

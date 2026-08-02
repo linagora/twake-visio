@@ -13,7 +13,6 @@ import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
-import { createSyntheticTrack, isSyntheticTrackSupported } from 'src/call/syntheticTrack';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
@@ -136,24 +135,6 @@ export function PrejoinScreen(): React.ReactElement {
   // la réacquiert. Le module possède ce cycle, y compris le flux qui arrive
   // après le démontage.
   const previewUrl = useCameraPreview(!cameraOff);
-
-  // TEMPORAIRE — étape 3 du chantier « flou d'arrière-plan ». À RETIRER.
-  //
-  // Fabrique la piste de synthèse au montage et journalise ce qui revient.
-  // `console.warn` et non `console.log` : le dépôt interdit le second.
-  useEffect(() => {
-    if (!isSyntheticTrackSupported()) {
-      console.warn('[etape3] module natif absent');
-      return;
-    }
-    createSyntheticTrack(640, 480, 30)
-      .then((track) => {
-        console.warn('[etape3] piste obtenue', track === null ? 'null' : track.id, track?.kind);
-      })
-      .catch((error: unknown) => {
-        console.warn('[etape3] ECHEC', String(error));
-      });
-  }, []);
 
   useEffect(() => {
     const account = getActiveAccount();

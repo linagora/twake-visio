@@ -20,6 +20,11 @@ import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
+import {
+  createSyntheticTrack,
+  isSyntheticTrackSupported,
+  publishSyntheticTrack,
+} from 'src/call/syntheticTrack';
 import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
@@ -591,6 +596,34 @@ export function CallScreen(): React.ReactElement {
   );
 
   const connected = callState.status === 'connected';
+
+  // TEMPORAIRE — quatrième maillon de l'étape 3 : la PUBLICATION. À RETIRER.
+  //
+  // Ce que ce test prouve : LiveKit accepte une piste que nous avons
+  // fabriquée, la négocie et crée un émetteur. Ce qu'il NE prouve PAS : qu'un
+  // pair reçoive les pixels — cela demande un second participant.
+  //
+  // Le compte des publications est lu APRÈS l'appel, et c'est le point : une
+  // promesse résolue ne dit pas qu'une piste a été retenue.
+  useEffect(() => {
+    if (!connected || !isSyntheticTrackSupported()) return;
+    let cancelled = false;
+    createSyntheticTrack(640, 480, 30)
+      .then(async (track) => {
+        if (cancelled || track === null) return;
+        const room = session.getRoom();
+        const before = room.localParticipant.videoTrackPublications.size;
+        await publishSyntheticTrack(room, track);
+        const after = room.localParticipant.videoTrackPublications.size;
+        console.warn('[etape3-pub] publications', before, '->', after, 'piste', track.id);
+      })
+      .catch((error: unknown) => {
+        console.warn('[etape3-pub] ECHEC', String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, session]);
 
   useEffect(() => {
     if (!connected) return;

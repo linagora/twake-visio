@@ -204,6 +204,33 @@ Côté iOS, la couture est confirmée dans la version installée :
 `peerConnectionFactory` (ligne 40) et `localTracks` (ligne 46) sont des
 propriétés **publiques** de `WebRTCModule.h`.
 
+### Étape 3 exécutée : les QUATRE maillons tiennent **[V]**
+
+Prouvé le 2026-08-03 sur émulateur Android 35, application authentifiée, séance
+réelle :
+
+```
+natif       piste de synthèse créée : ed9feeb4-…-680a0de1b6b7 (640x480 @ 30)
+JavaScript  [etape3] piste obtenue  ed9feeb4-…-680a0de1b6b7  video
+LiveKit     [etape3-pub] publications 0 -> 1  piste 90a136af-…-84dfe892f383
+```
+
+Le même identifiant du natif à JavaScript, puis un compte de publications qui
+passe de 0 à 1. La chaîne complète est vérifiée **en exécution**.
+
+**Et une condition que seule l'exécution pouvait révéler** : le premier essai a
+été REFUSÉ par le serveur.
+
+```
+PublishTrackError: failed to publish track, insufficient permissions
+```
+
+Une `MediaStreamTrack` brute est publiée sans source déclarée, et le jeton
+n'autorise que des sources nommées. Il faut donc
+`publishTrack(track, { source: Track.Source.Camera })`. Rien dans les
+déclarations de types ne l'imposait — `source` y est optionnel — et aucune
+relecture ne l'aurait trouvé : c'est le serveur qui l'a dit.
+
 ### Mesure n° 3 — un module tiers maintenu : **NON, mais l'architecture est éprouvée** **[V]**
 
 Aucun paquet publié ne fait cela pour React Native + LiveKit. Ce qui existe est
