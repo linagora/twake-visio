@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
@@ -1003,6 +1004,10 @@ export function CallScreen(): React.ReactElement {
       style={[styles.root, { paddingTop: insets.top }]}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
+      {/* Fond sombre : icônes CLAIRES. Empilé par-dessus la base sombre de
+            `app/_layout.tsx`, et dépilé au démontage par le `_propsStack` de
+            React Native — rien à défaire en partant. */}
+      <StatusBar style="light" />
       {/* **En plein écran : la barre et les commandes disparaissent, jamais
           une demande qui attend une réponse.**
 

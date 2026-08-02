@@ -7,6 +7,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Stack, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
 import { PaperProvider } from 'react-native-paper';
@@ -82,6 +83,26 @@ export default function RootLayout(): React.ReactElement | null {
             à la coque : c'est lui qui sait s'il est clair ou sombre. Chaque
             racine d'écran applique ses propres encoches et les peint, puisqu'un
             rembourrage est peint par le fond de la vue qui le porte. */}
+        {/* La BASE de la pile de `StatusBar`, et non un réglage de la coque.
+            Presque tous les écrans sont clairs (`appBackground`), donc icônes
+            sombres. Les deux qui ne le sont pas — `call` et `prejoin` — posent
+            `style="light"`, ce qui EMPILE par-dessus.
+
+            Sans cette base, Android n'a aucun `windowLightStatusBar` : le thème
+            généré est `Theme.AppCompat.DayNight.NoActionBar` avec une barre
+            transparente et rien d'autre. Mesuré sur appareil,
+            `dumpsys window` lisait `mLastAppearance=LIGHT_NAVIGATION_BARS`,
+            SANS `LIGHT_STATUS_BARS` : icônes blanches sur en-tête blanc, donc
+            invisibles. Seule la pastille de batterie survivait, ayant son
+            propre fond.
+
+            Une base ici NE contredit PAS la règle du fond d'encoche écrite plus
+            bas — celle-là est un aplat qu'aucune pile ne restaure, tandis que
+            `StatusBar` de React Native tient un `_propsStack` et DÉPILE au
+            démontage (`StatusBar.js`, `componentWillUnmount`). Quitter la
+            séance rend donc les icônes sombres sans que personne ne le
+            redemande. */}
+        <StatusBar style="dark" />
         <Stack screenOptions={{ headerShown: false }} />
       </PaperProvider>
     </SafeAreaProvider>

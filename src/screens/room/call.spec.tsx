@@ -387,6 +387,16 @@ jest.mock('expo-router', () => ({
 // codé en dur dans une coquille serait indiscernable du nombre calculé par
 // l'écran. Vérifié : aucune des assertions existantes de ce fichier n'observe
 // une clé interpolée.
+// `style` est une prop que `StatusBar` CONSOMME : elle n'atteint aucun élément
+// hôte, et `toHaveProp` y serait vert dans les deux états — la borne d'`AGENTS.md`.
+// On observe donc ce que l'écran DEMANDE, en doublant le module.
+jest.mock('expo-status-bar', () => ({ StatusBar: jest.fn(() => null) }));
+
+const statusBarStyles = (): unknown[] =>
+  jest
+    .mocked(jest.requireMock('expo-status-bar').StatusBar as jest.Mock)
+    .mock.calls.map((call) => (call[0] as { style?: unknown }).style);
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
@@ -459,6 +469,11 @@ const GRANTED = {
 
 beforeEach(() => {
   jest.restoreAllMocks();
+  // `jest.restoreAllMocks()` ne touche PAS un double de module. Sans cette
+  // remise à zéro, `mock.calls` s'accumule sur tout le fichier et l'assertion
+  // d'un test est satisfaite par le rendu d'un autre : mesuré sur
+  // `prejoin.spec.tsx`, retirer la déclaration ne rougissait alors RIEN.
+  jest.mocked(jest.requireMock('expo-status-bar').StatusBar as jest.Mock).mockClear();
   mockReplace.mockReset();
   mockConnect.mockReset().mockResolvedValue(undefined);
   mockDisconnect.mockReset().mockResolvedValue(undefined);
@@ -3472,4 +3487,32 @@ describe('CallScreen, les encoches', () => {
     expect(screen.getByTestId('mic-toggle')).toBeTruthy();
     expect(screen.getByTestId('call-controls')).toHaveStyle({ paddingBottom: 38 });
   });
+});
+
+describe("CallScreen — barre d'état", () => {
+  it('réclame des icônes claires sur le fond sombre de la séance', async () => {
+    // La scène force `backgroundDark` dans les deux schémas — la convention de
+    // toute la visioconférence. La base posée par `app/_layout.tsx` veut des
+    // icônes SOMBRES, justes pour les écrans clairs et invisibles ici.
+    //
+    // MESURÉ avant ce correctif : `dumpsys window` lisait
+    // `mLastAppearance=LIGHT_NAVIGATION_BARS`, SANS `LIGHT_STATUS_BARS`, donc
+    // des icônes blanches — invisibles sur l'accueil blanc, correctes ici.
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-root')).toBeTruthy());
+
+    expect(statusBarStyles()).toContain('light');
+  });
+
+  // PAS de test « les écrans d'attente et d'erreur gardent la base sombre ».
+  // Il a été écrit, et il est INFONDÉ : l'écran rend d'abord la racine de
+  // séance, puis bascule sur l'erreur quand la promesse se dénoue. L'historique
+  // du double garde donc le `light` du premier passage, et l'assertion
+  // `not.toContain` échoue contre une implémentation pourtant juste.
+  //
+  // Une ABSENCE ne s'observe pas dans un historique d'appels — c'est la même
+  // borne que celle d'`AGENTS.md` sur les props consommées. Ce que ces deux
+  // branches garantissent est déjà couvert ailleurs : elles rendent
+  // `call-error` ou `call-connecting`, jamais `call-root`, et la déclaration
+  // `light` ne vit que dans `call-root`.
 });

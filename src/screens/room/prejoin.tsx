@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RTCView } from '@livekit/react-native-webrtc';
@@ -194,6 +195,7 @@ export function PrejoinScreen(): React.ReactElement {
   if (failure !== null) {
     return (
       <View style={[styles.errorRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <StatusBar style="light" />
         <Text style={styles.errorText} testID="prejoin-error">
           {t(failure)}
         </Text>
@@ -215,6 +217,7 @@ export function PrejoinScreen(): React.ReactElement {
       style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
       testID="prejoin-root"
     >
+      <StatusBar style="light" />
       <View style={styles.header}>
         <Pressable
           accessibilityLabel={t('prejoin.back')}
