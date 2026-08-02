@@ -18,7 +18,7 @@ import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
-import { handPosition, isHandRaised, raisedHands } from 'src/call/hands';
+import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
@@ -38,6 +38,7 @@ import { firstWaiting } from 'src/rooms/waitingQueue';
 import { CallControlBar } from 'src/screens/room/callControlBar';
 import { CallPanels, type Panel } from 'src/screens/room/callPanels';
 import { HandBanner } from 'src/screens/room/handBanner';
+import { RaisedHandsBanner } from 'src/screens/room/raisedHandsBanner';
 import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
@@ -218,8 +219,8 @@ export function CallScreen(): React.ReactElement {
 
   // La boîte réellement offerte à la scène, mesurée par `CallStage` et remontée
   // ici — jamais `useWindowDimensions()`, qui ignore la barre de contrôle, les
-  // encoches et les trois bandeaux. `null` tant que la première mesure n'est
-  // pas arrivée : une trame.
+  // encoches et les bandeaux. `null` tant que la première mesure n'est pas
+  // arrivée : une trame.
   //
   // Elle vit ici et non dans `CallStage` parce que c'est ici qu'on appelle
   // `useCallLayout`, qui en a besoin. Contrairement à l'épinglage, la perdre au
@@ -454,6 +455,11 @@ export function CallScreen(): React.ReactElement {
   const hands = useMemo(() => raisedHands(roomView), [roomView]);
   const handRaised = isHandRaised(roomView.local);
   const handRank = handPosition(hands, roomView.local.identity);
+
+  // Les mains des AUTRES, et rien de plus : `HandBanner` porte déjà la vôtre
+  // sur la ligne du dessus, et l'y compter une seconde fois ferait dire « et
+  // 1 autre » à un écran où il n'y a personne d'autre.
+  const otherHands = useMemo(() => otherRaisedHands(hands), [hands]);
 
   // Une troisième lecture de la Room, indépendante des deux autres :
   // `getSnapshot()` lit `room.metadata` directement, sans attendre aucun
@@ -927,7 +933,8 @@ export function CallScreen(): React.ReactElement {
 
           — ce qui ATTEND UNE RÉPONSE DE VOUS survit, et se pose donc HORS de
             la garde ci-dessous. Quelqu'un frappe à la porte : il reste enfermé
-            dehors tant que personne ne répond ;
+            dehors tant que personne ne répond. Quelqu'un d'autre lève la main :
+            il attend qu'on lui donne la parole ;
           — ce qui DÉCRIT SEULEMENT L'ÉTAT DU MONDE disparaît, et reste dans la
             garde. L'indicateur d'enregistrement énonce un fait. VOTRE propre
             main levée ne vous demande rien : c'est un rappel, son destinataire
@@ -948,8 +955,8 @@ export function CallScreen(): React.ReactElement {
           rien.
 
           L'ORDRE DE LA BANDE est inchangé — admission, enregistrement, votre
-          main — et il le reste dans les deux cas, la garde n'encadrant que les
-          deux dernières lignes. */}
+          main, les mains des autres — et il le reste dans les quatre
+          combinaisons, la garde n'encadrant que le bloc du milieu. */}
 
       {/* Ne rend rien tant que personne n'attend. */}
       <WaitingBanner
@@ -971,6 +978,13 @@ export function CallScreen(): React.ReactElement {
           <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
         </>
       ) : null}
+
+      {/* La seule chose qui disait, sur l'écran principal, qu'un AUTRE demande
+          la parole : sans elle la file ne vivait que dans une feuille que le
+          président n'a aucune raison d'ouvrir. Ne rend rien au repos, et ne
+          porte aucun bouton — donner la parole est un acte de la réunion, pas
+          de l'application. */}
+      <RaisedHandsBanner hands={otherHands} />
 
       {/* Les trois corps qui s'excluent, et leur aiguillage. `panel` descend en
           lecture seule : `openPanel` reste la seule porte qui l'écrit. */}
