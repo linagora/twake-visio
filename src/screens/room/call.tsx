@@ -918,32 +918,48 @@ export function CallScreen(): React.ReactElement {
       style={styles.root}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
-      {/* **En plein écran : une tuile, et rien d'autre.** La lecture stricte,
-          choisie par le produit, et la seule condition de tout ce bloc — les
-          trois bandeaux ne rendent déjà rien au repos, c'est le plein écran
-          seul qui les enveloppe.
+      {/* **En plein écran : la barre et les commandes disparaissent, jamais
+          une demande qui attend une réponse.**
+
+          C'est la règle arbitrée le 2026-08-02. Elle remplace « une tuile, et
+          rien d'autre », qui masquait les trois bandeaux sans distinguer ce
+          qu'ils disaient, et elle se lit en deux temps :
+
+          — ce qui ATTEND UNE RÉPONSE DE VOUS survit, et se pose donc HORS de
+            la garde ci-dessous. Quelqu'un frappe à la porte : il reste enfermé
+            dehors tant que personne ne répond ;
+          — ce qui DÉCRIT SEULEMENT L'ÉTAT DU MONDE disparaît, et reste dans la
+            garde. L'indicateur d'enregistrement énonce un fait. VOTRE propre
+            main levée ne vous demande rien : c'est un rappel, son destinataire
+            est en face. Les bulles de réaction passent d'elles-mêmes.
+
+          (Le critère écrit ici jusqu'au 2026-08-02 était « survit ce dont
+          l'absence rendrait l'écran TROMPEUR ». Il décrivait exactement le code
+          d'alors ; il ne décrit plus celui-ci, puisqu'une main levée qu'on ne
+          voit pas est MANQUÉE et non mensongère, et qu'elle survit désormais
+          quand même. Ce critère-là n'a pas disparu pour autant : il reste la
+          raison — distincte — du message de reconnexion et de la `Snackbar`
+          plus bas. Deux raisons de survivre, donc, et non une seule.)
 
           Une ternaire, et non une prop `hidden` comme celle de
           `CallControlBar` : celle-ci existe parce que la barre POSSÈDE quatre
-          états de périphérique qu'un démontage effacerait. Ces trois-ci sont
-          des coquilles pures — aucun état, aucun effet — donc les démonter ne
-          perd rien, et l'invariant à tenir est l'inverse : qu'il ne reste rien
-          à l'écran.
+          états de périphérique qu'un démontage effacerait. Ces deux-ci sont des
+          coquilles pures — aucun état, aucun effet — donc les démonter ne perd
+          rien.
 
-          **Conséquence énoncée et acceptée** : une demande d'admission devient
-          INVISIBLE tant qu'on reste en plein écran. La file continue d'être
-          relue, le bandeau revient au premier appui qui en sort, et un test le
-          nomme dans `call.spec.tsx` plutôt que de le laisser se découvrir sur
-          appareil. */}
+          L'ORDRE DE LA BANDE est inchangé — admission, enregistrement, votre
+          main — et il le reste dans les deux cas, la garde n'encadrant que les
+          deux dernières lignes. */}
+
+      {/* Ne rend rien tant que personne n'attend. */}
+      <WaitingBanner
+        participant={firstWaiting(waiting)}
+        remaining={Math.max(waiting.length - 1, 0)}
+        onAnswer={handleAnswerEntry}
+      />
+
       {fullscreenTile === null ? (
         <>
-          {/* Au-dessus de la scène : ne rend rien tant que personne n'attend. */}
-          <WaitingBanner
-            participant={firstWaiting(waiting)}
-            remaining={Math.max(waiting.length - 1, 0)}
-            onAnswer={handleAnswerEntry}
-          />
-
           {/* Vu de tout le monde, y compris de qui n'a aucun bouton : ne rend
               rien au repos. */}
           <RecordingIndicator state={recordingState} />
@@ -981,21 +997,25 @@ export function CallScreen(): React.ReactElement {
       {/* La reconnexion se dit : sans cela la personne regarde une image figée
           en croyant que c'est cassé, et raccroche alors que ça se rétablit.
 
-          DÉLIBÉRÉMENT HORS de la garde de plein écran, à l'inverse des trois
-          bandeaux et des bulles juste au-dessus — et ce n'est pas un oubli.
-          La règle arbitrée est « en plein écran, une tuile et rien d'autre,
-          sans exception ». Ce qui y survit n'est donc PAS « ce qui n'offre
-          aucune commande » — `RecordingIndicator` n'en offre aucune et il est
-          bien masqué, quelques lignes plus haut. Le critère exact est plus
-          étroit : survit ce dont l'absence rendrait l'écran TROMPEUR, et non
-          ce qui serait seulement manqué. Une image figée sans rien qui dise
-          pourquoi se lit exactement comme un plantage ; une demande
-          d'admission, elle, est manquée sans que rien ne mente. Même raison
-          pour le `Snackbar` plus bas. Arbitré explicitement, pas hérité.
+          HORS de la garde de plein écran, comme le bandeau d'admission
+          au-dessus — mais pour une RAISON DIFFÉRENTE, et c'est elle qui vaut
+          d'être écrite. La règle du 2026-08-02 fait survivre ce qui attend une
+          réponse DE VOUS ; ce message-ci n'en attend aucune. Il survit parce
+          que son absence rendrait l'écran TROMPEUR : une image figée sans rien
+          qui dise pourquoi se lit exactement comme un plantage. Même raison
+          pour le `Snackbar` plus bas.
+
+          Deux critères, donc, et non un seul — et ni l'un ni l'autre n'est
+          « ce qui n'offre aucune commande » : `RecordingIndicator` n'en offre
+          aucune, ne trompe personne, n'attend rien de vous, et il est bien
+          masqué quelques lignes plus haut. Arbitré explicitement, pas hérité.
 
           (La première rédaction de ce commentaire disait « ce qui offre une
           COMMANDE », ce qui décrivait mal le code : la revue de la
-          spécification de la main levée l'a relevé, et elle avait raison.) */}
+          spécification de la main levée l'a relevé, et elle avait raison. La
+          deuxième posait la tromperie comme critère UNIQUE et donnait la
+          demande d'admission en exemple de ce qui ne survit pas — exact
+          jusqu'au 2026-08-02, faux depuis.) */}
       {callState.status === 'reconnecting' ? (
         <View style={styles.banner}>
           <Text testID="call-reconnecting" style={styles.bannerText}>
@@ -1037,11 +1057,12 @@ export function CallScreen(): React.ReactElement {
 
       {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
           l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
-          repos — mais elle est bel et bien enveloppée, pour la même raison
-          que les trois bandeaux ci-dessus : en plein écran, une tuile et rien
-          d'autre. La condition est séparée de la leur parce que sa POSITION
-          l'est : ce calque doit rester le dernier enfant, sans quoi il passe
-          sous la barre.
+          repos — mais elle est bel et bien enveloppée, pour la même raison que
+          l'indicateur d'enregistrement et votre propre main levée ci-dessus :
+          des bulles qui passent d'elles-mêmes ne font que décrire l'état du
+          monde, et n'attendent aucune réponse de vous. La condition est
+          séparée de la leur parce que sa POSITION l'est : ce calque doit
+          rester le dernier enfant, sans quoi il passe sous la barre.
 
           `chatOpen` est la SEULE chose qu'elle sache de l'écran, et elle n'en
           tire qu'une garde de bas : la zone de saisie du chat occupe le bas de

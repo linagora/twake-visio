@@ -2650,18 +2650,20 @@ describe('CallScreen, plein écran, enfermement', () => {
   });
 });
 
-// « En plein écran : une tuile, et rien d'autre. » La lecture STRICTE, choisie
-// par le produit. La barre l'appliquait déjà ; les trois bandeaux et
-// l'incrustation des réactions, non — ils continuaient de se poser par-dessus
-// l'unique tuile, sur un écran dont c'est justement toute la raison d'être.
+// « Le plein écran masque la barre et les commandes, jamais une demande qui
+// attend une réponse. » La règle arbitrée le 2026-08-02, qui remplace « une
+// tuile, et rien d'autre ».
 //
-// **Conséquence énoncée et acceptée** : une demande d'admission devient
-// INVISIBLE tant qu'on reste en plein écran. Le premier test ci-dessous la
-// nomme, plutôt que de la laisser se découvrir sur appareil.
+// Quatre surfaces, et le describe couvre les deux camps : ce qui SURVIT parce
+// qu'il attend une réponse de vous — quelqu'un frappe à la porte, quelqu'un
+// d'autre lève la main —, et ce qui DISPARAÎT parce qu'il ne fait que décrire
+// l'état du monde — l'enregistrement, votre propre main, les bulles.
 //
-// Un test par surface masquée, et chacun fait l'aller-retour : sans le retour,
-// une implémentation qui ne rendrait plus jamais le bandeau passerait aussi.
-describe('CallScreen, plein écran, tout le reste disparaît', () => {
+// Les tests du second camp font l'aller-retour : sans le retour, une
+// implémentation qui ne rendrait plus jamais le bandeau passerait aussi. Ceux
+// du premier assertent en plus l'ABSENCE de `mic-toggle`, sans quoi un plein
+// écran qui n'aurait jamais pris les rendrait verts pour la mauvaise raison.
+describe('CallScreen, plein écran, ce qui disparaît et ce qui reste', () => {
   // La file d'attente part d'un `setInterval` de cinq secondes : sans avancer
   // le temps, `listWaitingParticipants` n'est jamais appelé et le bandeau
   // n'existe pas. Même dispositif que le describe « salle d'attente », posé sur
@@ -2676,11 +2678,11 @@ describe('CallScreen, plein écran, tout le reste disparaît', () => {
     jest.useRealTimers();
   });
 
-  it("masque le bandeau d'admission en plein écran, et le rend au retour", async () => {
-    // La conséquence acceptée : personne ne voit plus frapper à la porte tant
-    // que le plein écran dure. Le retour est immédiat et tient à un seul appui,
-    // et la file, elle, n'a pas bougé — `useWaitingParticipants` continue de la
-    // relire.
+  // INVERSÉ le 2026-08-02. Ce test affirmait le contraire, et son commentaire
+  // parlait d'une « conséquence acceptée ». Elle ne l'est plus : la règle est
+  // devenue « le plein écran masque la barre et les commandes, jamais une
+  // demande qui attend une réponse », et quelqu'un enfermé dehors en est une.
+  it("garde le bandeau d'admission visible en plein écran", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'listWaitingParticipants')
@@ -2696,11 +2698,8 @@ describe('CallScreen, plein écran, tout le reste disparaît', () => {
 
     await enterFullscreen('u-bob:camera');
 
-    expect(screen.queryByTestId('waiting-banner')).toBeNull();
-
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
-
-    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+    expect(screen.getByTestId('waiting-banner')).toBeTruthy();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
   });
 
   it("masque l'indicateur d'enregistrement en plein écran, et le rend au retour", async () => {
