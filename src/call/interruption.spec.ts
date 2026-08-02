@@ -183,6 +183,42 @@ describe('useInterruptionRecovery', () => {
     expect(trackOf(camera)).not.toHaveBeenCalled();
   });
 
+  it("ne compte pas un passage par 'inactive' comme une interruption", async () => {
+    // `'inactive'` est émis par iOS SEULEMENT, et pour des interactions
+    // passagères : centre de contrôle, volet de notifications, aperçu du
+    // sélecteur d'applications, bandeau d'appel entrant. Aucune ne retire la
+    // capture — c'est `'background'` qui le fait, et lui seul.
+    //
+    // Sans cette distinction, chaque glissement du centre de contrôle
+    // recapturerait au retour : une coupure d'une seconde pour un geste qui
+    // n'a rien interrompu.
+    const camera = fakePublication();
+    const room = fakeRoom({ [Track.Source.Camera]: camera });
+    const app = captureListener();
+
+    await renderHook(() => useInterruptionRecovery(room));
+    app.emit('inactive');
+    app.emit('active');
+
+    expect(trackOf(camera)).not.toHaveBeenCalled();
+  });
+
+  it("compte un 'inactive' qui MÈNE à 'background' comme une interruption", async () => {
+    // iOS passe par `'inactive'` avant `'background'`. La seconde polarité :
+    // ignorer `'inactive'` ne doit pas faire manquer l'arrière-plan qui suit.
+    const camera = fakePublication();
+    const room = fakeRoom({ [Track.Source.Camera]: camera });
+    const app = captureListener();
+
+    await renderHook(() => useInterruptionRecovery(room));
+    app.emit('inactive');
+    app.emit('background');
+    app.emit('inactive');
+    app.emit('active');
+
+    expect(trackOf(camera)).toHaveBeenCalledTimes(1);
+  });
+
   it('se désabonne au démontage', async () => {
     const room = fakeRoom({});
     const app = captureListener();

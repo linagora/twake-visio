@@ -186,6 +186,57 @@ qu'on la réintroduit.
 Le compromis n'est pas symétrique : une reprise inutile coûte une seconde de coupure, une
 reprise manquée coûte la caméra pour le reste de la séance.
 
+## iOS : ce qui s'aligne, ce qui ne peut pas, et ce qui n'est pas mesuré
+
+**La moitié « absence » ne s'aligne pas, et ce n'est pas un manque de travail : iOS
+n'autorise pas la capture caméra en arrière-plan.** Il n'existe aucun équivalent du service
+de premier plan pour la vidéo. Le mieux atteignable est donc : l'audio continue, la vidéo
+s'arrête, et la caméra est reprise au retour. `UIBackgroundModes: ["audio"]` est ajouté pour
+la première partie.
+
+`voip` n'est **pas** déclaré : il est réservé aux applications qui reçoivent des pousses
+PushKit, et le déclarer sans s'en servir expose à un refus de l'App Store.
+
+**La moitié « retour » compte donc DOUBLE sur iOS**, puisque c'est la seule qui existe.
+
+### Le défaut iOS trouvé en relisant le crochet
+
+`useInterruptionRecovery` marquait une interruption sur **tout** état qui n'était pas
+`'active'`. Or `'inactive'` n'est émis que par iOS, et pour des interactions passagères :
+centre de contrôle, volet de notifications, aperçu du sélecteur d'applications, bandeau
+d'appel entrant. Aucune ne retire la capture.
+
+La reprise étant inconditionnelle — voir le bloc encadré de `src/call/interruption.ts` —
+chacune de ces interactions aurait coupé la caméra une seconde au retour. Le crochet ne
+retient plus que `'background'` ; iOS passant par `'inactive'` **avant** `'background'`,
+rien n'est manqué.
+
+Vérifié sur Android : le cycle arrière-plan → retour déclenche toujours la reprise, paire
+`DISCONNECT`/`CONNECT` portant notre pid, les deux tuiles vivantes.
+
+### Le reste se referme tout seul, par construction
+
+Les deux modules natifs déclarent `"platforms": ["android"]`, donc
+`requireOptionalNativeModule` rend `null` sur iOS et chaque chemin se referme sans bruit :
+`startCallService` sort, `watchPreferredDevice` rend une fonction inerte,
+`routeToPreferredDevice` rend `false` sur une liste vide. `ensureNotificationPermission` est
+déjà gardée par `Platform.OS !== 'android'`.
+
+Le routage audio n'a rien à aligner : `audioRouteControl()` rend `'system'` sur iOS, la
+route passe par AVAudioSession, qui bascule seul vers un casque Bluetooth.
+
+### RIEN DE TOUT CELA N'EST MESURÉ SUR IOS
+
+Il n'y a pas d'appareil iOS ici, et `AGENTS.md` consigne que **le simulateur ne publie ni
+caméra ni micro**. Ce qui précède est donc : une correction dictée par la sémantique
+documentée d'`AppState`, une entrée de configuration, et une lecture des gardes de
+plateforme. Les trois se tiennent, aucune n'a été observée à l'exécution sur iOS.
+
+**À mesurer sur un appareil, dans cet ordre :** ouvrir le centre de contrôle en séance et
+vérifier que la caméra ne se coupe PAS ; passer en arrière-plan et vérifier que l'audio
+continue et que la vidéo reprend au retour ; recevoir un appel téléphonique pendant une
+séance.
+
 ## Ce qui reste ouvert
 
 **La sortie audio ne suit pas le casque.** Mesuré trois fois, dans trois états : casque

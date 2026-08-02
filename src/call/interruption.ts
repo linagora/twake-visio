@@ -114,10 +114,21 @@ export function useInterruptionRecovery(room: Room): void {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (status: AppStateStatus): void => {
-      if (status !== 'active') {
+      // `'background'` SEULEMENT, et non « tout ce qui n'est pas actif ».
+      //
+      // iOS émet aussi `'inactive'` — Android non — et il le fait pour des
+      // interactions passagères : centre de contrôle, volet de notifications,
+      // aperçu du sélecteur d'applications, bandeau d'appel entrant. Aucune ne
+      // retire la capture. Les traiter comme une interruption couperait la
+      // caméra une seconde à chaque glissement du centre de contrôle.
+      //
+      // iOS passe par `'inactive'` AVANT `'background'` : l'ignorer ne fait
+      // donc rien manquer, l'arrière-plan qui suit est bien vu.
+      if (status === 'background') {
         interrupted.current = true;
         return;
       }
+      if (status !== 'active') return;
       // Sans cette garde, un `active` reçu alors qu'on n'a jamais quitté
       // l'avant-plan recapturerait pour rien, et la capture se couperait
       // brièvement à chaque fois.

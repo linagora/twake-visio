@@ -48,7 +48,8 @@
       "bundleIdentifier": "com.linagora.twakevisio",
       "infoPlist": {
         "NSCameraUsageDescription": "Twake Visio utilise la caméra pour la visioconférence.",
-        "NSMicrophoneUsageDescription": "Twake Visio utilise le micro pour la visioconférence."
+        "NSMicrophoneUsageDescription": "Twake Visio utilise le micro pour la visioconférence.",
+        "UIBackgroundModes": ["audio"]
       }
     }
   }
