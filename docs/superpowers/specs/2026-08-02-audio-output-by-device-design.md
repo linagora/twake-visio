@@ -517,6 +517,34 @@ combler ici, pour trois raisons mesurées :
 
 ---
 
+## Mesuré en voiture le 2026-08-02 : la bascule automatique fonctionne
+
+La mesure que ce document portait comme le point non établi qui conditionnait tout le reste
+a été faite, sur un build **release** installé sur le Pixel — donc sans Metro, sans câble et
+sans sonde, dans les conditions réelles.
+
+**Résultat : le propriétaire s'est connecté depuis la voiture et la bascule s'est faite
+toute seule.** Aucun geste, aucune ouverture de la feuille de sortie audio.
+
+Ce que cela établit :
+
+- La reprise du volant à AudioSwitch — `setCommunicationDevice` et compagnie — **n'a pas
+  cassé la bascule automatique**. C'était le risque principal du périmètre complet, et le
+  seul qu'aucun test ne pouvait approcher.
+- Le son n'a pas oscillé entre deux routes, donc rien n'indique le symptôme des « deux
+  pilotes sur le même canal » que la décision faisait courir.
+- Le module natif, jusqu'ici **compilé, lié et jamais exécuté**, s'exécute et fait ce qu'on
+  attend de lui.
+
+Ce que cela n'établit **pas**, et qui reste ouvert :
+
+- Ce que la feuille affichait à ce moment-là — un nom, deux noms, ou une catégorie. C'est
+  la seconde moitié du besoin d'origine (« je ne sais pas lequel il va prendre »), et elle
+  n'est toujours pas constatée avec **deux** appareils Bluetooth connectés en même temps.
+- Le retour : est-ce que le son revient au casque en quittant la voiture ?
+- Le cas où un choix manuel a été fait AVANT de monter, qui désarme la bascule pour le
+  reste de la séance.
+
 ## Ce que je n'ai pas pu établir
 
 - **Le comportement quand deux appareils Bluetooth sont connectés en même temps** — c'est-à-dire
