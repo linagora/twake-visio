@@ -13,6 +13,8 @@ import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
+import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
+import { EffectsSheet } from 'src/screens/room/effectsSheet';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
@@ -136,6 +138,17 @@ export function PrejoinScreen(): React.ReactElement {
   // après le démontage.
   const previewUrl = useCameraPreview(!cameraOff);
 
+  // L'effet choisi AVANT d'entrer. Il est appliqué au natif dès la sélection,
+  // donc l'aperçu au-dessus le montre — c'est le seul aperçu qui vaille, les
+  // vignettes du panneau ne sont que des numéros.
+  const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
+  const [effectsOpen, setEffectsOpen] = useState(false);
+
+  const handleEffectSelect = (next: BackgroundEffect): void => {
+    setEffect(next);
+    applyEffect(next);
+  };
+
   useEffect(() => {
     const account = getActiveAccount();
     if (account === null || slug === undefined) return;
@@ -249,6 +262,20 @@ export function PrejoinScreen(): React.ReactElement {
         )}
 
         <View style={styles.bar}>
+          {/* Masqué là où le natif n'existe pas — iOS attend son pendant
+              Vision. Une commande qu'on ne peut pas honorer coûte plus cher que
+              son absence. */}
+          {areEffectsSupported() ? (
+            <Pressable
+              accessibilityLabel={t('effects.open')}
+              accessibilityRole="button"
+              onPress={() => setEffectsOpen(true)}
+              style={styles.control}
+              testID="prejoin-effects-btn"
+            >
+              <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityLabel={t('call.muted')}
             accessibilityRole="switch"
@@ -279,6 +306,14 @@ export function PrejoinScreen(): React.ReactElement {
           </Pressable>
         </View>
       </View>
+
+      <EffectsSheet
+        current={effect}
+        onEffectSelect={handleEffectSelect}
+        onSheetDismiss={() => setEffectsOpen(false)}
+        testID="prejoin-effects"
+        visible={effectsOpen}
+      />
 
       <View style={styles.footer}>
         <View style={styles.nameCard}>

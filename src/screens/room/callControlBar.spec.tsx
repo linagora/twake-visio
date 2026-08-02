@@ -73,6 +73,7 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       onToggleHand={jest.fn()}
       onSendReaction={jest.fn()}
       onOpenChat={jest.fn()}
+      onOpenEffects={null}
       onLeave={jest.fn()}
     />,
   );

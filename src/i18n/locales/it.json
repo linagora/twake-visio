@@ -169,5 +169,9 @@
   "prejoin.yourName": "Il tuo nome",
   "prejoin.back": "Indietro",
   "prejoin.cameraPreview": "Anteprima fotocamera",
-  "common.back": "Indietro"
+  "common.back": "Indietro",
+  "effects.title": "Sfondo",
+  "effects.none": "Nessuno",
+  "effects.blur": "Sfocatura",
+  "effects.open": "Effetti di sfondo"
 }

@@ -20,11 +20,8 @@ import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
-import {
-  createSyntheticTrack,
-  isSyntheticTrackSupported,
-  publishSyntheticTrack,
-} from 'src/call/syntheticTrack';
+import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
+import { EffectsSheet } from 'src/screens/room/effectsSheet';
 import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
@@ -597,33 +594,16 @@ export function CallScreen(): React.ReactElement {
 
   const connected = callState.status === 'connected';
 
-  // TEMPORAIRE — quatrième maillon de l'étape 3 : la PUBLICATION. À RETIRER.
-  //
-  // Ce que ce test prouve : LiveKit accepte une piste que nous avons
-  // fabriquée, la négocie et crée un émetteur. Ce qu'il NE prouve PAS : qu'un
-  // pair reçoive les pixels — cela demande un second participant.
-  //
-  // Le compte des publications est lu APRÈS l'appel, et c'est le point : une
-  // promesse résolue ne dit pas qu'une piste a été retenue.
-  useEffect(() => {
-    if (!connected || !isSyntheticTrackSupported()) return;
-    let cancelled = false;
-    createSyntheticTrack(640, 480, 30)
-      .then(async (track) => {
-        if (cancelled || track === null) return;
-        const room = session.getRoom();
-        const before = room.localParticipant.videoTrackPublications.size;
-        await publishSyntheticTrack(room, track);
-        const after = room.localParticipant.videoTrackPublications.size;
-        console.warn('[etape3-pub] publications', before, '->', after, 'piste', track.id);
-      })
-      .catch((error: unknown) => {
-        console.warn('[etape3-pub] ECHEC', String(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connected, session]);
+  // L'effet d'arrière-plan, réglable EN SÉANCE. `applyEffect` ne touche pas à
+  // la piste : le décorateur natif change de mode, donc aucune renégociation
+  // avec le serveur et aucune coupure chez les autres participants.
+  const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
+  const [effectsOpen, setEffectsOpen] = useState(false);
+
+  const handleEffectSelect = (next: BackgroundEffect): void => {
+    setEffect(next);
+    applyEffect(next);
+  };
 
   useEffect(() => {
     if (!connected) return;
@@ -1189,6 +1169,7 @@ export function CallScreen(): React.ReactElement {
         onToggleHand={handleToggleHand}
         onSendReaction={handleSendReaction}
         onOpenChat={handleOpenChat}
+        onOpenEffects={areEffectsSupported() ? () => setEffectsOpen(true) : null}
         onLeave={handleLeave}
       />
 
@@ -1213,6 +1194,16 @@ export function CallScreen(): React.ReactElement {
           seul `visible` bascule. Une seule case pour cinq actions — modération
           et changement de caméra — qui ne partent qu'un geste à la fois. Deux
           Snackbars se superposeraient au même endroit de l'écran. */}
+      {areEffectsSupported() ? (
+        <EffectsSheet
+          current={effect}
+          onEffectSelect={handleEffectSelect}
+          onSheetDismiss={() => setEffectsOpen(false)}
+          testID="call-effects"
+          visible={effectsOpen}
+        />
+      ) : null}
+
       <Snackbar testID="call-notice" visible={notice !== null} onDismiss={() => setNotice(null)}>
         {notice !== null ? t(notice.key) : ''}
       </Snackbar>

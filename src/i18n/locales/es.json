@@ -169,5 +169,9 @@
   "prejoin.yourName": "Su nombre",
   "prejoin.back": "Volver",
   "prejoin.cameraPreview": "Vista previa de la cámara",
-  "common.back": "Volver"
+  "common.back": "Volver",
+  "effects.title": "Fondo",
+  "effects.none": "Ninguno",
+  "effects.blur": "Desenfoque",
+  "effects.open": "Efectos de fondo"
 }

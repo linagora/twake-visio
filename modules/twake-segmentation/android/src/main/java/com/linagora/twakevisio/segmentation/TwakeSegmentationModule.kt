@@ -1,6 +1,7 @@
 package com.linagora.twakevisio.segmentation
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -16,12 +17,16 @@ import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import com.facebook.react.bridge.ReactApplicationContext
 import com.google.android.gms.tasks.Tasks
 import com.oney.WebRTCModule.WebRTCModule
+import org.webrtc.Camera2Enumerator
 import org.webrtc.VideoTrack
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "TwakeSegBench"
+
+// Les huit fonds de la DINUM, embarqués dans le module.
+private const val BACKGROUND_COUNT = 8
 
 /**
  * MESURE, et rien d'autre. Ce module ne participe à aucune fonctionnalité : il
@@ -58,6 +63,92 @@ class TwakeSegmentationModule : Module() {
     AsyncFunction("createSyntheticTrack") { width: Int, height: Int, fps: Int ->
       createSyntheticTrack(width, height, fps)
     }
+
+    // ÉTAPE 4 : la caméra RÉELLE, avec l'effet interposé.
+    AsyncFunction("createCameraTrack") { width: Int, height: Int, fps: Int, facingMode: String ->
+      createCameraTrack(width, height, fps, facingMode)
+    }
+
+    // Bascule l'effet SANS toucher à la piste. C'est ce qui permet de changer
+    // d'avis en pleine séance sans renégocier avec le serveur.
+    Function("setEffect") { kind: String, backgroundIndex: Int ->
+      processor.setEffect(
+        when (kind) {
+          "blur" -> BackgroundEffect.Blur
+          "image" -> loadBackground(backgroundIndex)?.let { BackgroundEffect.Image(it) }
+            ?: BackgroundEffect.None
+          else -> BackgroundEffect.None
+        },
+      )
+    }
+
+    // Le nombre de fonds embarqués. Rendu par le natif plutôt que codé en dur
+    // côté JavaScript : deux listes à tenir d'accord seraient une de trop, et
+    // c'est le natif qui porte les fichiers.
+    Function("backgroundCount") { BACKGROUND_COUNT }
+  }
+
+  // UN seul processeur pour toute la vie du module : il porte le segmenteur
+  // MLKit, dont la création coûte le chargement du modèle. En fabriquer un par
+  // piste rendrait chaque changement de caméra aussi cher qu'un démarrage.
+  private val processor = EffectFrameProcessor()
+
+  // Les fonds décodés sont GARDÉS : décoder un JPEG par changement d'effet
+  // serait payé à chaque bascule, et il y en a huit.
+  private val backgrounds = mutableMapOf<Int, Bitmap>()
+
+  /**
+   * Charge un fond depuis les ressources du module.
+   *
+   * Ils vivent dans `assets/` du module natif, pas dans le bundle JavaScript :
+   * les faire traverser le pont demanderait de résoudre une URI d'asset Expo,
+   * de la lire en base64 et de la redécoder — trois étapes pour un fichier que
+   * l'APK contient déjà.
+   */
+  private fun loadBackground(index: Int): Bitmap? {
+    backgrounds[index]?.let { return it }
+    val context = appContext.reactContext ?: return null
+    return try {
+      context.assets.open("backgrounds/$index.jpg").use { stream ->
+        BitmapFactory.decodeStream(stream)?.also { backgrounds[index] = it }
+      }
+    } catch (error: Exception) {
+      Log.w(TAG, "fond $index illisible", error)
+      null
+    }
+  }
+
+  private fun createCameraTrack(
+    width: Int,
+    height: Int,
+    fps: Int,
+    facingMode: String,
+  ): Map<String, Any> {
+    val reactContext = appContext.reactContext as? ReactApplicationContext
+      ?: throw IllegalStateException("Aucun contexte React")
+    val webRTCModule = reactContext.getNativeModule(WebRTCModule::class.java)
+      ?: throw IllegalStateException("WebRTCModule introuvable")
+
+    val controller = EffectCaptureController(
+      reactContext,
+      Camera2Enumerator(reactContext),
+      EffectCaptureController.constraintsOf(width, height, fps, facingMode),
+      processor,
+    )
+    val track: VideoTrack = webRTCModule.createVideoTrack(controller)
+      ?: throw IllegalStateException("createVideoTrack a rendu null")
+
+    Log.i(TAG, "piste caméra avec effet : ${track.id()} (${width}x$height @ $fps, $facingMode)")
+
+    return mapOf(
+      "id" to track.id(),
+      "kind" to "video",
+      "enabled" to true,
+      "readyState" to "live",
+      "remote" to false,
+      "peerConnectionId" to -1,
+      "deviceId" to (controller.deviceId ?: "camera"),
+    )
   }
 
   /**

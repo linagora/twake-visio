@@ -124,6 +124,8 @@ export type CallControlBarProps = {
   readonly onToggleHand: () => void;
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
+  // Traversée jusqu'à `MoreMenu`, qui porte l'entrée. `null` = pas de natif.
+  readonly onOpenEffects: (() => void) | null;
 
   readonly onLeave: () => void;
 };
@@ -155,6 +157,7 @@ export function CallControlBar({
   onToggleHand,
   onSendReaction,
   onOpenChat,
+  onOpenEffects,
   onLeave,
 }: CallControlBarProps): React.ReactElement | null {
   const { t } = useTranslation();
@@ -423,6 +426,7 @@ export function CallControlBar({
         onToggleHand={onToggleHand}
         onSendReaction={onSendReaction}
         onOpenChat={onOpenChat}
+        onOpenEffects={onOpenEffects}
       />
       <IconButton
         testID="leave-btn"

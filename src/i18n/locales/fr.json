@@ -169,5 +169,9 @@
   "prejoin.yourName": "Votre nom",
   "prejoin.back": "Retour",
   "prejoin.cameraPreview": "Aperçu caméra",
-  "common.back": "Retour"
+  "common.back": "Retour",
+  "effects.title": "Arrière-plan",
+  "effects.none": "Aucun",
+  "effects.blur": "Flou",
+  "effects.open": "Effets d'arrière-plan"
 }

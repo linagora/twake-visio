@@ -169,5 +169,9 @@
   "prejoin.yourName": "Your name",
   "prejoin.back": "Back",
   "prejoin.cameraPreview": "Camera preview",
-  "common.back": "Back"
+  "common.back": "Back",
+  "effects.title": "Background",
+  "effects.none": "None",
+  "effects.blur": "Blur",
+  "effects.open": "Background effects"
 }
