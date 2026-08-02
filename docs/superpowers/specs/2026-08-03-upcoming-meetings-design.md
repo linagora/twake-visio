@@ -48,11 +48,48 @@ C'est délibérément un signal observé et non déclaré, faute de mieux : le c
 `src/call/agenda.ts` n'est donc **pas** le garde-fou de ce panneau, et reçoit un commentaire
 qui le dit — sans quoi le prochain lecteur croira que c'est lui qui décide.
 
+## Le jeton : rien à reproduire, tout à réutiliser
+
+Mesuré le 2026-08-03. `GET meet.<domaine>/api/v1.0/authenticate/` rend un 302 vers :
+
+```
+https://auth.<domaine>/oauth2/authorize?response_type=code
+  &scope=openid+email+profile&client_id=livekit-meet
+  &code_challenge_method=S256
+```
+
+C'est **le même serveur d'autorisation que le widget**, le même flux et les mêmes scopes.
+Seul le client diffère.
+
+| | widget | application |
+| --- | --- | --- |
+| émetteur | `https://auth.<domaine>` | le même |
+| flux | `authorization_code` + PKCE, client public | le même |
+| scopes | `openid profile email` | les mêmes |
+| client | `visio-widget` | `livekit-meet`, lu dans la redirection par `resolveOidcFromRedirect` |
+| obtention | iframe caché, `prompt=none`, jeton en `localStorage` | navigateur d'authentification, jeton déjà détenu |
+
+**L'iframe et le `prompt=none` n'ont pas d'équivalent mobile, et n'en ont pas besoin.** Ils
+n'existent que parce qu'une page web ne peut pas afficher d'écran de connexion. L'application
+a une session interactive réelle et détient déjà un jeton de cet émetteur : reproduire
+l'authentification du widget, ici, veut dire **réutiliser ce jeton**.
+
+Ce qu'on reproduit fidèlement, en revanche, c'est le traitement du `401` : le widget vide son
+cache et réessaie une fois. Côté mobile, un `401` ferme le panneau — voir plus bas.
+
 ## Ce qui n'est PAS vérifié, et qu'il faudra mesurer ensemble
 
-**Le side-service n'accepte pas encore le jeton meet.** Il répond `401` aujourd'hui et rien
-ne peut être testé de bout en bout sans un jeton valide. Le chemin complet est construit,
-mais la première mesure réelle demande une session.
+**L'audience du jeton.** Le side-service accepte-t-il un jeton frappé pour `livekit-meet` ?
+S'il introspecte auprès de LemonLDAP sans regarder le client, oui, et il n'y a rien à faire.
+S'il vérifie l'audience, non — et il faudra soit qu'il accepte `livekit-meet`, soit
+enregistrer le redirect `twakevisio://` sur le client `visio-widget`, LemonLDAP acceptant
+plusieurs URI par client.
+
+Cela ne se tranche pas sans une session : le service répond `401` à tout appel anonyme, et
+aucun jeton valide n'est disponible depuis ici. Une seule commande le dira, jeton en main.
+
+Le chemin complet est donc construit, mais la première mesure de bout en bout demande une
+session.
 
 Conséquence de conception, pas de confort : un `401` n'est pas une erreur à afficher, c'est
 l'état « pas de calendrier ici ». Le panneau disparaît, l'accueil reste utilisable.
