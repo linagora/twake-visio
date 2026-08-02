@@ -293,8 +293,13 @@ export function CallControlBar({
         mode={routeControl}
         outputs={outputs}
         chosen={chosenOutput}
+        devices={[]}
+        currentDeviceId={null}
+        manual={chosenOutput !== null}
         onOpen={handleOpenAudioOutput}
         onSelect={handleSelectAudioOutput}
+        onSelectDevice={() => undefined}
+        onAutomatic={() => undefined}
         onSystemPicker={handleOpenSystemRoutePicker}
       />
       {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en

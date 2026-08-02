@@ -3,11 +3,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
+import type { AudioDeviceChoice } from 'src/call/audioDevices';
 import { tokens } from 'src/ui/tokens';
-import { AudioOutputControl } from './audioOutputControl';
+import { AudioOutputControl, type AudioOutputControlProps } from './audioOutputControl';
+
+// `t: (key) => key` ignore son second argument : il ne peut donc pas distinguer
+// `t('call.outputNumbered', { name, index })` de la même clé appelée avec
+// n'importe quoi d'autre. `mockT` interpole réellement, comme
+// `cameraMenu.spec.tsx` et `waitingBanner.spec.tsx` pour la même raison.
+const mockT = jest.fn((key: string, options?: { name?: string; index?: number }) =>
+  options !== undefined ? `${key}:${options.name}:${options.index}` : key,
+);
 
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: mockT }),
 }));
 
 // `BottomSheet` monte sa feuille dans un `Portal`, et `Modal` (react-native-paper)
@@ -15,8 +24,7 @@ jest.mock('react-i18next', () => ({
 // `SafeAreaProviderCompat`, que `PaperProvider` pose toujours, retombe déjà sur
 // des insets à zéro quand aucun fournisseur natif n'a répondu, ce qui couvre les
 // environnements de test. Gardé pour documenter l'intention plutôt que de
-// compter sur ce repli interne d'une bibliothèque tierce, comme dans
-// `cameraMenu.spec.tsx`.
+// compter sur ce repli interne d'une bibliothèque tierce.
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -38,94 +46,91 @@ function codepointFor(glyph: number | string): string {
 }
 const CHECK_GLYPH = codepointFor(MaterialCommunityIcons.glyphMap.check);
 
+const TESLA: AudioDeviceChoice = {
+  id: 7,
+  kind: 'bluetooth',
+  name: 'Tesla Model 3',
+  nameKey: 'call.output.bluetooth',
+  ordinal: null,
+};
+
+const SPEAKER: AudioDeviceChoice = {
+  id: 2,
+  kind: 'speaker',
+  name: null,
+  nameKey: 'call.output.speaker',
+  ordinal: null,
+};
+
+function props(overrides: Partial<AudioOutputControlProps> = {}): AudioOutputControlProps {
+  return {
+    mode: 'devices',
+    outputs: [],
+    chosen: null,
+    devices: [TESLA, SPEAKER],
+    currentDeviceId: null,
+    manual: false,
+    onOpen: jest.fn(),
+    onSelect: jest.fn(),
+    onSelectDevice: jest.fn(),
+    onAutomatic: jest.fn(),
+    onSystemPicker: jest.fn(),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  mockT.mockClear();
+});
+
 describe('AudioOutputControl, mode système', () => {
-  it('ouvre le sélecteur de la plateforme sans monter de menu', async () => {
+  it('ouvre le sélecteur de la plateforme sans monter de feuille', async () => {
     // Sur iOS, `getAudioOutputs()` est une constante à deux entrées qui ne sont
-    // pas des catégories : il n'y a rien à lire et rien à peupler.
+    // pas des catégories : il n'y a rien à lire et rien à peupler. Le module
+    // natif de ce lot est Android seulement, et rien ici ne le change.
     const onSystemPicker = jest.fn();
     const onOpen = jest.fn();
 
     await render(
-      withPaper(
-        <AudioOutputControl
-          mode="system"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={onOpen}
-          onSelect={jest.fn()}
-          onSystemPicker={onSystemPicker}
-        />,
-      ),
+      withPaper(<AudioOutputControl {...props({ mode: 'system', onSystemPicker, onOpen })} />),
     );
 
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     expect(onSystemPicker).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
+    expect(screen.queryByTestId('audio-output-device-7')).toBeNull();
     expect(screen.queryByTestId('audio-output-note')).toBeNull();
   });
 });
 
-describe('AudioOutputControl, mode menu', () => {
-  it("demande une relecture à l'ouverture, jamais au montage", async () => {
-    const onOpen = jest.fn();
-
+describe('AudioOutputControl, mode catégories', () => {
+  it('rend une ligne par catégorie, jamais une ligne par appareil', async () => {
+    // L'autre polarité du choix de liste : sous le plancher API 31 le module
+    // natif est absent et la feuille retombe EXACTEMENT sur ce qu'elle
+    // affichait avant ce lot.
     await render(
       withPaper(
         <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={onOpen}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
-    expect(onOpen).not.toHaveBeenCalled();
-
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
-
-    expect(onOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it("n'ouvre pas le sélecteur système en mode menu", async () => {
-    // L'autre borne du mode : sans elle, un composant qui appellerait les deux
-    // rappels passerait le test du mode système.
-    const onSystemPicker = jest.fn();
-
-    await render(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={onSystemPicker}
+          {...props({ mode: 'menu', outputs: ['bluetooth', 'speaker'], devices: [TESLA, SPEAKER] })}
         />,
       ),
     );
 
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
 
-    expect(onSystemPicker).not.toHaveBeenCalled();
+    expect(screen.getByTestId('audio-output-option-bluetooth')).toBeTruthy();
+    expect(screen.queryByTestId('audio-output-device-7')).toBeNull();
   });
 
-  it('envoie la catégorie pressée, pas la première de la liste', async () => {
-    // Deux catégories, jamais une seule, et la seconde visée.
+  it('envoie la catégorie pressée, pas la première de la liste, et referme', async () => {
     const onSelect = jest.fn();
 
     await render(
       withPaper(
         <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={onSelect}
-          onSystemPicker={jest.fn()}
+          {...props({ mode: 'menu', outputs: ['bluetooth', 'speaker'], onSelect })}
         />,
       ),
     );
@@ -136,106 +141,161 @@ describe('AudioOutputControl, mode menu', () => {
 
     expect(onSelect).toHaveBeenCalledWith('speaker');
     expect(onSelect).not.toHaveBeenCalledWith('bluetooth');
-  });
-
-  // Trouvé manquant par mutation (même trou que la tâche 3 sur
-  // `cameraMenu.tsx`) : retirer `setVisible(false)` du gestionnaire d'appui ne
-  // faisait rougir aucun des neuf tests ci-dessus, alors qu'un `onPress` sans
-  // lui laisserait la feuille ouverte après un choix. `Modal` ne démonte
-  // qu'après sa propre animation de fermeture asynchrone (`hideModalAnimation`,
-  // `Modal.tsx:131-144` : le callback de fin de `Animated.timing` retarde
-  // `setVisibleInternal(false)`), d'où le `waitFor` plutôt qu'une assertion
-  // synchrone.
-  it('referme la feuille après un choix', async () => {
-    await render(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
-    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
-
-    await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
-
     await waitFor(() => expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull());
   });
 
-  it('coche ce que nous avons demandé, et rien avant un choix', async () => {
-    // La coche marque notre propre choix, jamais l'état du système : aucune
-    // API ne dit d'où sort le son.
-    const view = await render(
+  it("coche la catégorie demandée, faute d'état constaté sur ce chemin", async () => {
+    await render(
       withPaper(
         <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
+          {...props({ mode: 'menu', outputs: ['bluetooth', 'speaker'], chosen: 'speaker' })}
         />,
       ),
     );
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
-    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
-    expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
-    expect(screen.queryByTestId('audio-output-check-speaker')).toBeNull();
 
-    await view.rerender(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen="speaker"
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     await waitFor(() => expect(screen.getByTestId('audio-output-check-speaker')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
   });
 
-  it("change la ligne d'explication après un choix", async () => {
-    // C'est la seule occasion qu'a l'utilisateur d'apprendre qu'il vient de
-    // désarmer la bascule automatique pour le reste de la séance.
-    const view = await render(
+  it("n'offre PAS le retour à l'automatique, même après un choix manuel", async () => {
+    // La seconde polarité de `mode === 'devices' && manual` : AudioSwitch ne
+    // sait pas revenir en automatique — `setUserSelectedAudioDevice` y est
+    // `protected` —, donc offrir la commande sur ce chemin serait un bouton
+    // qui ne fait rien.
+    await render(
       withPaper(
         <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
+          {...props({ mode: 'menu', outputs: ['speaker'], chosen: 'speaker', manual: true })}
         />,
       ),
     );
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
+
+    expect(screen.queryByTestId('audio-output-automatic')).toBeNull();
+  });
+});
+
+describe('AudioOutputControl, mode appareils', () => {
+  it("demande une relecture à l'ouverture, jamais au montage", async () => {
+    const onOpen = jest.fn();
+
+    await render(withPaper(<AudioOutputControl {...props({ onOpen })} />));
+    expect(onOpen).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'ouvre pas le sélecteur système", async () => {
+    // L'autre borne du mode : sans elle, un composant qui appellerait les deux
+    // rappels passerait le test du mode système.
+    const onSystemPicker = jest.fn();
+
+    await render(withPaper(<AudioOutputControl {...props({ onSystemPicker })} />));
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    expect(onSystemPicker).not.toHaveBeenCalled();
+  });
+
+  it("affiche le nom lu de l'appareil, et la catégorie quand il n'y en a pas", async () => {
+    // Les deux polarités de `device.name ?? t(nameKey)`. Sans la seconde, un
+    // composant qui afficherait toujours `name` rendrait une ligne vide pour
+    // le haut-parleur intégré.
+    await render(withPaper(<AudioOutputControl {...props()} />));
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    expect(screen.getByTestId('audio-output-device-7-title')).toHaveTextContent('Tesla Model 3');
+    expect(screen.getByTestId('audio-output-device-2-title')).toHaveTextContent(
+      'call.output.speaker',
+    );
+  });
+
+  it("numérote quand l'appareil porte un ordinal, jamais sinon", async () => {
+    // Les deux polarités de `device.ordinal === null`, et `mockT` interpole
+    // réellement : un composant qui passerait l'identifiant à la place du nom
+    // rendrait « call.outputNumbered:7:1 » et ce test rougirait.
+    await render(
+      withPaper(
+        <AudioOutputControl
+          {...props({
+            devices: [{ ...TESLA, name: 'Jabra Evolve2', ordinal: 2 }, SPEAKER],
+          })}
+        />,
+      ),
+    );
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    expect(screen.getByTestId('audio-output-device-7-title')).toHaveTextContent(
+      'call.outputNumbered:Jabra Evolve2:2',
+    );
+    expect(screen.getByTestId('audio-output-device-2-title')).toHaveTextContent(
+      'call.output.speaker',
+    );
+  });
+
+  it("coche l'appareil CONSTATÉ, pas celui qu'on a demandé", async () => {
+    // C'est le gain que le module natif apporte et que le périmètre A ne
+    // pouvait pas avoir : `getCommunicationDevice()` dit où le son part
+    // vraiment. Les deux polarités, sur deux appareils distincts.
+    const view = await render(withPaper(<AudioOutputControl {...props()} />));
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-7')).toBeNull();
+    expect(screen.queryByTestId('audio-output-check-2')).toBeNull();
+
+    await view.rerender(withPaper(<AudioOutputControl {...props({ currentDeviceId: 7 })} />));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-check-7')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-2')).toBeNull();
+  });
+
+  it("envoie l'appareil pressé, pas le premier de la liste", async () => {
+    // Deux appareils, jamais un seul, et le second visé.
+    const onSelectDevice = jest.fn();
+
+    await render(withPaper(<AudioOutputControl {...props({ onSelectDevice })} />));
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-device-2'));
+
+    expect(onSelectDevice).toHaveBeenCalledWith(SPEAKER);
+    expect(onSelectDevice).not.toHaveBeenCalledWith(TESLA);
+  });
+
+  it('referme la feuille après un choix', async () => {
+    // La SECONDE instruction du même gestionnaire. `Modal` ne démonte qu'après
+    // sa propre animation de fermeture asynchrone (`hideModalAnimation`,
+    // `Modal.tsx:131-144`), d'où le `waitFor`.
+    await render(withPaper(<AudioOutputControl {...props()} />));
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-device-2'));
+
+    await waitFor(() => expect(screen.queryByTestId('audio-output-device-2')).toBeNull());
+  });
+
+  it("change la ligne d'explication après un choix manuel", async () => {
+    // C'est la seule occasion qu'a l'utilisateur d'apprendre qu'il vient de
+    // désarmer la bascule automatique.
+    const view = await render(withPaper(<AudioOutputControl {...props()} />));
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
     await waitFor(() =>
       expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
     );
 
-    await view.rerender(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen="speaker"
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
+    await view.rerender(withPaper(<AudioOutputControl {...props({ manual: true })} />));
 
     await waitFor(() =>
       expect(screen.getByTestId('audio-output-note')).toHaveTextContent(
@@ -244,94 +304,81 @@ describe('AudioOutputControl, mode menu', () => {
     );
   });
 
+  it("n'offre le retour à l'automatique qu'une fois un choix manuel fait", async () => {
+    // Masquer une commande indisponible, jamais la griser : `disabled` ferait
+    // revenir le quasi-noir sur fond sombre que `IconButton/utils.ts:88-93`
+    // impose avant toute couleur explicite.
+    const view = await render(withPaper(<AudioOutputControl {...props()} />));
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-automatic')).toBeNull();
+
+    await view.rerender(withPaper(<AudioOutputControl {...props({ manual: true })} />));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
+  });
+
+  it("rend la route au système, et referme, quand on revient à l'automatique", async () => {
+    // Les DEUX instructions du gestionnaire, une assertion chacune.
+    const onAutomatic = jest.fn();
+
+    await render(withPaper(<AudioOutputControl {...props({ manual: true, onAutomatic })} />));
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-automatic'));
+
+    expect(onAutomatic).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('audio-output-automatic')).toBeNull());
+  });
+
   it("s'ouvre sur sa seule explication quand la liste est vide", async () => {
-    // Rien n'a échoué : `getAudioOutputs()` rend `[]` tant que la session audio
-    // n'est pas ouverte. Pas d'erreur à afficher.
-    await render(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={[]}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
+    // Rien n'a échoué : la liste est vide tant que la route n'est pas prise.
+    await render(withPaper(<AudioOutputControl {...props({ devices: [] })} />));
 
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
     await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
     // La couleur est explicite depuis `controlBar.ts`, d'autant plus utile que
-    // la surface d'un `Modal` est transparente par défaut (voir `Modal.tsx`,
+    // la surface d'un `Modal` est transparente par défaut (`Modal.tsx`,
     // `styles.content`).
     expect(screen.getByTestId('audio-output-note')).toHaveStyle({
       color: tokens.color.textDark,
     });
     // La feuille elle-même : `Modal` expose sa `Surface` sous
-    // `` `${testID}-surface` `` (`Modal.tsx:219-220`), et `BottomSheet` lui
-    // passe `sheetStyles.surface` par `contentContainerStyle`.
+    // `` `${testID}-surface` `` (`Modal.tsx:219-220`).
     expect(screen.getByTestId('audio-output-sheet-surface')).toHaveStyle({
       backgroundColor: tokens.color.surfaceDark,
     });
   });
 
-  // Même défaut que celui trouvé et corrigé en revue de la tâche 4
-  // (`cameraMenu.tsx`, commit 607f6f5, « Important 1 ») : un `leadingIcon`
-  // fonction qui rend un `View` vide n'affiche jamais rien, quelle que soit la
-  // couleur passée dans son style — `Icon.tsx` (react-native-paper) appelle
-  // `s({ color, size, direction, testID })`, mais rien n'oblige la fonction à
-  // lire cet argument, et un `View` sans fond ni contenu reste de toute façon
-  // invisible. RNTL ne rend pas les couleurs, donc ce test ne peut garder
-  // qu'un vrai glyphe est dessiné et qu'il porte une couleur explicite —
-  // jamais qu'il est lisible.
+  it('force une couleur explicite sur le titre de chaque ligne', async () => {
+    // Sans elle, Paper retombe sur `theme.colors.onSurface` — `textLight`
+    // (#1A1A1A) en schéma clair, le défaut de la plupart des appareils — sur un
+    // fond que `call.tsx` force sombre.
+    await render(withPaper(<AudioOutputControl {...props({ manual: true })} />));
+
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    expect(screen.getByTestId('audio-output-device-7-title')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+    expect(screen.getByTestId('audio-output-automatic-title')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+
   it('dessine un vrai glyphe pour la coche, jamais une boîte vide', async () => {
-    await render(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen="speaker"
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
+    // RNTL ne rend pas les couleurs : ce test ne peut garder qu'un vrai glyphe
+    // est dessiné et qu'il porte une couleur explicite — jamais qu'il est
+    // lisible.
+    await render(withPaper(<AudioOutputControl {...props({ currentDeviceId: 7 })} />));
     await fireEvent.press(screen.getByTestId('audio-output-btn'));
 
-    const check = await waitFor(() => screen.getByTestId('audio-output-check-speaker'));
+    const check = await waitFor(() => screen.getByTestId('audio-output-check-7'));
 
     expect(check.props.children[0]).toBe(CHECK_GLYPH);
     expect(check).toHaveStyle({ color: tokens.color.textDark });
-  });
-
-  // Aucun des tests ci-dessus ne lit le texte affiché par une ligne, seulement
-  // son testID et l'effet de sa pression (« envoie la catégorie pressée »).
-  // Un menu qui afficherait toujours le nom de la première sortie, ou celui de
-  // `chosen`, passerait donc les huit tests précédents sans broncher — le même
-  // angle mort qui a laissé passer un identifiant de caméra brut affiché à la
-  // place d'un nom en tâche 4 (Important 2), transposé au choix de la ligne
-  // plutôt qu'à l'interpolation d'un champ. Deux sorties distinctes, visées
-  // toutes les deux.
-  it('affiche le nom propre à chaque sortie, jamais un nom figé', async () => {
-    await render(
-      withPaper(
-        <AudioOutputControl
-          mode="menu"
-          outputs={['bluetooth', 'speaker']}
-          chosen={null}
-          onOpen={jest.fn()}
-          onSelect={jest.fn()}
-          onSystemPicker={jest.fn()}
-        />,
-      ),
-    );
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
-    await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
-
-    expect(screen.getByText('call.output.bluetooth')).toBeTruthy();
-    expect(screen.getByText('call.output.speaker')).toBeTruthy();
   });
 });
