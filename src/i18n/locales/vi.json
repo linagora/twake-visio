@@ -141,5 +141,8 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Đăng xuất",
-  "settings.version": "Twake Visio 1.0 · Máy chủ chủ quyền"
+  "settings.version": "Twake Visio 1.0 · Máy chủ chủ quyền",
+  "welcome.title": "Twake",
+  "welcome.titleAccent": "Visio",
+  "welcome.tagline": "Cuộc họp của bạn, mọi nơi,\nhoàn toàn an toàn."
 }

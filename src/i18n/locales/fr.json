@@ -141,5 +141,8 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Se déconnecter",
-  "settings.version": "Twake Visio 1.0 · Serveur souverain"
+  "settings.version": "Twake Visio 1.0 · Serveur souverain",
+  "welcome.title": "Twake",
+  "welcome.titleAccent": "Visio",
+  "welcome.tagline": "Vos réunions, partout,\nen toute sécurité."
 }
