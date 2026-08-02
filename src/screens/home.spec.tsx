@@ -172,16 +172,21 @@ describe('HomeScreen', () => {
   // pouvait pas peindre. Chaque racine les porte donc elle-même, ET la peint :
   // les deux assertions vont ensemble, un rembourrage sans fond ne peint rien.
   describe('les encoches', () => {
-    it('applique l’encart HAUT sur la racine, qui porte le fond', async () => {
+    // Sur l'EN-TÊTE et non sur la racine : les deux peignent, mais pas la même
+    // couleur. Posé sur la racine, le bandeau d'état prenait `appBackground`
+    // sous un en-tête `cardSurface` — une couture visible, constatée sur
+    // appareil. `+ 8` est le rembourrage propre de l'en-tête.
+    it('applique l’encart HAUT sur l’en-tête, qui borde ce bord', async () => {
       jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
       jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
       await renderHomeWithInsets();
 
-      expect(screen.getByTestId('home-screen')).toHaveStyle({
-        backgroundColor: tokens.color.appBackground,
-        paddingTop: 59,
+      expect(screen.getByTestId('home-header')).toHaveStyle({
+        backgroundColor: tokens.color.cardSurface,
+        paddingTop: 67,
       });
+      expect(screen.getByTestId('home-screen')).not.toHaveStyle({ paddingTop: 59 });
     });
 
     // LA garde de cet écran, et elle vaut plus que la précédente : l'encart bas

@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tokens } from 'src/ui/tokens';
 
@@ -27,8 +28,15 @@ type Props = {
 // doctrine d'`AGENTS.md` sur les règles écrites en commentaire, appliquée à
 // une règle qui venait justement d'en coûter trois.
 export function ScreenHeader({ title, backLabel, onBackPress, testID }: Props): React.ReactElement {
+  // L'encart HAUT est porté ICI, et non par la racine de l'écran. Les deux
+  // peignent, mais pas la même couleur : la racine porte `appBackground`, cet
+  // en-tête `cardSurface`. Posé sur la racine, le bandeau d'état prenait donc
+  // le gris de la page sous un en-tête blanc — une couture visible, constatée
+  // sur appareil. Le bord appartient à la surface qui le BORDE.
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.header} testID={testID}>
+    <View style={[styles.header, { paddingTop: insets.top + tokens.spacing.sm }]} testID={testID}>
       <Pressable
         accessibilityLabel={backLabel}
         accessibilityRole="button"

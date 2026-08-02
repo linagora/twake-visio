@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { TextInput } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchMyRooms } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
@@ -107,17 +106,11 @@ export function HomeScreen(): React.ReactElement {
 
   const visible = useMemo(() => filterRooms(rooms, query), [rooms, query]);
 
-  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
-  // rembourrage est peint par la vue qui le porte, donc la bande sous l'heure
-  // prend la couleur de l'écran au lieu du blanc de la vue système. C'était le
-  // défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
-  //
-  // `top` seulement : le bas appartient à la barre d'onglets, qui applique son
-  // propre encart et le peint de son fond. Les deux ensemble empilaient ~34 pt
-  // de vide sous les libellés.
-  const insets = useSafeAreaInsets();
+  // L'encart HAUT n'est PAS ici : il appartient à l'en-tête, seule surface qui
+  // borde ce bord et qui porte sa propre couleur. Posé sur cette racine, la
+  // bande d'état prenait le gris de la page sous un en-tête blanc.
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]} testID="home-screen">
+    <View style={styles.root} testID="home-screen">
       <AppHeader
         onAvatarPress={() => router.push('/reglages')}
         testID="home-header"

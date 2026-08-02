@@ -199,7 +199,11 @@ export function CreateRoomScreen(): React.ReactElement {
     router.replace(`/room/${result.value.slug}/prejoin`);
   };
 
-  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // L'encart HAUT n'est pas ici : il appartient à `ScreenHeader`, seule surface
+  // qui borde ce bord et qui porte sa propre couleur. Le BAS, lui, est bien
+  // ici — rien d'autre ne le borde.
+  //
+  // Les encoches sont appliquées sur la racine QUI PEINT LE FOND : un
   // rembourrage est peint par la vue qui le porte, donc les deux bandes
   // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
   // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
@@ -210,7 +214,7 @@ export function CreateRoomScreen(): React.ReactElement {
   // feuille.
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
       {/* `app/_layout.tsx` masque l'en-tête du Stack : sans cette flèche,
           l'écran est un cul-de-sac. Le retour est un `replace` vers l'accueil
           plutôt qu'un `back`, comme dans `prejoin.tsx` — il vaut quelle que

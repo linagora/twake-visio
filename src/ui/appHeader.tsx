@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { tokens } from 'src/ui/tokens';
@@ -23,8 +24,15 @@ type Props = {
 // écran pour redire le nom de l'application que le premier onglet affiche déjà
 // en titre.
 export function AppHeader({ title, userName, onAvatarPress, testID }: Props): React.ReactElement {
+  // L'encart HAUT est porté ICI, et non par la racine de l'écran. Les deux
+  // peignent, mais pas la même couleur : la racine porte `appBackground`, cet
+  // en-tête `cardSurface`. Posé sur la racine, le bandeau d'état prenait donc
+  // le gris de la page sous un en-tête blanc — une couture visible, constatée
+  // sur appareil. Le bord appartient à la surface qui le BORDE.
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.header} testID={testID}>
+    <View style={[styles.header, { paddingTop: insets.top + tokens.spacing.sm }]} testID={testID}>
       <Text numberOfLines={1} style={styles.title} testID={`${testID}-title`}>
         {title}
       </Text>

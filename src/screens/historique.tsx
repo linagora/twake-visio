@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { listVisits, type MeetingVisit } from 'src/rooms/journal';
@@ -79,17 +78,11 @@ export function HistoriqueScreen(): React.ReactElement {
   const searching = query.trim().length > 0;
   const account = getActiveAccount();
 
-  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
-  // rembourrage est peint par la vue qui le porte, donc la bande sous l'heure
-  // prend la couleur de l'écran au lieu du blanc de la vue système. C'était le
-  // défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
-  //
-  // `top` seulement : le bas appartient à la barre d'onglets, qui applique son
-  // propre encart et le peint de son fond. Les deux ensemble empilaient ~34 pt
-  // de vide sous les libellés.
-  const insets = useSafeAreaInsets();
+  // L'encart HAUT n'est PAS ici : il appartient à l'en-tête, seule surface qui
+  // borde ce bord et qui porte sa propre couleur. Posé sur cette racine, la
+  // bande d'état prenait le gris de la page sous un en-tête blanc.
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]} testID="historique-screen">
+    <View style={styles.root} testID="historique-screen">
       <AppHeader
         onAvatarPress={() => router.push('/reglages')}
         testID="history-header"
