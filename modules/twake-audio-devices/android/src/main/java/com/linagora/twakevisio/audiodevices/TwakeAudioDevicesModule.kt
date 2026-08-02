@@ -164,15 +164,10 @@ class TwakeAudioDevicesModule : Module() {
         val manager = audioManager
         previousMode = manager.mode
 
-        // LE FOCUS D'ABORD, LE MODE ENSUITE. L'ordre inverse compile, résout
-        // sans jeter, et ne fait RIEN : depuis Android 12 le système arbitre le
-        // mode audio entre applications et ne l'accorde qu'à celle qui détient
-        // le focus. Mesuré sur appareil — `acquire()` répondait « OK » pendant
-        // que `dumpsys audio` lisait `mode (internal) = NORMAL`, séance en
-        // cours. Et hors mode de communication, Android n'offre pas le
-        // Bluetooth SCO dans `availableCommunicationDevices` : le casque ne
-        // pouvait donc JAMAIS apparaître dans la feuille, quel que soit le
-        // nombre de relectures.
+        // Le focus d'abord, le mode ensuite — l'ordre recommandé par Android,
+        // gardé parce qu'il est juste, et non parce qu'il corrigerait quoi que
+        // ce soit : voir le relevé ci-dessous, le mode est accordé dans les
+        // deux ordres.
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -184,21 +179,28 @@ class TwakeAudioDevicesModule : Module() {
         focusRequest = request
         manager.requestAudioFocus(request)
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
-        // MESURÉ le 2026-08-02, et ce n'est pas ce qu'on croit : le focus est
-        // ACCORDÉ (`requestAudioFocus` rend 1) et `manager.mode` vaut bien 3
-        // — MODE_IN_COMMUNICATION — juste après, comme six secondes plus tard.
-        // Rien ne défait ce réglage.
+        // MESURÉ le 2026-08-02 sur Pixel 10 Pro Fold (API 36), séance en cours,
+        // casque Jabra Evolve3 85 dont la connexion a été vérifiée dans
+        // `dumpsys bluetooth_manager` AVANT de lire quoi que ce soit ici :
         //
-        // Et pourtant `dumpsys audio` lit `mode (internal) = NORMAL` pendant la
-        // même séance. Depuis Android 12, `getMode()` rend ce que
-        // l'application APPELANTE a demandé, pas le mode effectif : le système
-        // arbitre entre les demandeurs, et il ne nous l'a pas accordé. Ce n'est
-        // donc ni un appel raté, ni une annulation — c'est un refus
-        // d'arbitrage, silencieux par construction.
+        //     - Requested mode = MODE_IN_COMMUNICATION
+        //     - Actual mode    = MODE_IN_COMMUNICATION
+        //     - Mode owner: Package: com.linagora.twakevisio
         //
-        // Conséquence à l'écran : hors mode de communication effectif, Android
-        // n'offre pas le Bluetooth SCO dans `availableCommunicationDevices`, et
-        // un casque connecté ne peut JAMAIS apparaître dans la feuille.
+        // Le mode est ACCORDÉ, et il l'a été aux treize `setMode` de la journée
+        // (`selected mode=… by pid=<le nôtre>`). La feuille liste alors le
+        // casque par son nom, et le sélectionner donne bien
+        // `type:bt_sco_hs` / `SCO_STATE_ACTIVE_INTERNAL`.
+        //
+        // CE COMMENTAIRE A PORTÉ L'INVERSE pendant quelques heures — « le
+        // système arbitre et ne nous l'accorde pas, refus silencieux ». C'était
+        // faux, pour deux raisons qui se reproduiront si on ne les nomme pas :
+        // la thèse reposait sur un `grep` de `mode (internal) = NORMAL`, chaîne
+        // ABSENTE de `dumpsys audio` sur cet appareil ; et les séances qui
+        // servaient de preuve tournaient sans aucun casque connecté, une
+        // tentative de connexion ayant échoué sans rien signaler. Un grep qui
+        // ne rend rien n'est pas une mesure, et un symptôme observé sans son
+        // stimulus n'est pas un symptôme.
 
         val listener = AudioManager.OnCommunicationDeviceChangedListener {
             sendEvent(DEVICES_CHANGED)

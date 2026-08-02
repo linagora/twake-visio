@@ -536,17 +536,82 @@ Ce que cela établit :
 - ~~Le module natif, jusqu'ici **compilé, lié et jamais exécuté**, s'exécute et fait ce qu'on
   attend de lui.~~ **Affirmation retirée le même jour, elle allait trop loin.** Une bascule
   automatique se produit AUSSI par AudioSwitch, qui est le repli quand le module n'est pas
-  chargé : ce test ne distingue donc pas les deux. Et une mesure ultérieure, séance en cours
-  et deux participants à l'écran, a relevé `mode (internal) = NORMAL` — or notre module comme
-  AudioSwitch posent tous deux `MODE_IN_COMMUNICATION` en démarrant. Aucun des deux n'avait
-  donc configuré le moteur audio à cet instant. Ce que le test de la voiture établit se
-  réduit à : **le son a suivi**. Par quel chemin reste inconnu.
+  chargé : ce test ne distingue donc pas les deux. Ce que le test de la voiture établit se
+  réduit à : **le son a suivi**. Par quel chemin restait inconnu — la section suivante l'a
+  tranché le même jour, en faveur du module.
+
+  _(Cette puce a un temps porté une seconde raison : « une mesure ultérieure a relevé
+  `mode (internal) = NORMAL`, aucun des deux n'avait donc configuré le moteur audio ».
+  **Elle était fausse et elle est retirée** : cette chaîne n'existe pas dans la sortie de
+  `dumpsys audio` sur cet appareil. Voir la section suivante.)_
 
 Ce que cela n'établit **pas**, et qui reste ouvert :
 
 - Ce que la feuille affichait à ce moment-là — un nom, deux noms, ou une catégorie. C'est
   la seconde moitié du besoin d'origine (« je ne sais pas lequel il va prendre »), et elle
   n'est toujours pas constatée avec **deux** appareils Bluetooth connectés en même temps.
+
+## Mesuré sur appareil le 2026-08-02 après-midi : le module s'exécute et route
+
+Le chemin qui restait inconnu ci-dessus est tranché. Pixel 10 Pro Fold, API 36, build de
+développement, séance à deux participants, casque **Jabra Evolve3 85 réellement connecté**
+— état vérifié dans `dumpsys bluetooth_manager` (`STATE_CONNECTED`) avant chaque relevé.
+
+La feuille affiche **`Jabra Evolve3 85` / `Haut-parleur` / `Écouteur`** : le nom réel, un
+par appareil. C'est le besoin d'origine, servi. Vérifié dans les deux ordres — casque
+connecté **pendant** la séance, et casque connecté **avant** de rejoindre depuis un
+démarrage à froid.
+
+Le sélectionner route pour de bon :
+
+```
+Active communication device: role:output type:bt_sco_hs addr:… name:Jabra Evolve3 85
+Bluetooth SCO on, requested: true, applied: true
+mScoAudioState: SCO_STATE_ACTIVE_INTERNAL
+```
+
+### Le mode de communication n'est pas refusé — la mesure qui le disait n'existait pas
+
+Une thèse a circulé quelques heures ce jour-là : « depuis Android 12 le système arbitre le
+mode audio et ne nous l'accorde pas, refus silencieux ». **Elle est fausse.** `dumpsys audio`
+dit, séance en cours :
+
+```
+- Requested mode = MODE_IN_COMMUNICATION
+- Actual mode    = MODE_IN_COMMUNICATION
+- Mode owner: Package: com.linagora.twakevisio
+```
+
+et les treize `setMode` du journal de la journée disent toutes
+`selected mode=MODE_IN_COMMUNICATION by pid=<le nôtre>`.
+
+Deux erreurs de méthode l'avaient produite, et elles valent d'être notées ici parce qu'elles
+se reproduiront :
+
+1. **La chaîne cherchée n'existe pas.** La thèse reposait sur `grep "^- mode"` lisant
+   `mode (internal) = NORMAL`. Cette ligne est absente de `dumpsys audio` sur cet appareil.
+   Un grep qui ne rend rien n'est pas une mesure — c'est l'absence de mesure.
+2. **Le stimulus n'avait pas eu lieu.** Le journal Bluetooth montre le Jabra déconnecté de
+   ~10:52 à 15:04, avec une tentative **échouée** à 14:33 (`CONNECTING → DISCONNECTED`).
+   Les séances de débogage de 14:33 à 14:50 ont donc toutes tourné **sans casque connecté**.
+   La feuille avait raison de ne montrer que haut-parleur et écouteur.
+
+**Protocole, désormais — la première ligne d'abord, toujours :**
+
+```
+adb shell dumpsys bluetooth_manager | grep -E "\[From Service\].*STATE_CONNECTED"
+adb shell dumpsys audio | grep -E "Actual mode|Active communication device|mScoAudioState"
+```
+
+### Ce que cette mesure ouvre, en revanche
+
+Casque connecté, entrée en séance, route laissée à l'automatique : la coche est sur
+**Écouteur**, et `Active communication device` vaut `type:earpiece`. Le son sort donc de
+l'écouteur du téléphone alors qu'un casque est sur la tête. Le module n'y est pour rien —
+il ne pose aucune route à l'acquisition et laisse le système choisir —, mais **c'est
+probablement ce qu'un utilisateur décrit comme « le Bluetooth ne marche pas »**. Question de
+produit, pas de défaut : faut-il sélectionner d'office un casque connecté à l'entrée en
+séance, comme le font la plupart des applications de voix ? Non tranché.
 - Le retour : est-ce que le son revient au casque en quittant la voiture ?
 - Le cas où un choix manuel a été fait AVANT de monter, qui désarme la bascule pour le
   reste de la séance.
