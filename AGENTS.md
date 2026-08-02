@@ -248,6 +248,62 @@ them by hand.
 
 The iOS Simulator cannot publish camera or microphone — iOS testing needs a device.
 
+## Mesurer sur appareil : une sonde muette n'est pas une mesure
+
+Trois fausses conclusions en une journée, le 2026-08-02, toutes de la même forme — **la sonde
+n'avait rien rendu, ou le stimulus n'avait pas eu lieu, et le vide a été lu comme une
+valeur.**
+
+| ce qui a été « mesuré »                           | ce qui s'était réellement passé                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dumpsys audio` lisant `mode (internal) = NORMAL` | cette chaîne **n'existe pas** dans `dumpsys audio` sur cet appareil ; les lignes réelles sont `Requested mode` et `Actual mode`, et elles disaient l'inverse |
+| une demi-journée de débogage Bluetooth            | le casque n'était pas connecté — la tentative avait échoué (`CONNECTING → DISCONNECTED`) sans rien signaler                                                  |
+| une sonde du journal caméra                       | son motif de `grep` ne pouvait pas correspondre au format réel (`15:09:29 :`) : elle rendait vide **avant comme après** le stimulus                          |
+
+La première a été écrite dans une mémoire, un commentaire de code **et** une spécification.
+Il a fallu corriger les trois.
+
+**Deux vérifications, dans cet ordre, avant de lire une réponse :**
+
+- **L'instrument rend-il quelque chose quand la réponse est connue ?** Un contrôle positif.
+  Le détecteur de tuile figée n'a valu qu'une fois qu'une animation garantie lui a fait dire
+  « vivante ».
+- **Le stimulus a-t-il eu lieu ?** Le lire dans une source **indépendante** de celle qu'on
+  mesure : `topResumedActivity` pour un passage en arrière-plan, `STATE_CONNECTED` du journal
+  Bluetooth pour un casque, le `pid` du processus pour distinguer un retour d'un
+  redémarrage.
+
+**Et une mesure éparse ne vaut pas une série.** Trois cycles avaient donné deux reprises, de
+quoi croire à une intermittence et chercher une cause de course. À conditions fixées, c'était
+**0 sur 6**.
+
+### Des signaux qui mentent, et qu'on a payés
+
+Chacun a l'air juste, se lit sans alerte, et ne dit pas ce qu'on croit. Tous mesurés sur
+appareil le 2026-08-02 ; le détail est dans
+`docs/superpowers/specs/2026-08-02-interruption-recovery.md` et
+`…-audio-output-by-device-design.md`.
+
+| le signal                                           | ce qu'il a l'air de dire             | ce qu'il dit vraiment                                                                                                                                      |
+| --------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mediaStreamTrack.readyState` / `muted` / `enabled` | la capture est vivante               | **rien** : les trois gardent leurs valeurs saines APRÈS qu'une autre application a évincé le client caméra. Toute garde de reprise bâtie dessus est inerte |
+| `setCameraEnabled(room, true)`                      | rallume la caméra                    | un simple `unmute()` tant qu'une publication existe. Seul `restartTrack()` repasse par `getUserMedia`                                                      |
+| `LocalTrack.handleAppVisibilityChanged()`           | LiveKit reprend la capture au retour | du **code mort** en React Native : `addAppVisibilityListener()` le câble sur `document.visibilitychange`, sous une garde `isWeb()`                         |
+| `addOnCommunicationDeviceChangedListener`           | un appareil a été branché            | un changement de **route**, et rien d'autre. Pour un branchement, c'est `registerAudioDeviceCallback`                                                      |
+| tout `AppState` autre que `'active'`                | l'application est partie             | `'inactive'` n'est émis **que par iOS**, pour des interactions passagères qui ne retirent aucune capture                                                   |
+| `import { t } from 'i18next'` — que le lint SUGGÈRE | équivalent à `i18next.t(…)`          | une méthode **non liée** (`const t = instance.t`, sans `.bind`) : `this` vaut `undefined` en ESM, et l'appel jette                                         |
+
+**Et le `PID` du journal caméra distingue trois choses qu'il faut distinguer :**
+
+| ce qu'on lit dans `dumpsys media.camera`                            | ce que c'est                                                      |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `DISCONNECT … (PID 0)`                                              | le **système** retire — arrière-plan sans service de premier plan |
+| `DISCONNECT … (PID <le nôtre>)`                                     | **nous** relâchons — départ de séance, ou un `restartTrack()`     |
+| `DISCONNECT … (le nôtre)` puis un `CONNECT` d'une autre application | une autre application **évince**                                  |
+
+Confondre les deux premiers a failli faire conclure qu'un service de premier plan tout neuf
+ne servait à rien.
+
 ## Internationalisation
 
 Seven locales (`en fr es it de vi ru`), all filled before merge. No hardcoded
@@ -434,6 +490,23 @@ La forme qui marche est `const RN: typeof import('react-native') = require('reac
 — précédents : `src/auth/accounts.spec.ts:162-165` et `src/screens/room/stage.spec.tsx`. Elle
 demande un `eslint-disable-next-line @typescript-eslint/no-require-imports`, ciblé sur la
 seule ligne, avec son motif écrit au-dessus.
+
+**Mais le titre de cette section est trop large, et le prendre au pied de la lettre ferait
+réécrire des specs qui marchent.** Le piège tient à la forme du module espionné, pas au
+`import * as` :
+
+| module espionné                                | `__esModule`                                                                           | `jest.spyOn` atteint-il le sujet ?     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------- |
+| `react-native`                                 | **non**, et ses exports sont des accesseurs (`get ActivityIndicator()`, `index.js:34`) | **non** — l'interop fabrique une copie |
+| nos propres modules (`src/call/audioRoute`, …) | oui                                                                                    | **oui**                                |
+
+`src/screens/room/call.spec.tsx` fait `import * as audioRoute` et espionne une douzaine de
+ses fonctions ; ces assertions attrapent bien les mutations — vérifié le 2026-08-02 en
+mutant `callControlBar.tsx`, elles rougissent. Ne les convertis pas en `require`.
+
+**Le départage ne se raisonne pas, il se mesure : mute l'implémentation et regarde si
+l'espion l'attrape.** C'est la seule façon de savoir de quel côté de la table on est, et
+c'est deux minutes.
 
 **Et un fichier qui espionne un objet de module partagé doit appeler `jest.restoreAllMocks()`
 dans son `beforeEach`.** Dix-huit fichiers de spec le font déjà ; celui qui l'oublie laisse
