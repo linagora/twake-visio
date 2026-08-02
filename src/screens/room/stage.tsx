@@ -110,11 +110,14 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.surfaceDark,
     borderRadius: tokens.radius.pill,
   },
-  // Même doctrine que `pinBadgeText` : cet écran est sombre dans les deux
-  // schémas et `react-native-paper` l'ignore (`AGENTS.md`). Ce `Text` vient de
-  // Paper, donc sans cette couleur explicite il retomberait sur `onSurface` —
-  // un quasi-noir en schéma clair, qui est le défaut de la plupart des
-  // appareils, sur un fond quasi noir.
+  // Même doctrine que `pinBadgeText` : cet écran est sombre et
+  // `react-native-paper` l'ignore (`AGENTS.md`). Ce `Text` vient de Paper, donc
+  // sans cette couleur explicite il retomberait sur `onSurface` — un quasi-noir
+  // sur un fond quasi noir.
+  //
+  // Ce n'était « le défaut de la plupart des appareils » que tant que le thème
+  // suivait le schéma système. Depuis le Lot 1 de la refonte, `makeTheme` rend
+  // toujours le thème clair : le piège n'est plus fréquent, il est certain.
   overflowText: { color: tokens.color.textDark },
   thumbnailTile: { width: tokens.spacing.xl * 4, borderRadius: tokens.radius.md },
   // Le pendant de `thumbnailTile` en paysage : la dimension fixe passe de la

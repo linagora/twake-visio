@@ -353,9 +353,10 @@ describe('AudioOutputControl, mode appareils', () => {
   });
 
   it('force une couleur explicite sur le titre de chaque ligne', async () => {
-    // Sans elle, Paper retombe sur `theme.colors.onSurface` — `textLight`
-    // (#1A1A1A) en schéma clair, le défaut de la plupart des appareils — sur un
-    // fond que `call.tsx` force sombre.
+    // Sans elle, Paper retombe sur `theme.colors.onSurface`, que `makeTheme`
+    // rend TOUJOURS clair depuis le Lot 1 de la refonte — un quasi-noir — sur
+    // un fond que `call.tsx` force sombre. Ce n'était « le défaut de la plupart
+    // des appareils » que tant que le thème suivait le schéma système.
     await render(withPaper(<AudioOutputControl {...props({ manual: true })} />));
 
     await fireEvent.press(screen.getByTestId('audio-output-btn'));

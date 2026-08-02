@@ -50,22 +50,29 @@ export const barStyles = StyleSheet.create({
   // le calcul ci-dessus n'a pas bougé d'un dp.
   anchor: { position: 'relative' },
   // Aucune couleur posée : Paper appaire lui-même `theme.colors.error` et
-  // `theme.colors.onError` (`Badge.tsx:88-100`). En schéma clair #C62828 sur
-  // blanc donne 5,62:1, en schéma sombre #FF8A80 sur son `onError` 5,73:1 :
-  // les deux passent, et en forcer un seul les casserait.
+  // `theme.colors.onError` (`Badge.tsx:88-100`).
+  //
+  // Depuis que `makeTheme` rend toujours le thème clair, la paire ne dépend
+  // plus du schéma de l'appareil : c'est TOUJOURS du blanc sur `danger`
+  // (#D03939), mesuré à 4,85:1. Au-dessus du seuil AA de 4,5.
+  //
+  // Le commentaire précédent citait 5,62:1 en clair et 5,73:1 en sombre, sur
+  // des valeurs — #C62828 et #FF8A80 — que le thème n'emploie plus.
   badge: { position: 'absolute', top: 2, right: 2 },
 });
 
 // 16,65:1 sur `backgroundDark`. Aucun `IconButton` de cette barre ne porte
 // `disabled` : Paper teste `disabled` avant la couleur passée par l'appelant et
-// rend `onSurfaceDisabled`, un quasi-noir en schéma clair, sur un fond sombre.
-// Ce qui n'est pas actionnable n'est pas rendu.
+// rend `onSurfaceDisabled`, un quasi-noir, sur un fond sombre. Ce qui n'est pas
+// actionnable n'est pas rendu.
 export const BAR_ICON_COLOR = tokens.color.textDark;
 
 // Sans lui, Paper calcule l'ondulation depuis `theme.colors.onSurface` à 12 %
-// d'opacité (`TouchableRipple/utils.ts:38-40`) — `textLight`, le schéma clair
-// par défaut de la plupart des appareils, sur un fond que `call.tsx` force
-// sombre dans les deux schémas : 1,13:1, invisible. Ce n'est pas de
+// d'opacité (`TouchableRipple/utils.ts:38-40`) — `textPrimary`, que `makeTheme`
+// rend TOUJOURS depuis le Lot 1 de la refonte, sur un fond que `call.tsx` force
+// sombre : 1,13:1, invisible. Ce n'était « le défaut de la plupart des
+// appareils » que tant que le thème suivait le schéma système ; c'est
+// désormais le seul cas. Ce n'est pas de
 // l'illisibilité, c'est une affordance perdue : aucun retour à l'appui,
 // « raccrocher » compris.
 //

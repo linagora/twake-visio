@@ -10,14 +10,19 @@ import { createMMKV } from 'react-native-mmkv';
 // Conséquence assumée, à dire plutôt qu'à masquer : l'historique est celui de
 // CET appareil. Une réunion rejointe depuis le web n'y figure pas.
 //
-// La DURÉE n'y est pas, et c'est délibéré. L'obtenir demanderait un point
-// d'accroche à la fin de l'appel, donc dans `call.tsx`, que quatorze branches se
-// disputent au moment où ceci est écrit. Reportée au lot de l'écran d'appel :
-// l'heure d'entrée est exacte, une durée devinée ne le serait pas.
+// La durée est portée par `endedAt`, `null` tant que la visite n'est pas close.
+//
+// Elle était reportée au lot de l'écran d'appel : l'obtenir demande un point
+// d'accroche à la FIN de l'appel, donc dans `call.tsx`, que quatorze branches se
+// disputaient. Elles ont toutes atterri, et la dette est payée.
+//
+// `null` plutôt qu'une durée de zéro : une visite en cours et une visite d'une
+// seconde ne sont pas la même chose, et l'écran doit pouvoir les distinguer.
 export type MeetingVisit = {
   readonly slug: string;
   readonly title: string;
   readonly joinedAt: number;
+  readonly endedAt: number | null;
 };
 
 // Borne de sécurité, même réflexe que `MAX_ROOM_PAGES` (`src/api/rooms.ts:57`).
@@ -54,10 +59,32 @@ export function rememberVisit(slug: string, title: string, joinedAt: number): vo
   // Un intitulé vide n'en est pas un : l'enregistrer ferait une ligne sans rien
   // à afficher. Même garde que `rememberRoomTitle`.
   if (trimmed.length === 0) return;
-  const next = [{ slug, title: trimmed, joinedAt }, ...readAll()]
+  const next = [{ slug, title: trimmed, joinedAt, endedAt: null }, ...readAll()]
     .sort(byMostRecent)
     .slice(0, MAX_VISITS);
   store.set(VISITS_KEY, JSON.stringify(next));
+}
+
+// Clôt la visite la plus récente d'un salon.
+//
+// La PLUS RÉCENTE, pas la première rencontrée : rejoindre deux fois le même
+// salon laisse deux traces, et c'est celle qu'on vient de quitter qu'il faut
+// fermer. `listVisits` les rend déjà triées, la première est donc la bonne.
+//
+// Trois refus, chacun pour une raison :
+// — un salon absent du journal : quitter un salon jamais journalisé ne doit
+//   rien casser ;
+// — une visite déjà close : une seconde clôture écraserait la vraie durée ;
+// — une fin ANTÉRIEURE au début : l'horloge de l'appareil peut reculer, et une
+//   durée négative s'afficherait telle quelle.
+export function rememberVisitEnd(slug: string, endedAt: number): void {
+  const all = [...readAll()].sort(byMostRecent);
+  const index = all.findIndex((visit) => visit.slug === slug && visit.endedAt === null);
+  if (index === -1) return;
+  const visit = all[index] as MeetingVisit;
+  if (endedAt < visit.joinedAt) return;
+  all[index] = { ...visit, endedAt };
+  store.set(VISITS_KEY, JSON.stringify(all));
 }
 
 export function listVisits(): readonly MeetingVisit[] {

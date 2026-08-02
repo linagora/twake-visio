@@ -42,9 +42,6 @@ const DATE_LOCALES: Readonly<Record<string, Locale>> = {
 };
 
 // « 14:30 » aujourd'hui, « hier · 14:30 » hier, « mar. 29 juil. · 14:30 » avant.
-//
-// Pas de DURÉE : elle demanderait un point d'accroche à la fin de l'appel, donc
-// dans `call.tsx`. Voir le commentaire de tête de `src/rooms/journal.ts`.
 export function formatVisitMoment(joinedAt: number, language: string): string {
   const locale = DATE_LOCALES[language] ?? enUS;
   const date = new Date(joinedAt);
@@ -52,6 +49,20 @@ export function formatVisitMoment(joinedAt: number, language: string): string {
   if (isToday(date)) return time;
   if (isYesterday(date)) return `${format(date, 'EEEE', { locale })} · ${time}`;
   return `${format(date, 'EEE d MMM', { locale })} · ${time}`;
+}
+
+// La durée, quand la visite est close. Rendue en MINUTES entières.
+//
+// Arrondie à la minute supérieure, jamais à zéro : une réunion de quarante
+// secondes a bien eu lieu, et « 0 min » se lit comme une erreur d'affichage.
+// Au-delà de l'heure, « 1 h 05 » plutôt que « 65 min », qui se compte mal.
+export function formatVisitDuration(visit: MeetingVisit): string | null {
+  if (visit.endedAt === null) return null;
+  const minutes = Math.max(1, Math.round((visit.endedAt - visit.joinedAt) / 60_000));
+  if (minutes < 60) return `${String(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest).padStart(2, '0')}`;
 }
 
 export function HistoriqueScreen(): React.ReactElement {
@@ -110,7 +121,12 @@ export function HistoriqueScreen(): React.ReactElement {
                         {visit.title}
                       </Text>
                       <Text style={styles.rowMeta} testID={`visit-meta-${visit.slug}`}>
-                        {formatVisitMoment(visit.joinedAt, i18n.language)}
+                        {[
+                          formatVisitMoment(visit.joinedAt, i18n.language),
+                          formatVisitDuration(visit),
+                        ]
+                          .filter((part) => part !== null)
+                          .join(' · ')}
                       </Text>
                     </View>
                   </View>

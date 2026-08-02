@@ -3,7 +3,7 @@ import React from 'react';
 
 import type { MeetingVisit } from 'src/rooms/journal';
 import { tokens } from 'src/ui/tokens';
-import { filterVisits, HistoriqueScreen } from './historique';
+import { filterVisits, formatVisitDuration, HistoriqueScreen } from './historique';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'fr' } }),
@@ -25,8 +25,13 @@ jest.mock('src/auth/accounts', () => ({ getActiveAccount: jest.fn() }));
 const journal = jest.requireMock('src/rooms/journal') as { listVisits: jest.Mock };
 const accounts = jest.requireMock('src/auth/accounts') as { getActiveAccount: jest.Mock };
 
-function visit(slug: string, title: string, joinedAt: number): MeetingVisit {
-  return { slug, title, joinedAt };
+function visit(
+  slug: string,
+  title: string,
+  joinedAt: number,
+  endedAt: number | null = null,
+): MeetingVisit {
+  return { slug, title, joinedAt, endedAt };
 }
 
 // 2026-08-02 à 14:30, heure locale. Fixé plutôt que relatif à maintenant : une
@@ -84,6 +89,35 @@ describe('filterVisits', () => {
   });
 });
 
+describe('formatVisitDuration', () => {
+  it('rend null tant que la visite est ouverte', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0))).toBe(null);
+  });
+
+  it('rend les minutes entières', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0, 42 * 60_000))).toBe('42 min');
+  });
+
+  // Jamais zéro : une réunion de quarante secondes a bien eu lieu, et « 0 min »
+  // se lit comme une erreur d'affichage.
+  it('arrondit une visite très courte à une minute', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0, 40_000))).toBe('1 min');
+  });
+
+  it('rend une visite instantanée comme une minute, pas zéro', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0, 0))).toBe('1 min');
+  });
+
+  // Au-delà de l'heure : « 1 h 05 » se compte mieux que « 65 min ».
+  it('passe aux heures au-delà de soixante minutes', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0, 65 * 60_000))).toBe('1 h 05');
+  });
+
+  it('omet les minutes sur une heure ronde', () => {
+    expect(formatVisitDuration(visit('a', 'A', 0, 120 * 60_000))).toBe('2 h');
+  });
+});
+
 describe('HistoriqueScreen', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
@@ -110,12 +144,25 @@ describe('HistoriqueScreen', () => {
     expect(screen.getByTestId('visit-title-ogo-kmyy-qrl')).toHaveTextContent('Point produit');
   });
 
-  it('affiche l’heure d’entrée, sans durée', async () => {
+  it('affiche l’heure d’entrée', async () => {
     await render(<HistoriqueScreen />);
-    // La durée est reportée au lot de l'écran d'appel : elle demanderait un
-    // point d'accroche dans `call.tsx`. L'heure est exacte, une durée devinée
-    // ne le serait pas.
     expect(screen.getByTestId('visit-meta-ogo-kmyy-qrl')).toHaveTextContent(/14:30/);
+  });
+
+  // Les deux états, chacun avec sa fixture : une visite close montre sa durée,
+  // une visite ouverte n'en montre aucune.
+  it('affiche la durée d’une visite close', async () => {
+    journal.listVisits.mockReturnValue([visit('a', 'Close', JOINED_AT, JOINED_AT + 42 * 60_000)]);
+    await render(<HistoriqueScreen />);
+
+    expect(screen.getByTestId('visit-meta-a')).toHaveTextContent(/42 min/);
+  });
+
+  it('n’affiche aucune durée pour une visite ouverte', async () => {
+    journal.listVisits.mockReturnValue([visit('a', 'Ouverte', JOINED_AT)]);
+    await render(<HistoriqueScreen />);
+
+    expect(screen.getByTestId('visit-meta-a')).not.toHaveTextContent(/min/);
   });
 
   it('rend une ligne par visite', async () => {

@@ -1,6 +1,12 @@
 import { createMMKV } from 'react-native-mmkv';
 
-import { listVisits, MAX_VISITS, rememberVisit, resetJournal } from 'src/rooms/journal';
+import {
+  listVisits,
+  MAX_VISITS,
+  rememberVisit,
+  rememberVisitEnd,
+  resetJournal,
+} from 'src/rooms/journal';
 
 describe('journal des réunions', () => {
   beforeEach(() => {
@@ -15,7 +21,7 @@ describe('journal des réunions', () => {
     rememberVisit('ogo-kmyy-qrl', 'Point produit', 1_000);
 
     expect(listVisits()).toEqual([
-      { slug: 'ogo-kmyy-qrl', title: 'Point produit', joinedAt: 1_000 },
+      { slug: 'ogo-kmyy-qrl', title: 'Point produit', joinedAt: 1_000, endedAt: null },
     ]);
   });
 
@@ -87,6 +93,64 @@ describe('journal des réunions', () => {
       rememberVisit('b', 'B', 2_000);
 
       expect(listVisits()).toHaveLength(2);
+    });
+  });
+
+  describe('la fin de la visite', () => {
+    // La durée était reportée au lot de l'écran d'appel, faute d'un point
+    // d'accroche : `call.tsx` était disputé par quatorze branches. Elles ont
+    // toutes atterri, et la dette est payée ici.
+
+    it('rend une durée nulle tant que la visite n’est pas close', () => {
+      rememberVisit('ouverte', 'Ouverte', 1_000);
+
+      expect(listVisits()[0]?.endedAt).toBe(null);
+    });
+
+    it('clôt la visite la plus récente d’un salon', () => {
+      rememberVisit('abc', 'Réunion', 1_000);
+      rememberVisitEnd('abc', 4_000);
+
+      expect(listVisits()[0]?.endedAt).toBe(4_000);
+    });
+
+    // Rejoindre deux fois le même salon laisse deux traces : clore doit
+    // atteindre la DERNIÈRE, pas la première rencontrée.
+    it('clôt la plus récente quand le salon a été rejoint deux fois', () => {
+      rememberVisit('abc', 'Réunion', 1_000);
+      rememberVisit('abc', 'Réunion', 3_000);
+      rememberVisitEnd('abc', 5_000);
+
+      const visits = listVisits().filter((v) => v.slug === 'abc');
+      expect(visits[0]?.endedAt).toBe(5_000);
+      expect(visits[1]?.endedAt).toBe(null);
+    });
+
+    // La branche « salon inconnu » doit être empruntée : quitter un salon
+    // jamais journalisé ne doit rien casser.
+    it('ignore la clôture d’un salon absent du journal', () => {
+      rememberVisit('abc', 'Réunion', 1_000);
+      rememberVisitEnd('jamais-vu', 5_000);
+
+      expect(listVisits()).toHaveLength(1);
+      expect(listVisits()[0]?.endedAt).toBe(null);
+    });
+
+    // Une fin ANTÉRIEURE au début n'est pas une durée : l'horloge de
+    // l'appareil peut reculer, et une durée négative s'afficherait comme telle.
+    it('ignore une fin antérieure au début', () => {
+      rememberVisit('abc', 'Réunion', 5_000);
+      rememberVisitEnd('abc', 1_000);
+
+      expect(listVisits()[0]?.endedAt).toBe(null);
+    });
+
+    it('ne clôt pas deux fois', () => {
+      rememberVisit('abc', 'Réunion', 1_000);
+      rememberVisitEnd('abc', 4_000);
+      rememberVisitEnd('abc', 9_000);
+
+      expect(listVisits()[0]?.endedAt).toBe(4_000);
     });
   });
 

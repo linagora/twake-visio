@@ -42,6 +42,7 @@ import { RaisedHandsBanner } from 'src/screens/room/raisedHandsBanner';
 import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
+import { rememberVisitEnd } from 'src/rooms/journal';
 import { keyboardMode } from 'src/ui/keyboard';
 import { tokens } from 'src/ui/tokens';
 
@@ -530,6 +531,22 @@ export function CallScreen(): React.ReactElement {
   // gestionnaire de flux avant de jeter la Room est la même précaution que le
   // désabonnement ci-dessous.
   useEffect(() => () => chatStore.dispose(), [chatStore]);
+
+  // Clôt la visite dans le journal de l'onglet Historique, au DÉMONTAGE.
+  //
+  // Pas dans `handleLeave` : on quitte aussi une réunion en perdant le réseau,
+  // par le retour arrière d'Android, ou parce que le système tue l'écran. Seul
+  // le nettoyage couvre les quatre sorties.
+  //
+  // `rememberVisitEnd` refuse une visite déjà close et un salon absent du
+  // journal : un montage qui échoue avant l'entrée ne laisse donc aucune trace,
+  // et un remontage ne récrit pas la durée.
+  useEffect(
+    () => () => {
+      if (slug !== undefined) rememberVisitEnd(slug, Date.now());
+    },
+    [slug],
+  );
 
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
