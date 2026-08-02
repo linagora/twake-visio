@@ -87,8 +87,20 @@ Le dépôt le dit déjà, `src/screens/home.tsx:50` :
 - la liste « Réunions · -2 h → +24 h » de l'accueil (agenda — voir §7) ;
 - le badge « Transcription et compte rendu » et la feuille de transcription.
 
-La seconde est **reportée sans échéance** : aucune source côté `suitenumerique/meet`
-n'a été trouvée, et une coquille vide serait pire qu'une absence.
+La seconde est **reportée**, et la mesure du 2026-08-02 précise pourquoi — la
+transcription **existe**, mais pas là où l'application pourrait la lire :
+
+- `recording.available_modes` vaut `["screen_recording", "transcript"]` sur les
+  trois instances relevées. La transcription est donc un **mode
+  d'enregistrement**, pas une ressource séparée.
+- `transcription_destination` vaut `"https://studio.linto.ai"` en production et
+  `null` sur l'instance de développement. Le produit est donc déposé chez un
+  **service tiers**, que meet ne réexpose pas.
+
+Autrement dit : rien dans `/api/v1.0/` ne permet de **lister** les
+transcriptions d'un compte, ni de les rattacher à une réunion passée. Le badge
+et la feuille du mockup demanderaient LinTO, pas meet. Une coquille vide serait
+pire qu'une absence.
 
 ### 2. Le motif du stockage local existe déjà, et il est motivé **[V]**
 
@@ -415,22 +427,80 @@ Et une garde exportée, sur le modèle de `canStartRecording` :
 export function canShowAgenda(features: InstanceFeatures): boolean;
 ```
 
-### Ce qui reste à établir **[?]**
+### Ce qui a été mesuré, le 2026-08-02 **[V]**
 
-**Le nom exact du champ dans `/api/v1.0/config/` n'est pas connu.** Le
-propriétaire mentionne un échange antérieur, hors de cette session, où une URI de
-calendrier aurait été identifiée ; ce fait n'est pas dans ce dépôt et n'a pas été
-retrouvé.
+La question a été tranchée par l'observation, contre les deux instances de
+production que `knownInstances.ts:5-8` déclare.
 
-`emailResolution.ts:24-26` signale une piste voisine : l'écosystème Twake sert un
-`/.well-known/twake-configuration`, dont le commentaire dit qu'il porte « la forme
-JSON de `/api/v1.0/config/`, que `fetchInstanceConfig` sait déjà lire ».
+**1. `/api/v1.0/config/` ne porte aucun champ de calendrier.** Réponses
+identiques sur `meet.linagora.com` et `visio.twake.app`. Champs présents, en
+entier :
 
-> **À relever contre une instance réelle avant d'écrire le plan**, en interrogeant
-> `/api/v1.0/config/` et `/.well-known/twake-configuration` sur une instance qui a
-> le calendrier et une qui ne l'a pas. Le nom du champ ne doit pas être inventé —
-> une garde branchée sur un champ qui n'existe pas est indiscernable, par lecture,
-> d'une garde qui marche : elle est simplement toujours fausse.
+```
+LANGUAGE_CODE, recording, background_image, telephony, subtitle, livekit,
+custom_css_url, analytics, support, silence_livekit_debug_logs,
+is_silent_login_enabled, idle_disconnect_warning_delay, feedback,
+external_home_url, use_french_gov_footer, use_proconnect_button,
+manifest_link, transcription_destination
+```
+
+Ni `calendar`, ni `agenda`, ni rien d'approchant.
+
+**1 bis. Confirmé sur une troisième instance, et d'un build plus récent.**
+`meet.twake-dev.maudet.cloud` — l'instance de développement du propriétaire,
+déjà relevée dans `discovery.ts:85` — répond 200 avec trois champs que les deux
+instances de production n'ont pas (`authenticated_users_can_edit_display_name`,
+`max_participants_for_sound`, `auto_mute_on_join_threshold`). C'est donc une
+version postérieure de meet, et elle **ne porte pas davantage de champ de
+calendrier**. Ses sous-domaines `calendar.`, `agenda.`, `tmail.` et `drive.`
+répondent 404 : ce déploiement est meet seul.
+
+Trois instances, deux versions de meet, aucun signal. La conclusion ne tient pas
+à un déploiement en retard.
+
+**2. Le `.well-known` de l'organisation ne porte que deux clés.**
+`https://linagora.com/.well-known/twake-configuration` renvoie exactement :
+
+```json
+{
+  "twake-flagship-login-uri": "https://manager.cozycloud.cc/linagora/default",
+  "twake-pass-login-uri": "https://oauthcallback.mycozy.cloud/oidc/bitwarden/linagora_default"
+}
+```
+
+Le motif `twake-<application>-login-uri` est bien réel, et c'est lui que visait
+la demande. Mais `twake-guidelines/AGENTS.md:1293-1294` ne documente **que ces
+deux clés**, et aucun des deux domaines interrogés n'en expose une troisième.
+
+**3. Sur les hôtes meet, ce chemin renvoie du HTML avec un 200.** Vérifié en
+direct sur les deux : c'est exactement le piège que `emailResolution.ts:24`
+consigne déjà. Toute sonde future devra donc valider que la réponse est bien du
+JSON, un code 200 ne prouvant rien ici.
+
+### Ce qu'on en fait **[D]**
+
+**Aucun signal de calendrier n'est observable aujourd'hui.** Donc la garde est
+livrée **fermée, sans sonde** :
+
+```ts
+export function canShowAgenda(features: InstanceFeatures): boolean;
+```
+
+`InstanceFeatures.calendar` est parsé depuis `/api/v1.0/config/` — le champ est
+absent partout, il vaut donc `false` partout — et `canShowAgenda` le lit. Aucune
+surface d'agenda ne se rend.
+
+**Pourquoi ne pas sonder une clé `twake-calendar-login-uri` qu'on aurait
+devinée.** Parce qu'une garde branchée sur un champ inexistant est *toujours
+fausse* : elle produit exactement le même comportement que la constante
+ci-dessus, mais en donnant l'impression de fonctionner. C'est indiscernable par
+lecture, et c'est précisément l'erreur qu'`AGENTS.md` documente à répétition. Un
+nom de champ ne s'invente pas.
+
+**Le jour où un signal existe**, deux endroits changent — le parseur de
+`discovery.ts` et rien d'autre — et tout consommateur de `canShowAgenda` en
+hérite sans être touché. C'est la raison d'être de la garde : elle donne au Lot 2
+un point d'appui stable pour une capacité qui n'existe pas encore.
 
 ### Où la garde s'applique
 
