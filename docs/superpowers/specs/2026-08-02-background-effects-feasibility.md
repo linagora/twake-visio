@@ -129,30 +129,106 @@ arrière-plans.
 > « -2 h → +24 h » du Lot 2, et pour la même raison : une surface qu'on ne peut
 > pas honorer coûte plus cher que son absence.
 
-## Ce qui reste à vérifier avant de trancher **[?]**
+## Les trois mesures : deux tranchées, une seule ouverte
 
-La question d'architecture est réglée (§ ci-dessus). Restent trois **mesures**,
-qui décident du coût, pas de la possibilité :
+La première version de cette note en laissait trois en suspens. **Deux sont
+réglées** — relevées dans les sources installées le 2026-08-02, pas déduites.
 
-1. **Le coût par image** de MLKit et de Vision sur les appareils visés — c'est
-   lui qui dira si l'effet tient 30 images par seconde ou dégrade l'appel.
-2. **Le comportement de `registerTrack` avec LiveKit** : une piste enregistrée
-   par cette voie est-elle publiable telle quelle par
-   `@livekit/react-native` ? La couture existe côté WebRTC ; que le SDK LiveKit
-   la reprenne sans rien de plus n'est pas démontré.
-3. **Un module tiers maintenu** existe-t-il déjà ? Aucun trouvé au 2026-08-02,
-   mais la recherche n'a pas été exhaustive — et en trouver un changerait tout
-   l'ordre de grandeur.
+### Mesure n° 2 — publier une piste enregistrée : **OUI, et sans forker** **[V]**
 
-La première est la plus importante : un détourage à 8 images par seconde est
-pire qu'aucun détourage.
+C'était la question qui décidait de tout : la couture existe côté WebRTC, mais
+que `@livekit/react-native` reprenne la piste sans rien de plus n'était pas
+démontré. Il le fait, et la chaîne se vérifie en quatre maillons :
+
+| # | Fait | Source |
+| --- | --- | --- |
+| 1 | `registerTrack(VideoTrack, VideoSource, AbstractVideoCaptureController, SurfaceTextureHelper)` est `public` | `WebRTCModule.java:487` |
+| 2 | `MediaStreamTrack` est une classe JS ordinaire, construite depuis un **descripteur** `{id, kind, enabled, readyState, remote, peerConnectionId}` — **rien ne la lie à `getUserMedia`** | `MediaStreamTrack.ts:54-70` |
+| 3 | elle est **exportée** du paquet, donc constructible depuis l'extérieur | `index.ts:85` |
+| 4 | `publishTrack(track: LocalTrack \| MediaStreamTrack, …)` accepte une piste brute | `LocalParticipant.d.ts:132` |
+
+**Le maillon qu'on croyait manquant est le n° 2.** Une piste JS n'est pas un
+objet natif : c'est un **identifiant** plus quelques champs. Un module natif qui
+appelle `registerTrack` et rend ce descripteur à JavaScript suffit donc — JS
+construit la `MediaStreamTrack`, `livekit-client` la publie, et ni
+`react-native-webrtc` ni le SDK LiveKit n'ont besoin d'être modifiés.
+
+Côté iOS, la couture est confirmée dans la version installée :
+`peerConnectionFactory` (ligne 40) et `localTracks` (ligne 46) sont des
+propriétés **publiques** de `WebRTCModule.h`.
+
+### Mesure n° 3 — un module tiers maintenu : **NON, mais l'architecture est éprouvée** **[V]**
+
+Aucun paquet publié ne fait cela pour React Native + LiveKit. Ce qui existe est
+soit **web** (`@livekit/track-processors`, MediaPipe), soit lié à un **autre
+SDK** (`@100mslive/react-native-video-plugin`, pour 100ms et non LiveKit).
+
+En revanche, **la voie a été parcourue** : Margelo décrit publiquement une
+implémentation dont le flux est exactement celui que cette note propose —
+`VisionCamera → moteur d'effets natif → VideoSource LiveKit → encodeur WebRTC`.
+C'est du sur-mesure, pas un paquet à installer : cela **valide l'architecture
+sans livrer le code**.
+
+**Ce que ça change quand même** : `react-native-vision-camera` remplace le
+capteur de WebRTC et rend les images au natif, ce qui évite d'écrire un
+`AbstractVideoCaptureController` complet à partir de zéro. Le module à écrire se
+réduit alors à : segmenter l'image, composer, pousser dans le `VideoSource`.
+`react-native-vision-camera` n'est **pas** installé ici — c'est une dépendance à
+ajouter, avec sa propre compatibilité SDK à vérifier.
+
+### Mesure n° 1 — le coût par image : **toujours ouverte, et c'est la seule** **[?]**
+
+MLKit et Vision sur les appareils visés. Elle ne se fait **que sur appareil**, et
+elle décide du coût, plus de la possibilité. Un détourage à 8 images par seconde
+est pire qu'aucun détourage.
+
+C'est désormais **le seul inconnu** de ce chantier.
+
+### Au passage, un fait qui ne concerne pas ce chantier **[V]**
+
+`WebRTCModule.h:48-49` expose `frameCryptors` et `keyProviders`. **Le chiffrement
+de bout en bout n'est donc pas un manque natif** : la machinerie est là, dans le
+paquet installé. Ce qui manque est côté JavaScript — `new Room()` est construit
+sans options E2EE (`connection.ts:76`) — et surtout la décision de **comment la
+clé circule**. Voir la spec du Lot 4, où la mention « Chiffré » a été retirée
+faute de pouvoir la mesurer.
 
 ## Ce que cela change pour le Lot 3 **[D]**
 
-Rien, à court terme. Le Lot 3 livre le pré-join **sans** panneau d'effets — la
+Rien, à court terme. Le Lot 3 a livré le pré-join **sans** panneau d'effets — la
 recommandation ci-dessus tient : une surface qu'on ne peut pas honorer coûte
 plus cher que son absence.
 
 Mais la note ne se conclut plus par « impossible ». Elle se conclut par **un
-chantier chiffrable**, dont la première étape est la mesure n° 1, et qui peut
-être ouvert quand le propriétaire le décidera.
+chantier chiffrable**, dont la première étape est la mesure n° 1.
+
+## L'ordre dans lequel ce chantier doit être fait **[D]**
+
+Écrit après que deux des trois mesures aient été tranchées. L'ordre n'est pas
+esthétique : chaque étape peut **tuer** le chantier, et elles sont rangées de la
+moins chère à la plus chère.
+
+| # | Étape | Ce qu'elle décide | Coût |
+| --- | --- | --- | --- |
+| 1 | mesurer MLKit sur un Android visé, hors de l'application — une activité jetable, un compteur d'images | si l'effet tient 30 i/s. **Sous ~24, on s'arrête ici** | quelques heures, un appareil |
+| 2 | idem `VNGeneratePersonSegmentationRequest` sur iOS | même verdict, l'autre plateforme | idem, un iPhone réel — le simulateur ne publie pas de caméra |
+| 3 | prouver la chaîne SANS segmentation : `registerTrack` d'une piste **de couleur unie**, publiée et vue par un second participant | que les quatre maillons du § « mesure n° 2 » tiennent **en exécution**, pas seulement dans les déclarations | un module natif minimal, Android d'abord |
+| 4 | brancher la segmentation mesurée à l'étape 1 sur la chaîne prouvée à l'étape 3 | rien — c'est de l'assemblage | le gros du travail |
+| 5 | le panneau d'effets, les huit arrière-plans DINUM (163 Ko de vignettes) | rien | petit, et **jamais avant l'étape 4** |
+
+**L'étape 3 avant l'étape 4, et c'est le point de méthode.** Un module qui
+segmente ET publie, écrit d'un bloc, ne dit pas laquelle des deux moitiés est en
+cause quand rien n'arrive. Une piste unie qui apparaît chez le pair prouve la
+plomberie ; c'est l'application, dans ce dépôt, de la règle « mesurer le
+stimulus, pas seulement la réponse ».
+
+**Et jamais l'étape 5 en premier**, quel que soit le confort de la livrer : un
+sélecteur d'arrière-plans qui n'applique aucun arrière-plan est exactement la
+surface qu'on ne peut pas honorer.
+
+## Sources
+
+- [Margelo — Building a Video Call App with Filters](https://blog.margelo.com/building-videocall-app-with-filters)
+- [livekit/track-processors-js](https://github.com/livekit/track-processors-js) — **web uniquement**
+- [@100mslive/react-native-video-plugin](https://www.npmjs.com/package/@100mslive/react-native-video-plugin) — autre SDK
+- [react-native-webrtc #1502](https://github.com/react-native-webrtc/react-native-webrtc/issues/1502) — la même question, posée en amont
