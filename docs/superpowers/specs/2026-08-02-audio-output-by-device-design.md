@@ -603,15 +603,61 @@ adb shell dumpsys bluetooth_manager | grep -E "\[From Service\].*STATE_CONNECTED
 adb shell dumpsys audio | grep -E "Actual mode|Active communication device|mScoAudioState"
 ```
 
-### Ce que cette mesure ouvre, en revanche
+### Le vrai défaut, qu'elle a mis au jour : le son ne suit pas le casque
 
 Casque connecté, entrée en séance, route laissée à l'automatique : la coche est sur
-**Écouteur**, et `Active communication device` vaut `type:earpiece`. Le son sort donc de
-l'écouteur du téléphone alors qu'un casque est sur la tête. Le module n'y est pour rien —
-il ne pose aucune route à l'acquisition et laisse le système choisir —, mais **c'est
-probablement ce qu'un utilisateur décrit comme « le Bluetooth ne marche pas »**. Question de
-produit, pas de défaut : faut-il sélectionner d'office un casque connecté à l'entrée en
-séance, comme le font la plupart des applications de voix ? Non tranché.
+**Écouteur**, et `Active communication device` vaut `type:earpiece`. Le son sort de
+l'écouteur du téléphone alors qu'un casque est sur la tête. Relevé **trois fois**, dans
+trois états différents — casque branché en séance, branché avant de rejoindre, et séance
+déjà en cours.
+
+**C'est une régression du périmètre, pas une lubie d'Android.** Sur le chemin `'devices'`,
+AudioSwitch n'est plus démarré — délibérément, deux arbitres sur le même canal étant la
+cause classique du « le son est reparti tout seul ». Mais c'était AudioSwitch qui appelait
+`startBluetoothSco()`. En lui retirant le volant on a emporté la sélection automatique avec,
+sans la remplacer. Et la première ligne de la feuille annonce, elle, « Le son suit l'appareil
+que vous branchez ».
+
+**Corrigé** : `preferredAudioDevice` (`src/call/audioDevices.ts`) rend le Bluetooth, sinon le
+casque filaire, sinon **rien** — arbitrer entre écouteur et haut-parleur n'est pas la
+question posée, et `setCommunicationDevice()` est un choix *manuel* du point de vue
+d'Android, qui ne se défait qu'en le vidant. `routeToPreferredDevice` l'applique à trois
+moments : après `acquire()`, à chaque branchement tant qu'aucun choix manuel ne tient, et
+quand la feuille rend la main à l'automatique.
+
+Vérifié sur appareil, casque connecté avant de rejoindre :
+
+```
+Active communication device: role:output type:bt_sco_hs name:Jabra Evolve3 85
+Bluetooth SCO on, requested: true, applied: true
+mScoAudioState: SCO_STATE_ACTIVE_INTERNAL
+```
+
+Et sans casque : `type:earpiece`, `SCO_STATE_INACTIVE` — rien n'est posé.
+
+### Le commentaire qui a fait perdre une passe : quel écouteur notifie quoi
+
+Le module Kotlin affirmait que `addOnCommunicationDeviceChangedListener` notifiait « aussi
+les changements qu'un autre composant provoque — un casque qu'on allume, la voiture qui se
+connecte ». **C'est faux.** Il notifie un changement de **route**, et rien d'autre.
+
+Mesuré : casque allumé pendant une séance, HFP connecté à 19:36:34 d'après
+`dumpsys bluetooth_manager`, et `Active communication device` toujours `type:earpiece`
+ensuite. Brancher un appareil ne change pas la route — c'est précisément le défaut qu'on
+corrige — donc cet écouteur-là ne part jamais dans ce cas.
+
+| ce qu'on veut détecter | l'API qui le fait |
+| --- | --- |
+| la route a changé | `addOnCommunicationDeviceChangedListener` |
+| un appareil est branché ou débranché | `registerAudioDeviceCallback` |
+
+Les deux sont désormais enregistrés et émettent le même événement. Android appelle
+`onAudioDevicesAdded` une première fois à l'enregistrement, avec la liste déjà connectée :
+sans conséquence, `routeToPreferredDevice` étant idempotente.
+
+**Cette idempotence est un garde-fou de boucle, pas une optimisation** : l'écouteur de route
+notifie aussi les changements que *nous* provoquons, donc router déclencherait l'événement
+qui déclencherait une reroute.
 - Le retour : est-ce que le son revient au casque en quittant la voiture ?
 - Le cas où un choix manuel a été fait AVANT de monter, qui désarme la bascule pour le
   reste de la séance.

@@ -2,10 +2,13 @@ package com.linagora.twakevisio.audiodevices
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -59,6 +62,7 @@ class TwakeAudioDevicesModule : Module() {
     private var focusRequest: AudioFocusRequest? = null
     private var previousMode: Int = AudioManager.MODE_NORMAL
     private var deviceListener: AudioManager.OnCommunicationDeviceChangedListener? = null
+    private var plugListener: AudioDeviceCallback? = null
 
     override fun definition() = ModuleDefinition {
         Name("TwakeAudioDevices")
@@ -206,14 +210,46 @@ class TwakeAudioDevicesModule : Module() {
             sendEvent(DEVICES_CHANGED)
         }
         deviceListener = listener
-        // `addOnCommunicationDeviceChangedListener` notifie AUSSI les
-        // changements qu'un autre composant provoque — un casque qu'on allume,
-        // la voiture qui se connecte. C'est le second angle mort du périmètre A
-        // qui se lève ici.
+        // Notifie un changement de ROUTE, et rien d'autre.
+        //
+        // Ce commentaire a affirmé qu'il notifiait aussi « un casque qu'on
+        // allume, la voiture qui se connecte ». C'EST FAUX, et mesuré le
+        // 2026-08-02 : casque Jabra allumé pendant une séance, HFP connecté à
+        // 19:36:34 d'après `dumpsys bluetooth_manager`, et
+        // `Active communication device` toujours `type:earpiece` ensuite.
+        // Brancher un appareil ne change pas la route — c'est précisément le
+        // défaut qu'on corrige — donc cet écouteur-là ne part pas.
+        //
+        // Il reste utile : il tient à jour ce que la feuille montre comme route
+        // COURANTE quand quelque chose la déplace. Mais il ne peut pas servir à
+        // détecter un branchement, d'où le rappel enregistré juste en dessous.
         manager.addOnCommunicationDeviceChangedListener(
             context.mainExecutor,
             listener,
         )
+
+        // LE branchement, lui, passe par ici. `registerAudioDeviceCallback`
+        // notifie l'ajout et le retrait d'appareils, ce qui est l'événement
+        // qu'on veut : un casque allumé en séance doit prendre le son, comme
+        // celui déjà connecté le prend à l'entrée.
+        //
+        // Android appelle `onAudioDevicesAdded` UNE PREMIÈRE FOIS à
+        // l'enregistrement, avec la liste des appareils déjà connectés. C'est
+        // sans conséquence : `routeToPreferredDevice` côté JavaScript ne repose
+        // pas une route déjà en place.
+        val plugs = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                sendEvent(DEVICES_CHANGED)
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                sendEvent(DEVICES_CHANGED)
+            }
+        }
+        plugListener = plugs
+        // Un `Handler`, pas un `Executor` : cette API-ci n'a pas la surcharge
+        // qu'a `addOnCommunicationDeviceChangedListener`.
+        manager.registerAudioDeviceCallback(plugs, Handler(Looper.getMainLooper()))
     }
 
     // L'ordre n'est pas arbitraire : retirer l'écouteur AVANT de vider la route,
@@ -225,6 +261,8 @@ class TwakeAudioDevicesModule : Module() {
         val manager = audioManager
         deviceListener?.let { manager.removeOnCommunicationDeviceChangedListener(it) }
         deviceListener = null
+        plugListener?.let { manager.unregisterAudioDeviceCallback(it) }
+        plugListener = null
         manager.clearCommunicationDevice()
         focusRequest?.let { manager.abandonAudioFocusRequest(it) }
         focusRequest = null
