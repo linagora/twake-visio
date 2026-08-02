@@ -533,8 +533,14 @@ Ce que cela établit :
   seul qu'aucun test ne pouvait approcher.
 - Le son n'a pas oscillé entre deux routes, donc rien n'indique le symptôme des « deux
   pilotes sur le même canal » que la décision faisait courir.
-- Le module natif, jusqu'ici **compilé, lié et jamais exécuté**, s'exécute et fait ce qu'on
-  attend de lui.
+- ~~Le module natif, jusqu'ici **compilé, lié et jamais exécuté**, s'exécute et fait ce qu'on
+  attend de lui.~~ **Affirmation retirée le même jour, elle allait trop loin.** Une bascule
+  automatique se produit AUSSI par AudioSwitch, qui est le repli quand le module n'est pas
+  chargé : ce test ne distingue donc pas les deux. Et une mesure ultérieure, séance en cours
+  et deux participants à l'écran, a relevé `mode (internal) = NORMAL` — or notre module comme
+  AudioSwitch posent tous deux `MODE_IN_COMMUNICATION` en démarrant. Aucun des deux n'avait
+  donc configuré le moteur audio à cet instant. Ce que le test de la voiture établit se
+  réduit à : **le son a suivi**. Par quel chemin reste inconnu.
 
 Ce que cela n'établit **pas**, et qui reste ouvert :
 
