@@ -831,3 +831,200 @@ describe('compteur de débordement', () => {
     });
   });
 });
+
+// Le restylage. Rien de ce qui suit ne change un COMPORTEMENT : ce sont des
+// couleurs, un rayon, deux couches posées sur la tuile. Les 55 tests au-dessus
+// n'ont pas bougé d'une ligne, et c'est eux qui gardent que rien d'autre n'a
+// bougé.
+//
+// Les trois voiles sont RÉÉCRITS ici plutôt qu'importés de `stage.tsx` : ce
+// sont des valeurs relevées sur le mockup, donc la spécification elle-même. Un
+// test qui importerait la constante resterait vert si quelqu'un la changeait,
+// ce qui est exactement ce qu'on veut voir rougir. `toHaveStyle` compare les
+// chaînes telles quelles — il ne normalise aucune couleur
+// (`to-have-style.js` : `StyleSheet.flatten` puis `this.equals`) — donc les
+// espaces comptent.
+const TILE_BORDER = 'rgba(255, 255, 255, 0.07)';
+const AVATAR_BACKGROUND = 'rgba(255, 255, 255, 0.16)';
+const NAME_SCRIM = 'rgba(0, 0, 0, 0.6)';
+
+describe('bordure de la tuile', () => {
+  it('met le vert de marque autour de la sienne, et un simple liseré autour des autres', async () => {
+    // Les deux fixtures dans le MÊME rendu : une implémentation qui poserait la
+    // même couleur partout passerait n'importe laquelle des deux prise seule.
+    await renderStage(
+      layout(tile('me:camera', { isLocal: true }), [tile('ada:camera', { isLocal: false })]),
+    );
+
+    expect(screen.getByTestId('tile-me:camera')).toHaveStyle({
+      borderColor: tokens.color.brand,
+    });
+    expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ borderColor: TILE_BORDER });
+  });
+
+  it('n’entoure de bleu que celui qui parle', async () => {
+    await renderStage(
+      layout(tile('bob:camera', { isSpeaking: true }), [tile('ada:camera', { isSpeaking: false })]),
+    );
+
+    expect(screen.getByTestId('tile-bob:camera')).toHaveStyle({
+      borderColor: tokens.color.primaryDark,
+    });
+    expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({ borderColor: TILE_BORDER });
+  });
+
+  it('laisse la parole passer devant « c’est moi » sur la même tuile', async () => {
+    // Le cas où les deux conditions sont vraies À LA FOIS, et le seul qui
+    // prouve l'ORDRE des deux styles : chacune prise seule est déjà gardée
+    // au-dessus, et une implémentation qui les inverserait passerait les deux.
+    await renderStage(layout(tile('me:camera', { isLocal: true, isSpeaking: true })));
+
+    expect(screen.getByTestId('tile-me:camera')).toHaveStyle({
+      borderColor: tokens.color.primaryDark,
+    });
+  });
+
+  it('garde la même épaisseur de bordure, qu’on parle ou non', async () => {
+    // Le mockup pose 1 px sur une tuile ordinaire et 2 px sur la tuile locale.
+    // Les 2 px sont retenus partout, et c'est ce test qui le tient : le bord
+    // est intérieur à une boîte de dimensions fixes, donc une largeur qui
+    // suivrait `isSpeaking` rognerait l'image à chaque mot.
+    await renderStage(
+      layout(tile('me:camera', { isLocal: true, isSpeaking: true }), [
+        tile('ada:camera'),
+        tile('bob:camera', { isSpeaking: true }),
+      ]),
+    );
+
+    for (const key of ['me:camera', 'ada:camera', 'bob:camera']) {
+      expect(screen.getByTestId(`tile-${key}`)).toHaveStyle({ borderWidth: 2 });
+    }
+  });
+
+  it('arrondit les trois surfaces au même rayon', async () => {
+    // Le rayon vit sur `styles.tile`, pas sur les styles de TAILLE : sans ce
+    // test, une implémentation qui le laisserait sur `thumbnailTile` seul
+    // arrondirait la bande et laisserait la scène à angles vifs.
+    await renderStage(layout(tile('bob:camera'), [tile('ada:camera')]));
+
+    expect(screen.getByTestId('tile-bob:camera')).toHaveStyle({
+      borderRadius: tokens.radius.card,
+    });
+    expect(screen.getByTestId('tile-ada:camera')).toHaveStyle({
+      borderRadius: tokens.radius.card,
+    });
+
+    await renderStage(gridLayout([tile('me:camera')], 1));
+
+    expect(screen.getByTestId('tile-me:camera')).toHaveStyle({
+      borderRadius: tokens.radius.card,
+    });
+  });
+});
+
+describe('cercle d’initiales', () => {
+  it('remplace l’image absente par un cercle d’initiales', async () => {
+    await renderStage(layout(tile('ada:camera', { track: null, name: 'Ada Lovelace' })));
+
+    // La première et la DERNIÈRE initiale, la règle d'`initialsOf` — reprise
+    // de `src/ui/initialsAvatar` plutôt que réécrite ici.
+    expect(screen.getByTestId('tile-avatar-ada:camera-text')).toHaveTextContent('AL');
+  });
+
+  it('n’en pose aucun quand la tuile a une image', async () => {
+    // La condition rendue FAUSSE : sans ce test, un cercle rendu en toutes
+    // circonstances — donc par-dessus la vidéo — passerait celui d'au-dessus.
+    await renderStage(layout(tile('ada:camera')));
+
+    expect(screen.queryByTestId('tile-avatar-ada:camera')).toBeNull();
+  });
+
+  it('n’invente aucune initiale pour une personne sans nom', async () => {
+    // Les initiales viennent du nom BRUT, jamais du libellé traduit : une
+    // implémentation qui lirait `label` afficherait ici un « C », la première
+    // lettre de `call.unnamedParticipant`.
+    await renderStage(layout(tile('ada:camera', { track: null, name: '' })));
+
+    expect(screen.getByTestId('tile-avatar-ada:camera-text')).toHaveTextContent('');
+  });
+
+  it('porte des couleurs explicites issues des tokens', async () => {
+    // Ce `Text` vient de Paper et cet écran est sombre alors que le thème est
+    // clair (`AGENTS.md`) : sans couleur explicite il retomberait sur
+    // `onSurface`. Aucun test ne peut prouver qu'il est LISIBLE ; celui-ci
+    // prouve que la couleur n'a pas été retirée, et l'égalité stricte fait
+    // échouer n'importe quel repli.
+    await renderStage(layout(tile('ada:camera', { track: null, name: 'Ada' })));
+
+    expect(screen.getByTestId('tile-avatar-ada:camera')).toHaveStyle({
+      backgroundColor: AVATAR_BACKGROUND,
+    });
+    expect(screen.getByTestId('tile-avatar-ada:camera-text')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+});
+
+describe('badge de nom', () => {
+  it('nomme aussi les tuiles qui ont une image', async () => {
+    // Le carton nommé ne paraissait que sans image ; le badge, lui, est sur
+    // toutes les tuiles — c'est là tout le changement, et rien au-dessus ne
+    // l'observe.
+    await renderStage(layout(tile('ada:camera', { name: 'Ada' })));
+
+    expect(screen.getByTestId('tile-name-ada:camera-text')).toHaveTextContent('Ada');
+  });
+
+  it('ne pose plus de carton nommé dès qu’il y a une image', async () => {
+    // Le pendant du test « pose un carton nommé […] quand il n'y a pas de
+    // piste » plus haut, qui n'observe que le cas SANS image : le `testID`
+    // historique reste réservé à ce cas, et `call.spec.tsx:544` s'en sert pour
+    // prouver qu'aucune vidéo n'est posée.
+    await renderStage(layout(tile('ada:camera')));
+
+    expect(screen.queryByTestId('tile-placeholder-ada:camera')).toBeNull();
+    expect(screen.getByTestId('tile-name-ada:camera')).toBeTruthy();
+  });
+
+  it('nomme une personne sans nom par une chaîne traduite, image ou pas', async () => {
+    await renderStage(layout(tile('ada:camera', { name: '' })));
+
+    expect(screen.getByTestId('tile-name-ada:camera-text')).toHaveTextContent(
+      'call.unnamedParticipant',
+    );
+  });
+
+  it('pose le badge en bas à gauche de la tuile', async () => {
+    // La couche n'est interrogeable que sans image — elle ne porte son `testID`
+    // que là — mais c'est le même objet de style dans les deux cas.
+    await renderStage(layout(tile('ada:camera', { track: null })));
+
+    expect(screen.getByTestId('tile-placeholder-ada:camera')).toHaveStyle({
+      justifyContent: 'flex-end',
+      alignItems: 'flex-start',
+    });
+  });
+
+  it('borne le badge à la largeur de la tuile plutôt que de le laisser déborder', async () => {
+    // `overflow: 'hidden'` couperait net un badge plus large que sa tuile, et
+    // `numberOfLines` ne borne QUE le nombre de lignes.
+    await renderStage(layout(tile('ada:camera', { name: 'Ada' })));
+
+    expect(screen.getByTestId('tile-name-ada:camera')).toHaveStyle({ maxWidth: '100%' });
+    expect(screen.getByTestId('tile-name-ada:camera-text')).toHaveProp('numberOfLines', 1);
+  });
+
+  it('porte une couleur explicite et un voile qui tient sur n’importe quelle vidéo', async () => {
+    // Le mockup pose 45 % de noir : sur une image blanche, `textDark` n'y
+    // mesure que 2,85:1. À 60 % il mesure 4,86:1 dans ce même pire cas — voir
+    // `NAME_SCRIM_COLOR` dans `stage.tsx`.
+    await renderStage(layout(tile('ada:camera', { name: 'Ada' })));
+
+    expect(screen.getByTestId('tile-name-ada:camera')).toHaveStyle({
+      backgroundColor: NAME_SCRIM,
+    });
+    expect(screen.getByTestId('tile-name-ada:camera-text')).toHaveStyle({
+      color: tokens.color.textDark,
+    });
+  });
+});
