@@ -151,5 +151,11 @@
   "join.paste": "Pegar un enlace de reunión",
   "join.pasteFailed": "Ese enlace no apunta a un servidor de reuniones conocido.",
   "join.submit": "Unirse",
-  "join.close": "Cerrar"
+  "join.close": "Cerrar",
+  "home.title": "Twake Visio",
+  "home.createTitle": "Nueva reunión",
+  "home.createSubtitle": "Empezar ahora y compartir el enlace",
+  "home.joinTitle": "Unirse a una reunión",
+  "home.joinSubtitle": "Con un código de sala o un enlace",
+  "settings.instance": "Servidor"
 }

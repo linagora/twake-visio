@@ -151,5 +151,11 @@
   "join.paste": "Paste a meeting link",
   "join.pasteFailed": "That link does not point to a known meeting server.",
   "join.submit": "Join",
-  "join.close": "Close"
+  "join.close": "Close",
+  "home.title": "Twake Visio",
+  "home.createTitle": "New meeting",
+  "home.createSubtitle": "Start now and share the link",
+  "home.joinTitle": "Join a meeting",
+  "home.joinSubtitle": "With a room code or a link",
+  "settings.instance": "Server"
 }

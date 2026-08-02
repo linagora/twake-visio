@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getActiveAccount } from 'src/auth/accounts';
+import { instanceLabel } from 'src/instance/label';
 import { signOut } from 'src/auth/login';
 import type { AccessLevel } from 'src/call/types';
 import { chooseLanguage } from 'src/i18n';
@@ -96,6 +97,17 @@ export function ReglagesScreen(): React.ReactElement {
               <Text numberOfLines={1} style={styles.profileEmail} testID="settings-email">
                 {account?.email ?? ''}
               </Text>
+              {/* L'HÔTE, et pas seulement l'adresse. Sur deux instances d'une
+                  même organisation la personne porte souvent la MÊME adresse —
+                  mesuré, un annuaire de développement dont le `mail` est celui
+                  de production. Sans cette ligne, rien à l'écran ne dit où l'on
+                  est. Elle vivait sur l'accueil ; le Lot 2 l'a suivie ici, où
+                  le mockup met l'identité. */}
+              {account === null ? null : (
+                <Text numberOfLines={1} style={styles.profileInstance} testID="settings-instance">
+                  {instanceLabel(account.instance.serverUrl)}
+                </Text>
+              )}
             </View>
           </View>
         </SurfaceCard>
@@ -198,6 +210,11 @@ const styles = StyleSheet.create({
     color: tokens.color.textMeta,
     fontFamily: tokens.font.medium,
     fontSize: 13,
+  },
+  profileInstance: {
+    color: tokens.color.textSectionLabel,
+    fontFamily: tokens.font.medium,
+    fontSize: 12,
   },
   profileName: {
     color: tokens.color.textPrimary,

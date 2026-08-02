@@ -151,5 +151,11 @@
   "join.paste": "Вставить ссылку на встречу",
   "join.pasteFailed": "Эта ссылка не ведёт на известный сервер встреч.",
   "join.submit": "Присоединиться",
-  "join.close": "Закрыть"
+  "join.close": "Закрыть",
+  "home.title": "Twake Visio",
+  "home.createTitle": "Новая встреча",
+  "home.createSubtitle": "Начать сейчас и поделиться ссылкой",
+  "home.joinTitle": "Присоединиться к встрече",
+  "home.joinSubtitle": "По коду комнаты или ссылке",
+  "settings.instance": "Сервер"
 }

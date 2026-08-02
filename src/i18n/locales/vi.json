@@ -151,5 +151,11 @@
   "join.paste": "Dán liên kết cuộc họp",
   "join.pasteFailed": "Liên kết này không trỏ đến máy chủ cuộc họp đã biết.",
   "join.submit": "Tham gia",
-  "join.close": "Đóng"
+  "join.close": "Đóng",
+  "home.title": "Twake Visio",
+  "home.createTitle": "Cuộc họp mới",
+  "home.createSubtitle": "Bắt đầu ngay và chia sẻ liên kết",
+  "home.joinTitle": "Tham gia cuộc họp",
+  "home.joinSubtitle": "Bằng mã phòng hoặc liên kết",
+  "settings.instance": "Máy chủ"
 }

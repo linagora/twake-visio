@@ -43,6 +43,7 @@ describe('ReglagesScreen', () => {
     accounts.getActiveAccount.mockReturnValue({
       displayName: 'Michel Maudet',
       email: 'michel.maudet@twake.app',
+      instance: { serverUrl: 'https://meet.twake-dev.maudet.cloud' },
     });
   });
 
@@ -74,6 +75,27 @@ describe('ReglagesScreen', () => {
     await render(<ReglagesScreen />);
     expect(screen.getByTestId('settings-name')).toHaveTextContent('Michel Maudet');
     expect(screen.getByTestId('settings-email')).toHaveTextContent('michel.maudet@twake.app');
+  });
+
+  // Repris de `home.spec.tsx`, d'où l'information vient : l'HÔTE, et pas
+  // seulement l'adresse. Sur deux instances d'une même organisation la personne
+  // porte souvent la MÊME adresse — mesuré, un annuaire de développement dont
+  // le `mail` est celui de production. Un écran qui n'afficherait que l'adresse
+  // ne dirait pas où l'on est.
+  //
+  // La valeur du fixture est volontairement distincte de l'adresse : une
+  // implémentation qui figerait l'une passerait un test qui les confondrait.
+  it("nomme l'instance, pas seulement l'adresse", async () => {
+    await render(<ReglagesScreen />);
+    expect(screen.getByTestId('settings-instance')).toHaveTextContent(
+      'meet.twake-dev.maudet.cloud',
+    );
+  });
+
+  it('ne montre aucune instance quand aucun compte n’est actif', async () => {
+    accounts.getActiveAccount.mockReturnValue(null);
+    await render(<ReglagesScreen />);
+    expect(screen.queryByTestId('settings-instance')).toBe(null);
   });
 
   describe('le dépliage', () => {

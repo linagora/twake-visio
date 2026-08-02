@@ -151,5 +151,11 @@
   "join.paste": "Besprechungslink einfügen",
   "join.pasteFailed": "Dieser Link verweist nicht auf einen bekannten Besprechungsserver.",
   "join.submit": "Beitreten",
-  "join.close": "Schließen"
+  "join.close": "Schließen",
+  "home.title": "Twake Visio",
+  "home.createTitle": "Neue Besprechung",
+  "home.createSubtitle": "Jetzt starten und den Link teilen",
+  "home.joinTitle": "Einer Besprechung beitreten",
+  "home.joinSubtitle": "Mit einem Raumcode oder einem Link",
+  "settings.instance": "Server"
 }
