@@ -1,8 +1,17 @@
 export type ColorScheme = 'light' | 'dark';
 
-// Toute couleur d'avant-plan porte une variante par schéma. Une valeur unique
-// partagée entre clair et sombre échoue au contraste sur l'un des deux fonds :
-// #C62828 sur #0B0B0C donne 3,4:1, sous le seuil WCAG AA de 4,5:1.
+// Deux familles de jetons cohabitent ici, et elles n'obéissent pas à la même
+// règle. Ne pas les mélanger.
+//
+// 1. Les jetons `*Light` / `*Dark` ci-dessous sont l'ancien jeu, conservé parce
+//    que l'ÉCRAN D'APPEL les consomme en littéraux. Chacun porte une variante
+//    par schéma : une valeur unique partagée échoue au contraste sur l'un des
+//    deux fonds — #C62828 sur #0B0B0C donne 3,4:1, sous le seuil AA de 4,5:1.
+//
+// 2. Les jetons du système visuel de la coque, plus bas, n'ont PAS de variante
+//    par schéma, et c'est délibéré : depuis le Lot 1 de la refonte, `makeTheme`
+//    rend toujours le thème clair. Voir le commentaire de tête de
+//    `src/ui/theme.ts` pour ce que cela achète et ce que cela coûte.
 export const tokens = {
   color: {
     primaryLight: '#0057B8',

@@ -512,6 +512,55 @@ permet au Lot 2 de ne pas rouvrir `discovery.ts`.
 
 ---
 
+## Dette laissée à l'écran d'appel, et pourquoi elle n'est pas payée ici
+
+`AGENTS.md` pose qu'un changement de règle crée une dette **à chaque endroit qui
+cite la règle**, et impose de `grep` la formulation abrogée dans tout `src/` avant
+de livrer. Le balayage a été fait le 2026-08-02, après le passage de `makeTheme`
+au clair permanent. Voici ce qu'il a trouvé, et l'arbitrage.
+
+### Un effet réel, mesuré, et sans régression **[V]**
+
+`barStyles.badge` (`controlBar.ts:56`) et `moreMenu.tsx:97` ne posent
+**délibérément aucune couleur** : Paper appaire lui-même `theme.colors.error` et
+`theme.colors.onError` (`Badge.tsx:88-100`). En changeant `error`, le Lot 1
+change donc la pastille de l'écran d'appel, sans y toucher.
+
+Mesuré :
+
+| | `error` | sur `onError` | ratio |
+| --- | --- | --- | --- |
+| Avant, schéma clair | `#C62828` | blanc | 5,62 |
+| Avant, schéma sombre | `#FF8A80` | `rgba(96,20,16,1)` | 5,73 |
+| **Après** | `#D03939` | blanc | **4,85** |
+
+Au-dessus du seuil AA de 4,5. **Pas de régression** — mais le fait est réel et il
+est consigné ici plutôt que découvert plus tard.
+
+### Trois commentaires devenus faux, laissés en place **[D]**
+
+| Site | Ce qui est écrit | Pourquoi c'est faux |
+| --- | --- | --- |
+| `controlBar.ts:53-54` | « en schéma clair #C62828 sur blanc donne 5,62:1, en schéma sombre #FF8A80 sur son `onError` 5,73:1 » | Ces deux valeurs ne sont plus jamais celles du thème. La branche sombre est inatteignable. |
+| `controlBar.ts:66-67` | « `textLight`, le schéma clair **par défaut de la plupart des appareils** » | Ce n'est plus « la plupart » : c'est **toujours**. La conclusion tient, la raison est sous-estimée. |
+| `stage.tsx:116` | « un quasi-noir en schéma clair, **qui est le défaut de la plupart des appareils** » | Idem. |
+
+**Pourquoi ne pas les corriger maintenant.** Les trois fichiers sont au cœur de
+la zone de conflit : `controlBar.ts` est modifié par **douze** branches en vol,
+`stage.tsx` par douze, `moreMenu.tsx` par dix. Une correction de commentaire y
+produirait douze conflits pour zéro changement de comportement — et le Lot 4
+réécrit ces fichiers de toute façon.
+
+**Ce n'est donc pas un oubli, c'est un report daté.** Les trois sites ci-dessus
+sont à corriger **dans le Lot 4**, à l'endroit du code, au moment où l'écran
+d'appel est refondu. Leur conclusion — poser une couleur explicite — reste juste
+dans tous les cas ; c'est seulement leur justification qui a changé de force,
+d'un « souvent » à un « toujours ».
+
+Les autres occurrences de « dans les deux schémas » décrivent `call.tsx` forçant
+un fond sombre quel que soit le schéma de l'appareil. Elles restent **vraies** :
+ce que `call.tsx` fait n'a pas changé.
+
 ## Hors périmètre, explicitement
 
 - **L'écran d'appel et tous ses panneaux.** Quatorze branches y travaillent.
