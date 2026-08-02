@@ -1,4 +1,10 @@
-import { handPosition, isHandRaised, raisedHands, readHandRaisedAt } from 'src/call/hands';
+import {
+  handPosition,
+  isHandRaised,
+  otherRaisedHands,
+  raisedHands,
+  readHandRaisedAt,
+} from 'src/call/hands';
 import type { ParticipantView, RoomView } from 'src/call/layout';
 
 function person(
@@ -194,6 +200,50 @@ describe('handPosition', () => {
     const snapshot = hands.map((hand) => ({ ...hand }));
 
     handPosition(hands, 'a');
+
+    expect(hands).toEqual(snapshot);
+  });
+});
+
+describe('otherRaisedHands', () => {
+  it('ne garde que les mains des autres', () => {
+    // La fixture porte une main LOCALE et deux distantes : sans les deux, une
+    // implémentation qui ne filtre rien passerait.
+    const hands = raisedHands(
+      view(person('me', '2026-07-30T10:00:02Z', { isLocal: true }), [
+        person('a', '2026-07-30T10:00:01Z'),
+        person('z', '2026-07-30T10:00:03Z'),
+      ]),
+    );
+
+    expect(otherRaisedHands(hands).map((hand) => hand.identity)).toEqual(['a', 'z']);
+  });
+
+  it('garde l’ordre reçu, sans le retrier', () => {
+    // `z` avant `a` : l'ordre du tableau et l'ordre alphabétique divergent,
+    // donc un tri de confort ajouté ici rougirait.
+    const hands = raisedHands(
+      view(person('me', null, { isLocal: true }), [
+        person('z', '2026-07-30T10:00:01Z'),
+        person('a', '2026-07-30T10:00:02Z'),
+      ]),
+    );
+
+    expect(otherRaisedHands(hands).map((hand) => hand.identity)).toEqual(['z', 'a']);
+  });
+
+  it('ne modifie pas la file reçue', () => {
+    // Même raisonnement que pour `raisedHands` et `handPosition` :
+    // `readonly RaisedHand[]` n'arrête qu'un contournement qui respecte le
+    // typage, et `filter` pourrait être réécrit un jour en `splice` en place.
+    const hands = raisedHands(
+      view(person('me', '2026-07-30T10:00:01Z', { isLocal: true }), [
+        person('a', '2026-07-30T10:00:02Z'),
+      ]),
+    );
+    const snapshot = hands.map((hand) => ({ ...hand }));
+
+    otherRaisedHands(hands);
 
     expect(hands).toEqual(snapshot);
   });

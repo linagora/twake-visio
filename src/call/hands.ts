@@ -55,3 +55,15 @@ export function handPosition(hands: readonly RaisedHand[], identity: string): nu
   const index = hands.findIndex((hand) => hand.identity === identity);
   return index === -1 ? null : index + 1;
 }
+
+// Le complément de `raisedHands()`, qui inclut le local à dessein. Ce qui
+// s'affiche sur l'écran principal, lui, ne doit PAS le compter : `HandBanner`
+// porte déjà votre propre main sur la ligne du dessus, et l'y compter une
+// seconde fois ferait dire « et 1 autre » là où il n'y a personne d'autre.
+//
+// L'ordre reçu est conservé tel quel — c'est `raisedHands()` qui trie, et il
+// n'y a pas de seconde règle d'ordre à nommer ici. `isLocal` est déjà sur
+// `RaisedHand` : rien à ajouter au type.
+export function otherRaisedHands(hands: readonly RaisedHand[]): readonly RaisedHand[] {
+  return hands.filter((hand) => !hand.isLocal);
+}
