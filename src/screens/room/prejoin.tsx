@@ -7,6 +7,8 @@ import { ActivityIndicator, Button, Switch, Text } from 'react-native-paper';
 import { fetchRoomAccess } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
+import { rememberVisit } from 'src/rooms/journal';
+import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
@@ -22,8 +24,11 @@ export function PrejoinScreen(): React.ReactElement {
   // Les deux interrupteurs portent l'état *coupé* et non l'état actif : leurs
   // libellés sont « Caméra désactivée » et « Micro coupé ». Un interrupteur
   // dont la position haute contredit son libellé se lit à l'envers.
-  const [cameraOff, setCameraOff] = useState(false);
-  const [micOff, setMicOff] = useState(false);
+  //
+  // La valeur de départ vient des Réglages, lue une seule fois au montage : la
+  // relire à chaque rendu écraserait ce que la personne vient de basculer ici.
+  const [cameraOff, setCameraOff] = useState(() => readPreferences().cameraOffOnJoin);
+  const [micOff, setMicOff] = useState(() => readPreferences().micOffOnJoin);
 
   useEffect(() => {
     const account = getActiveAccount();
@@ -45,6 +50,15 @@ export function PrejoinScreen(): React.ReactElement {
   const handleJoin = (): void => {
     const camera = cameraOff ? 0 : 1;
     const mic = micOff ? 0 : 1;
+    // Le journal de l'onglet Historique s'écrit ICI et non à l'entrée en
+    // séance : `call.tsx` est disputé par quatorze branches, et rejoindre est
+    // le dernier geste dont ce lot est certain. On enregistre l'entrée seule —
+    // la durée exigerait un point d'accroche à la FIN de l'appel.
+    // Le nom que CET écran affiche, pas un autre : c'est celui que la personne
+    // vient de lire, donc celui qu'elle reconnaîtra dans l'historique.
+    if (slug !== undefined && access !== null) {
+      rememberVisit(slug, access.room.name, Date.now());
+    }
     router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
   };
 

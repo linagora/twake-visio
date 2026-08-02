@@ -9,6 +9,7 @@ import type { ApiError } from 'src/api/types';
 import { searchUsers, type Me } from 'src/api/users';
 import { getActiveAccount } from 'src/auth/accounts';
 import { rememberRoomTitle } from 'src/rooms/titles';
+import { readPreferences } from 'src/settings/preferences';
 import type { AccessLevel } from 'src/call/types';
 import { tokens } from 'src/ui/tokens';
 
@@ -52,7 +53,12 @@ export function CreateRoomScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
   const [name, setName] = useState('');
-  const [accessLevel, setAccessLevel] = useState<AccessLevel>('public');
+  // Le défaut vient des Réglages, dont la valeur d'usine est `public` — pas le
+  // `trusted` du mockup, qui casse l'exigence produit pour les invités
+  // externes. Voir `DEFAULT_PREFERENCES`.
+  const [accessLevel, setAccessLevel] = useState<AccessLevel>(
+    () => readPreferences().defaultAccessLevel,
+  );
   const [coOwnerQuery, setCoOwnerQuery] = useState('');
   const [candidates, setCandidates] = useState<readonly Me[]>([]);
   const [coOwners, setCoOwners] = useState<readonly Me[]>([]);

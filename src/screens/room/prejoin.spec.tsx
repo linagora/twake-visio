@@ -16,6 +16,24 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// Les deux interrupteurs partent désormais des Réglages. Sans ce double, le
+// test lirait le vrai magasin MMKV — un état partagé entre fichiers de spec,
+// donc un résultat qui dépendrait de l'ordre d'exécution.
+jest.mock('src/settings/preferences', () => ({ readPreferences: jest.fn() }));
+jest.mock('src/rooms/journal', () => ({ rememberVisit: jest.fn() }));
+
+const preferences = jest.requireMock('src/settings/preferences') as {
+  readPreferences: jest.Mock;
+};
+const journal = jest.requireMock('src/rooms/journal') as { rememberVisit: jest.Mock };
+
+const DEFAULT_PREFS = {
+  micOffOnJoin: true,
+  cameraOffOnJoin: false,
+  defaultAccessLevel: 'public' as const,
+  language: null,
+};
+
 const ACCOUNT = {
   id: 'https://sso.linagora.com|u-1',
   instance: {
@@ -42,6 +60,8 @@ const GRANTED = {
 beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockReset();
+  journal.rememberVisit.mockClear();
+  preferences.readPreferences.mockReturnValue(DEFAULT_PREFS);
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 });
 
@@ -82,6 +102,81 @@ describe('PrejoinScreen', () => {
     await fireEvent(screen.getByTestId('camera-switch'), 'valueChange', true);
     await fireEvent.press(screen.getByTestId('join-call-btn'));
 
-    expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call?camera=0&mic=1');
+    // `mic=0` parce que le défaut des Réglages est « micro coupé à l'entrée »,
+    // posé explicitement par `DEFAULT_PREFS` ci-dessus. Ce test lisait
+    // auparavant un `useState(false)` codé en dur, et c'est lui qui a signalé
+    // le changement de comportement quand la préférence l'a remplacé.
+    expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call?camera=0&mic=0');
+  });
+
+  describe('les Réglages gouvernent l’état de départ', () => {
+    // Chaque préférence dans ses DEUX états : sans le second cas, un
+    // `useState(true)` codé en dur passerait.
+    it.each([
+      [true, 0],
+      [false, 1],
+    ])('part de micOffOnJoin=%s et annonce mic=%i', async (micOffOnJoin, expected) => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, micOffOnJoin });
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+      await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/room/reunion/call?camera=1&mic=${String(expected)}`,
+      );
+    });
+
+    it.each([
+      [true, 0],
+      [false, 1],
+    ])('part de cameraOffOnJoin=%s et annonce camera=%i', async (cameraOffOnJoin, expected) => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin });
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+      await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/room/reunion/call?camera=${String(expected)}&mic=0`,
+      );
+    });
+  });
+
+  describe('le journal de l’Historique', () => {
+    // `handleJoin` fait DEUX choses — journaliser puis naviguer. Deux
+    // instructions, deux assertions qui les nomment.
+    it('enregistre la visite au moment de rejoindre', async () => {
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+      await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+      expect(journal.rememberVisit).toHaveBeenCalledWith(
+        'reunion',
+        GRANTED.value.room.name,
+        expect.any(Number),
+      );
+    });
+
+    it('n’enregistre rien tant qu’on n’a pas rejoint', async () => {
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+
+      expect(journal.rememberVisit).not.toHaveBeenCalled();
+    });
   });
 });
