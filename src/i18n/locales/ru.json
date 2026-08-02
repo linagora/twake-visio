@@ -60,6 +60,8 @@
   "call.handPosition": "Позиция {{position}}",
   "call.handQueue": "Поднятые руки",
   "call.handQueueEntry": "{{position}}. {{name}}",
+  "call.handRaisedBy": "{{name}} поднял(а) руку",
+  "call.handRaisedOthers": "ещё желающих выступить: {{count}}",
   "call.handFailed": "Не удалось изменить состояние вашей руки",
   "call.reactions": "Реакции",
   "call.you": "Вы",

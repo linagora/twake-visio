@@ -60,6 +60,8 @@
   "call.handPosition": "Posizione {{position}}",
   "call.handQueue": "Mani alzate",
   "call.handQueueEntry": "{{position}}. {{name}}",
+  "call.handRaisedBy": "{{name}} ha alzato la mano",
+  "call.handRaisedOthers": "{{count}} in attesa di parlare",
   "call.handFailed": "Impossibile cambiare lo stato della tua mano",
   "call.reactions": "Reazioni",
   "call.you": "Tu",

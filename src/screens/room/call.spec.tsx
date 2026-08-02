@@ -2122,6 +2122,54 @@ describe('CallScreen, main levée', () => {
     );
   });
 
+  it('signale sur l’écran principal la main d’un autre, jamais la sienne', async () => {
+    // Le filtre observé dans ses deux états, sur le même rendu : d'abord la
+    // seule main locale — `HandBanner` la porte, le nouveau bandeau non —,
+    // puis une main distante qui le fait apparaître.
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-banner')).toBeTruthy());
+    expect(screen.queryByTestId('raised-hands-banner')).toBeNull();
+
+    mockRoom.remoteParticipants.set(
+      'u-ada',
+      remoteParticipant('u-ada', 'Ada', { handRaisedAt: '2026-07-30T10:00:01Z' }),
+    );
+    await emitRoom('participantAttributesChanged');
+
+    expect(screen.getByTestId('raised-hands-banner-name')).toHaveTextContent(
+      'call.handRaisedBy|{"name":"Ada"}',
+    );
+    expect(screen.queryByTestId('raised-hands-banner-others')).toBeNull();
+  });
+
+  it('nomme la première main de la file, et compte les autres', async () => {
+    // Bob inséré AVANT Ada dans la Map du SDK, mais levé une seconde APRÈS :
+    // c'est l'horodatage du serveur qui ordonne, jamais l'ordre d'insertion.
+    // Et la main locale, la plus ancienne des trois, ne compte pas — sans quoi
+    // le compte dirait 2.
+    mockRoom.remoteParticipants.set(
+      'u-bob',
+      remoteParticipant('u-bob', 'Bob', { handRaisedAt: '2026-07-30T10:00:02Z' }),
+    );
+    mockRoom.remoteParticipants.set(
+      'u-ada',
+      remoteParticipant('u-ada', 'Ada', { handRaisedAt: '2026-07-30T10:00:01Z' }),
+    );
+    mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
+
+    await renderCall();
+
+    await waitFor(() => expect(screen.getByTestId('raised-hands-banner')).toBeTruthy());
+    expect(screen.getByTestId('raised-hands-banner-name')).toHaveTextContent(
+      'call.handRaisedBy|{"name":"Ada"}',
+    );
+    expect(screen.getByTestId('raised-hands-banner-others')).toHaveTextContent(
+      'call.handRaisedOthers|{"count":1}',
+    );
+  });
+
   it('montre la file entière dans le menu, dans son ordre', async () => {
     mockRoom.remoteParticipants.set(
       'u-bob',
@@ -2650,18 +2698,20 @@ describe('CallScreen, plein écran, enfermement', () => {
   });
 });
 
-// « En plein écran : une tuile, et rien d'autre. » La lecture STRICTE, choisie
-// par le produit. La barre l'appliquait déjà ; les trois bandeaux et
-// l'incrustation des réactions, non — ils continuaient de se poser par-dessus
-// l'unique tuile, sur un écran dont c'est justement toute la raison d'être.
+// « Le plein écran masque la barre et les commandes, jamais une demande qui
+// attend une réponse. » La règle arbitrée le 2026-08-02, qui remplace « une
+// tuile, et rien d'autre ».
 //
-// **Conséquence énoncée et acceptée** : une demande d'admission devient
-// INVISIBLE tant qu'on reste en plein écran. Le premier test ci-dessous la
-// nomme, plutôt que de la laisser se découvrir sur appareil.
+// Quatre surfaces, et le describe couvre les deux camps : ce qui SURVIT parce
+// qu'il attend une réponse de vous — quelqu'un frappe à la porte, quelqu'un
+// d'autre lève la main —, et ce qui DISPARAÎT parce qu'il ne fait que décrire
+// l'état du monde — l'enregistrement, votre propre main, les bulles.
 //
-// Un test par surface masquée, et chacun fait l'aller-retour : sans le retour,
-// une implémentation qui ne rendrait plus jamais le bandeau passerait aussi.
-describe('CallScreen, plein écran, tout le reste disparaît', () => {
+// Les tests du second camp font l'aller-retour : sans le retour, une
+// implémentation qui ne rendrait plus jamais le bandeau passerait aussi. Ceux
+// du premier assertent en plus l'ABSENCE de `mic-toggle`, sans quoi un plein
+// écran qui n'aurait jamais pris les rendrait verts pour la mauvaise raison.
+describe('CallScreen, plein écran, ce qui disparaît et ce qui reste', () => {
   // La file d'attente part d'un `setInterval` de cinq secondes : sans avancer
   // le temps, `listWaitingParticipants` n'est jamais appelé et le bandeau
   // n'existe pas. Même dispositif que le describe « salle d'attente », posé sur
@@ -2676,11 +2726,11 @@ describe('CallScreen, plein écran, tout le reste disparaît', () => {
     jest.useRealTimers();
   });
 
-  it("masque le bandeau d'admission en plein écran, et le rend au retour", async () => {
-    // La conséquence acceptée : personne ne voit plus frapper à la porte tant
-    // que le plein écran dure. Le retour est immédiat et tient à un seul appui,
-    // et la file, elle, n'a pas bougé — `useWaitingParticipants` continue de la
-    // relire.
+  // INVERSÉ le 2026-08-02. Ce test affirmait le contraire, et son commentaire
+  // parlait d'une « conséquence acceptée ». Elle ne l'est plus : la règle est
+  // devenue « le plein écran masque la barre et les commandes, jamais une
+  // demande qui attend une réponse », et quelqu'un enfermé dehors en est une.
+  it("garde le bandeau d'admission visible en plein écran", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'listWaitingParticipants')
@@ -2696,11 +2746,27 @@ describe('CallScreen, plein écran, tout le reste disparaît', () => {
 
     await enterFullscreen('u-bob:camera');
 
-    expect(screen.queryByTestId('waiting-banner')).toBeNull();
+    expect(screen.getByTestId('waiting-banner')).toBeTruthy();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
+  });
 
-    await fireEvent.press(screen.getByTestId('tile-u-bob:camera'));
+  // La seconde moitié de la même règle : une main levée attend qu'on donne la
+  // parole. `mic-toggle` absent prouve qu'on est bien EN plein écran — sans
+  // cette seconde assertion, un plein écran qui n'aurait jamais pris rendrait
+  // le test vert pour la mauvaise raison.
+  it('garde le bandeau des mains levées visible en plein écran', async () => {
+    mockRoom.remoteParticipants.set(
+      'u-bob',
+      remoteParticipant('u-bob', 'Bob', { handRaisedAt: '2026-07-30T10:00:01Z' }),
+    );
 
-    await waitFor(() => expect(screen.getByTestId('waiting-banner')).toBeTruthy());
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('raised-hands-banner')).toBeTruthy());
+
+    await enterFullscreen('u-bob:camera');
+
+    expect(screen.getByTestId('raised-hands-banner')).toBeTruthy();
+    expect(screen.queryByTestId('mic-toggle')).toBeNull();
   });
 
   it("masque l'indicateur d'enregistrement en plein écran, et le rend au retour", async () => {

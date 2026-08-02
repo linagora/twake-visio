@@ -88,12 +88,15 @@ quand même. Le critère de la tromperie ne disparaît pas pour autant : il rest
 distincte — du message de reconnexion et de la `Snackbar`. **Deux raisons de survivre, donc, et non
 une seule.**
 
-**Il y a DEUX commentaires à réécrire, pas un**, et le second se rate facilement : celui de la
-garde (`call.tsx:921-937`) et celui du message de reconnexion (`call.tsx:981-998`), qui énonce le
-critère de la tromperie comme critère **unique** et donne « une demande d'admission, elle, est
-manquée sans que rien ne mente » en exemple de ce qui **ne** survit **pas**. Les deux sont prescrits
-mot pour mot par les tâches 3 et 4, **à l'endroit du code**. Aucun test ne rougit sur un
-commentaire : c'est la raison de les prescrire plutôt que de les laisser à la relecture.
+**Il y a TROIS commentaires à réécrire** — le plan en annonçait deux, l'implémentation en a trouvé
+un troisième (voir la correction dans la tâche 3, Step 4) : celui de la garde (`call.tsx:921-937`),
+celui du message de reconnexion (`call.tsx:981-998`), qui énonce le critère de la tromperie comme
+critère **unique** et donne « une demande d'admission, elle, est manquée sans que rien ne mente » en
+exemple de ce qui **ne** survit **pas**, et celui du `ReactionOverlay` (`call.tsx:1050-1052`), qui
+cite la règle remplacée comme si elle était courante. Les deux premiers sont prescrits mot pour mot
+par les tâches 3 et 4, **à l'endroit du code** ; le troisième l'est par la correction de la tâche 3.
+Aucun test ne rougit sur un commentaire : c'est la raison de les prescrire plutôt que de les laisser
+à la relecture.
 
 ---
 
@@ -228,7 +231,7 @@ prescrite ici » et signale que `participantsPanel.tsx` a payé exactement ce d�
 | `src/i18n/locales/{en,fr,es,it,de,vi,ru}.json` | **modifiés** : 2 clés × 7 locales | 2 |
 | `src/screens/room/raisedHandsBanner.tsx` | **créé** : la coquille de présentation | 2 |
 | `src/screens/room/raisedHandsBanner.spec.tsx` | **créé** : 7 tests | 2 |
-| `src/screens/room/call.tsx` | **modifié** : scission de la garde + **deux** commentaires | 3 |
+| `src/screens/room/call.tsx` | **modifié** : scission de la garde + **trois** commentaires | 3 |
 | `src/screens/room/call.spec.tsx` | **modifié** : 1 test inversé, describe renommé | 3 |
 | `src/screens/room/call.tsx` | **modifié** : `useMemo` + la ligne du bandeau | 4 |
 | `src/screens/room/call.spec.tsx` | **modifié** : 3 tests neufs | 4 |
@@ -977,8 +980,33 @@ Remplacer donc **tout le bloc de commentaire** qui précède
 ```
 
 **Le corps du `{callState.status === 'reconnecting' ? … }` ne bouge pas**, ni la `Snackbar`, ni la
-garde du `ReactionOverlay` (`call.tsx:1050-1052`), dont le commentaire dit « pour la même raison que
-les trois bandeaux ci-dessus » et reste exact : les bulles restent bien masquées.
+**garde** du `ReactionOverlay` (`call.tsx:1050-1052`) : les bulles restent bien masquées.
+
+- [ ] **Step 4 bis : le TROISIÈME commentaire, celui du `ReactionOverlay`**
+
+**CORRECTION posée à l'implémentation, le 2026-08-02.** Ce plan affirmait ici que le commentaire du
+`ReactionOverlay` « reste exact ». Sa **conclusion** l'est — les bulles restent masquées — mais sa
+**raison** ne l'est plus, et c'est elle que le commentaire écrit : « pour la même raison que les
+trois bandeaux ci-dessus : en plein écran, une tuile et rien d'autre ». Deux affirmations fausses
+dès le Step 3 appliqué — ils ne sont plus trois dans la garde mais deux, et la règle citée est celle
+que le commentaire de la garde vient de déclarer **remplacée**, vingt lignes plus haut. Livré tel
+quel, le fichier énoncerait l'ancienne règle comme courante à côté de celle qui la remplace : c'est
+exactement le défaut que les deux autres réécritures corrigent.
+
+Remplacer donc le premier paragraphe de ce commentaire par :
+
+```tsx
+      {/* Dernier enfant de `styles.root` : peint au-dessus de tout le reste de
+          l'écran, bandeaux et barre de contrôle compris. Ne rend rien au
+          repos — mais elle est bel et bien enveloppée, pour la même raison que
+          l'indicateur d'enregistrement et votre propre main levée ci-dessus :
+          des bulles qui passent d'elles-mêmes ne font que décrire l'état du
+          monde, et n'attendent aucune réponse de vous. La condition est
+          séparée de la leur parce que sa POSITION l'est : ce calque doit
+          rester le dernier enfant, sans quoi il passe sous la barre.
+```
+
+Le second paragraphe (`chatOpen`, `BOTTOM_GUARD`) ne bouge pas.
 
 **Rien d'autre ne bouge dans ce fichier à cette tâche.** Aucun test ne rougit sur un commentaire —
 c'est précisément pourquoi il est prescrit ici, à l'endroit du code, plutôt que laissé à la
@@ -1229,6 +1257,12 @@ modérateur vous donne la parole. Placé en dessous, il ne bouge rien.
 **L'ordre visuel tient dans les quatre combinaisons** : admission, enregistrement, votre main, les
 mains des autres — la garde n'encadrant que le bloc du milieu, sortir de ce bloc ne réordonne rien.
 
+**c. CORRECTION posée à l'implémentation, le 2026-08-02 : un décompte que cette tâche périme.**
+`call.tsx:221` explique pourquoi `box` est mesurée plutôt que lue de `useWindowDimensions()`, « qui
+ignore la barre de contrôle, les encoches et les **trois** bandeaux ». La bande en porte quatre à
+partir d'ici. Écrire « les bandeaux », sans le compte : il n'y a rien à compter à cet endroit, et un
+nombre y sera faux au bandeau suivant.
+
 - [ ] **Step 5 : vérifier que les trois passent**
 
 ```bash
@@ -1333,3 +1367,22 @@ n'atteint personne : `scripts/task-brief PLAN N` n'extrait que le texte d'une se
 tâche se révèle fausse en cours de route, la correction qui compte est celle qu'on pose **dans la
 tâche**, à l'endroit du code fautif — et la relecture d'ensemble se fait après la tâche 4, jamais
 au milieu.
+
+### Relecture faite, le 2026-08-02, contre le code livré
+
+**Tout ce qui était mesuré s'est vérifié à l'identique** : la ligne de base (936 / 62), les quatre
+comptes de fin de tâche (939, 946, 946, 949), les quatre échecs attendus **au message près**, et les
+**16 comptes de rouges** des quatre tableaux de mutations — aucun écart, aucun zéro rouge.
+
+**Une seule affirmation s'est révélée fausse**, et elle porte sur un commentaire : celui du
+`ReactionOverlay`, que la tâche 3 déclarait rester exact. La correction est posée **dans la tâche 3**
+(Step 4 bis), pas ici. Elle a une cause identifiable, et c'est la même que celle qui avait déjà rendu
+le commentaire de la reconnexion faux deux fois : le critère a été vérifié sur les surfaces que la
+tâche **touche**, pas sur toutes celles que l'écran **porte**. La garde du `ReactionOverlay` est un
+quatrième site qui cite la règle, et il ne bougeait pas — donc il n'a pas été relu.
+
+**Un décompte a été périmé par la tâche 4** (`call.tsx:221`, « les trois bandeaux ») ; sa correction
+est posée dans la tâche 4, Step 4 c.
+
+**Ce qui reste invérifié est exactement la liste de « Ce qu'aucun test de ce plan ne prouvera »** :
+rien n'a été exécuté sur appareil, et les quatre points y restent ouverts.
