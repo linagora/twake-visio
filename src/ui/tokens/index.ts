@@ -62,6 +62,31 @@ export const tokens = {
     brandWash: '#EAF6EF',
     onBrand: '#FFFFFF',
 
+    // — Les deux dégradés de marque, et leur correction —
+    //
+    // Le mockup en pose deux : la tuile-logo (160°) et la carte d'action de
+    // l'accueil (150°). Aucun des deux ne porte du blanc de façon accessible,
+    // exactement comme cinq valeurs de la palette du Lot 1 : c'est un document
+    // web, écrit sans passe d'accessibilité.
+    //
+    //   rôle                    mockup              blanc   retenu     blanc
+    //   tuile, butée claire     #2FBE6C              2,41   #2AA960     3,02
+    //   tuile, butée foncée     #159049              4,10   #138041     5,01
+    //   carte, butée claire     #26B166              2,78   #1D874E     4,54
+    //   carte, butée foncée     #158B48              4,36   #106A37     6,69
+    //
+    // La butée CLAIRE gouverne : c'est là que le contraste est le pire, et un
+    // dégradé ne « moyenne » pas — un glyphe posé dessus rencontre les deux.
+    //
+    // Deux seuils différents, et c'est voulu : la tuile ne porte qu'un GLYPHE,
+    // soumis aux 3:1 du non-textuel (WCAG 1.4.11) ; la carte porte un TITRE,
+    // soumis aux 4,5:1 du texte. D'où deux facteurs d'assombrissement, 0,892 et
+    // 0,765, appliqués aux DEUX butées pour que le dégradé garde son caractère.
+    tileGradientFrom: '#2AA960',
+    tileGradientTo: '#138041',
+    cardGradientFrom: '#1D874E',
+    cardGradientTo: '#106A37',
+
     appBackground: '#F5F7F6',
     cardSurface: '#FFFFFF',
     // Traits DÉCORATIFS. Ils ne portent aucune information nécessaire pour

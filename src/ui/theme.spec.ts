@@ -145,4 +145,27 @@ describe('palette de la coque', () => {
       computeContrast(tokens.color.textChevron, tokens.color.cardSurface),
     ).toBeGreaterThanOrEqual(AA_NON_TEXT);
   });
+
+  // Les deux dégradés de marque, sur leurs DEUX butées chacun.
+  //
+  // Un dégradé ne moyenne pas : ce qu'on pose dessus rencontre les deux
+  // extrémités, et c'est la plus claire qui gouverne. Les valeurs du mockup
+  // donnaient 2,41 et 2,78 avec du blanc — ces tests sont la garde qui empêche
+  // de les remettre.
+  //
+  // Deux seuils, délibérément : la tuile ne porte qu'un glyphe (non textuel,
+  // 3:1), la carte porte un titre (texte, 4,5:1).
+  it.each([
+    ['butée claire', tokens.color.tileGradientFrom],
+    ['butée foncée', tokens.color.tileGradientTo],
+  ])('la %s du dégradé de tuile tient le seuil non textuel avec du blanc', (_l, stop) => {
+    expect(computeContrast(tokens.color.onBrand, stop)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+  });
+
+  it.each([
+    ['butée claire', tokens.color.cardGradientFrom],
+    ['butée foncée', tokens.color.cardGradientTo],
+  ])('la %s du dégradé de carte tient le seuil TEXTE avec du blanc', (_l, stop) => {
+    expect(computeContrast(tokens.color.onBrand, stop)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
 });
