@@ -153,6 +153,38 @@ appelle `registerTrack` et rend ce descripteur à JavaScript suffit donc — JS
 construit la `MediaStreamTrack`, `livekit-client` la publie, et ni
 `react-native-webrtc` ni le SDK LiveKit n'ont besoin d'être modifiés.
 
+#### Mieux que `registerTrack` : `createVideoTrack` fait déjà tout **[V]**
+
+Relevé le 2026-08-03, en écrivant l'étape 3. `registerTrack` demande à
+l'appelant de fabriquer lui-même la `VideoSource`, la `VideoTrack` et le
+`SurfaceTextureHelper`. **Ce n'est pas nécessaire** :
+
+```java
+public VideoTrack createVideoTrack(AbstractVideoCaptureController controller)   // WebRTCModule.java:479
+```
+
+`GetUserMediaImpl.java:399-430` montre ce qu'elle fait à notre place :
+`initializeVideoCapturer()`, `SurfaceTextureHelper.create`, `createVideoSource`,
+`videoCapturer.initialize(...)`, `createVideoTrack(id, source)`, l'inscription
+dans le registre des pistes, puis `startCapture()`.
+
+**Et le contrat à remplir tient en deux méthodes.**
+`AbstractVideoCaptureController` n'a **qu'une seule** méthode abstraite —
+`getDeviceId()` — et tout le reste a une implémentation par défaut. Une
+sous-classe doit :
+
+1. surcharger `initializeVideoCapturer()` pour poser son `videoCapturer` ;
+2. implémenter `getDeviceId()`.
+
+Le `VideoCapturer` est l'interface standard de WebRTC : il reçoit un
+`CapturerObserver` et lui pousse des `VideoFrame`. Pour l'étape 3, c'est une
+horloge et une image unie.
+
+> **Ce que ça change au chiffrage** : l'étape 3 n'est pas un module natif à
+> écrire, c'est **une sous-classe et un capteur de synthèse**. Le gros du
+> travail reste l'étape 4 — la caméra, MLKit et la composition — mais la
+> plomberie, elle, était déjà écrite dans le paquet.
+
 Côté iOS, la couture est confirmée dans la version installée :
 `peerConnectionFactory` (ligne 40) et `localTracks` (ligne 46) sont des
 propriétés **publiques** de `WebRTCModule.h`.
