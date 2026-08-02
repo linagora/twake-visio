@@ -176,13 +176,42 @@ réduit alors à : segmenter l'image, composer, pousser dans le `VideoSource`.
 `react-native-vision-camera` n'est **pas** installé ici — c'est une dépendance à
 ajouter, avec sa propre compatibilité SDK à vérifier.
 
-### Mesure n° 1 — le coût par image : **toujours ouverte, et c'est la seule** **[?]**
+### Mesure n° 1 — le coût par image : **mesuré, et le chantier passe** **[V]**
 
-MLKit et Vision sur les appareils visés. Elle ne se fait **que sur appareil**, et
-elle décide du coût, plus de la possibilité. Un détourage à 8 images par seconde
-est pire qu'aucun détourage.
+Relevé le 2026-08-02 sur **Pixel 10 Pro Fold** (Tensor G5, API 36), module
+`modules/twake-segmentation`, MLKit `segmentation-selfie` en `STREAM_MODE`,
+60 images par résolution.
 
-C'est désormais **le seul inconnu** de ce chantier.
+| Résolution | Médiane | i/s | p95 | part du budget 30 i/s (médiane) | p95 |
+| --- | --- | --- | --- | --- | --- |
+| 640 × 480 | **17,96 ms** | 55,7 | 25,89 ms | 54 % | 78 % |
+| 1280 × 720 | **26,04 ms** | 38,4 | 38,54 ms | 78 % | **116 %** |
+
+Le budget est de **33,33 ms par image** à 30 i/s. C'est lui qui compte, pas les
+i/s bruts : la segmentation n'est qu'une étape.
+
+**Verdict : viable en 640 × 480, marginal en 720p.** À 480p il reste 15 ms pour
+la conversion YUV, la composition et l'encodage. À 720p il en reste 7 — et une
+image sur vingt dépasse déjà le budget **à elle seule**, avant que quoi que ce
+soit d'autre ne s'exécute.
+
+**Trois réserves, et elles vont toutes dans le même sens :**
+
+1. **C'est un vaisseau amiral.** Tensor G5, sorti l'année du relevé. Cette note
+   demandait un appareil d'**entrée de gamme** ; ce chiffre est donc un
+   **plafond de gamme**, pas un cas moyen. Un téléphone à 200 € sera nettement
+   plus lent, et 720p y est probablement hors d'atteinte.
+2. **Le `Bitmap` ARGB synthétique est plus rapide que la réalité.** Un pipeline
+   vidéo alimente `fromMediaImage` en YUV, dont la conversion s'ajoute.
+3. **C'est la segmentation SEULE.** Ni flou, ni composition, ni encodage.
+
+Autrement dit : **17,96 ms est un plancher optimiste**, et la marge réelle est
+plus étroite que le tableau ne le laisse croire.
+
+**Ce que ça décide** : le chantier n'est pas tué, mais il l'est **à 720p sur
+autre chose qu'un haut de gamme**. Une implémentation doit donc segmenter à
+résolution réduite et remonter le masque — ce que fait le client web de la
+DINUM, et ce qui n'était pas un choix libre ici.
 
 ### Au passage, un fait qui ne concerne pas ce chantier **[V]**
 
@@ -210,8 +239,8 @@ moins chère à la plus chère.
 
 | # | Étape | Ce qu'elle décide | Coût |
 | --- | --- | --- | --- |
-| 1 | mesurer MLKit sur un Android visé, hors de l'application — une activité jetable, un compteur d'images | si l'effet tient 30 i/s. **Sous ~24, on s'arrête ici** | quelques heures, un appareil |
-| 2 | idem `VNGeneratePersonSegmentationRequest` sur iOS | même verdict, l'autre plateforme | idem, un iPhone réel — le simulateur ne publie pas de caméra |
+| 1 | ~~mesurer MLKit~~ **FAIT** — voir le tableau ci-dessus | passe à 480p, marginal à 720p, et seulement mesuré sur un vaisseau amiral | fait le 2026-08-02 |
+| 2 | idem `VNGeneratePersonSegmentationRequest` sur iOS | même verdict, l'autre plateforme | **prochaine étape**, un iPhone réel — le simulateur ne publie pas de caméra |
 | 3 | prouver la chaîne SANS segmentation : `registerTrack` d'une piste **de couleur unie**, publiée et vue par un second participant | que les quatre maillons du § « mesure n° 2 » tiennent **en exécution**, pas seulement dans les déclarations | un module natif minimal, Android d'abord |
 | 4 | brancher la segmentation mesurée à l'étape 1 sur la chaîne prouvée à l'étape 3 | rien — c'est de l'assemblage | le gros du travail |
 | 5 | le panneau d'effets, les huit arrière-plans DINUM (163 Ko de vignettes) | rien | petit, et **jamais avant l'étape 4** |
