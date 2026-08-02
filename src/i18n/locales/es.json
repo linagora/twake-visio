@@ -40,6 +40,8 @@
   "call.permissionsDenied": "Se necesita acceso a la cámara y al micrófono para unirse",
   "call.reconnecting": "Reconectando…",
   "call.ended": "La reunión ha terminado",
+  "call.ongoingTitle": "Reunión en curso",
+  "call.ongoingBody": "Toca para volver a la reunión",
   "call.cameraFront": "Cámara frontal",
   "call.cameraBack": "Cámara trasera",
   "call.cameraUnknown": "Cámara",

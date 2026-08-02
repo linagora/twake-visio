@@ -40,6 +40,8 @@
   "call.permissionsDenied": "Cần quyền truy cập máy ảnh và micrô để tham gia",
   "call.reconnecting": "Đang kết nối lại…",
   "call.ended": "Cuộc họp đã kết thúc",
+  "call.ongoingTitle": "Cuộc họp đang diễn ra",
+  "call.ongoingBody": "Chạm để quay lại cuộc họp",
   "call.cameraFront": "Máy ảnh trước",
   "call.cameraBack": "Máy ảnh sau",
   "call.cameraUnknown": "Máy ảnh",
