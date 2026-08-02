@@ -20,7 +20,16 @@
     ],
     "android": {
       "package": "com.linagora.twakevisio",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT"],
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH_CONNECT",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_CAMERA",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "POST_NOTIFICATIONS"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -39,7 +48,8 @@
       "bundleIdentifier": "com.linagora.twakevisio",
       "infoPlist": {
         "NSCameraUsageDescription": "Twake Visio utilise la caméra pour la visioconférence.",
-        "NSMicrophoneUsageDescription": "Twake Visio utilise le micro pour la visioconférence."
+        "NSMicrophoneUsageDescription": "Twake Visio utilise le micro pour la visioconférence.",
+        "UIBackgroundModes": ["audio"]
       }
     }
   }

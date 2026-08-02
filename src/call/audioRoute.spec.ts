@@ -8,6 +8,8 @@ import {
   listAudioOutputs,
   openSystemRoutePicker,
   readCurrentAudioDeviceId,
+  routeToPreferredDevice,
+  watchPreferredDevice,
   selectAudioDevice,
   selectAudioOutput,
   startAudioRoute,
@@ -40,6 +42,7 @@ function fakeNative(overrides: Partial<NativeAudioDevicesModule> = {}): NativeAu
     release: jest.fn(async () => undefined),
     selectDevice: jest.fn(async () => true),
     clearDevice: jest.fn(async () => undefined),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
     ...overrides,
   };
 }
@@ -116,6 +119,219 @@ describe('startAudioRoute', () => {
 
     expect(native.acquire).not.toHaveBeenCalled();
     expect(AudioSession.startAudioSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('route vers le casque APRÈS avoir pris le volant, jamais avant', async () => {
+    // L'ordre est le point : `getAvailableCommunicationDevices()` se lit une
+    // fois le mode de communication posé. Lister avant `acquire()` rendrait une
+    // liste sans le casque, et la préférence porterait sur du vide.
+    const order: string[] = [];
+    const native = fakeNative({
+      acquire: jest.fn(async () => {
+        order.push('acquire');
+      }),
+      listDevices: jest.fn(async () => {
+        order.push('list');
+        return [{ id: 3, type: 7, name: 'Jabra Evolve3 85' }];
+      }),
+      selectDevice: jest.fn(async (id: number) => {
+        order.push(`select:${id}`);
+        return true;
+      }),
+    });
+    mockNativeHolder.current = native;
+
+    await startAudioRoute();
+
+    expect(order).toEqual(['acquire', 'list', 'select:3']);
+  });
+
+  it("ne pose aucune route quand aucun casque n'est disponible", async () => {
+    // La seconde polarité : sans casque, on laisse le système décider. Poser
+    // une route ici arbitrerait entre écouteur et haut-parleur, ce que personne
+    // n'a demandé — et un `setCommunicationDevice` est un choix MANUEL pour
+    // Android, qu'on ne défait qu'en le vidant.
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [
+        { id: 1, type: 1, name: 'Pixel 10 Pro Fold' },
+        { id: 2, type: 2, name: 'Pixel 10 Pro Fold' },
+      ]),
+    });
+    mockNativeHolder.current = native;
+
+    await startAudioRoute();
+
+    expect(native.acquire).toHaveBeenCalledTimes(1);
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+
+  it("ne route rien sur le chemin AudioSwitch, qui s'en charge lui-même", async () => {
+    const native = fakeNative({ isSupported: jest.fn(() => false) });
+    mockNativeHolder.current = native;
+
+    await startAudioRoute();
+
+    expect(native.listDevices).not.toHaveBeenCalled();
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+});
+
+describe('routeToPreferredDevice', () => {
+  it('route vers le casque Bluetooth disponible et rend true', async () => {
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [
+        { id: 1, type: 1, name: 'Pixel 10 Pro Fold' },
+        { id: 4, type: 7, name: 'Jabra Evolve3 85' },
+      ]),
+    });
+    mockNativeHolder.current = native;
+
+    await expect(routeToPreferredDevice()).resolves.toBe(true);
+
+    expect(native.selectDevice).toHaveBeenCalledWith(4);
+  });
+
+  it("rend false, sans rien poser, quand aucun casque n'est disponible", async () => {
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 1, type: 1, name: 'Pixel 10 Pro Fold' }]),
+    });
+    mockNativeHolder.current = native;
+
+    await expect(routeToPreferredDevice()).resolves.toBe(false);
+
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+
+  it('rend ce que le système a répondu, refus compris', async () => {
+    // `setCommunicationDevice()` rend un booléen, et un refus doit remonter :
+    // l'appelant ne doit pas annoncer une route qui n'a pas pris.
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 4, type: 7, name: 'Jabra Evolve3 85' }]),
+      selectDevice: jest.fn(async () => false),
+    });
+    mockNativeHolder.current = native;
+
+    await expect(routeToPreferredDevice()).resolves.toBe(false);
+  });
+
+  it('rend false quand le module natif est absent', async () => {
+    await expect(routeToPreferredDevice()).resolves.toBe(false);
+  });
+
+  it('ne repose pas une route déjà en place', async () => {
+    // Ce n'est pas une optimisation, c'est un GARDE-FOU DE BOUCLE.
+    // `addOnCommunicationDeviceChangedListener` notifie aussi les changements
+    // que NOUS provoquons (`TwakeAudioDevicesModule.acquireRoute`). L'écoute
+    // des changements rappelle donc cette fonction après chaque route posée ;
+    // sans cette égalité, elle se rappellerait elle-même sans fin.
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 4, type: 7, name: 'Jabra Evolve3 85' }]),
+      getCurrentDeviceId: jest.fn(async () => 4),
+    });
+    mockNativeHolder.current = native;
+
+    await expect(routeToPreferredDevice()).resolves.toBe(false);
+
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+});
+
+describe('watchPreferredDevice', () => {
+  // Le double d'abonnement rend la fonction que le natif a reçue, pour pouvoir
+  // la déclencher : c'est le seul moyen d'observer ce que fait l'écoute.
+  // Un VRAI vidage de file, jamais deux `Promise.resolve()` : la chaîne de
+  // `routeToPreferredDevice` enchaîne trois fonctions asynchrones, et un vidage
+  // trop court rendrait les deux tests « ne touche à rien » VERTS À VIDE — ils
+  // passeraient contre une implémentation qui route.
+  const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+  function listenerOf(native: NativeAudioDevicesModule): () => void {
+    const call = jest.mocked(native.addListener).mock.calls[0];
+    if (call === undefined) throw new Error('aucun abonnement posé');
+    return call[1];
+  }
+
+  it("s'abonne aux changements de route", () => {
+    const native = fakeNative();
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => false);
+
+    expect(native.addListener).toHaveBeenCalledWith('onDevicesChanged', expect.any(Function));
+  });
+
+  it('route vers le casque branché en cours de séance', async () => {
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 4, type: 7, name: 'Jabra Evolve3 85' }]),
+    });
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => false);
+    listenerOf(native)();
+    // L'écoute ne peut pas attendre : elle détache la promesse. On vide donc la
+    // file pour la laisser se dénouer.
+    await flush();
+
+    expect(native.selectDevice).toHaveBeenCalledWith(4);
+  });
+
+  it('ne touche à rien quand la personne a choisi sa sortie à la main', async () => {
+    // La seconde polarité, et elle compte : un choix manuel doit tenir contre
+    // un casque qui se connecte ensuite.
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 4, type: 7, name: 'Jabra Evolve3 85' }]),
+    });
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => true);
+    listenerOf(native)();
+    await flush();
+
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+
+  it('relit le choix manuel à CHAQUE notification, sans le capturer', async () => {
+    // Capturer `manual` à l'abonnement laisserait la préférence écraser un
+    // choix fait après coup — pour le reste de la séance, et sans le dire.
+    let manual = false;
+    const native = fakeNative({
+      listDevices: jest.fn(async () => [{ id: 4, type: 7, name: 'Jabra Evolve3 85' }]),
+    });
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => manual);
+    manual = true;
+    listenerOf(native)();
+    await flush();
+
+    expect(native.selectDevice).not.toHaveBeenCalled();
+  });
+
+  it("se désabonne quand on appelle ce qu'il rend", () => {
+    const remove = jest.fn();
+    const native = fakeNative({ addListener: jest.fn(() => ({ remove })) });
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => false)();
+
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'écoute rien sous le plancher API 31, où AudioSwitch conduit", () => {
+    // Il fait déjà la bascule : écouter ici poserait un second arbitre sur le
+    // même canal — la cause classique du « le son est reparti tout seul ».
+    const native = fakeNative({ isSupported: jest.fn(() => false) });
+    mockNativeHolder.current = native;
+
+    watchPreferredDevice(() => false);
+
+    expect(native.addListener).not.toHaveBeenCalled();
+  });
+
+  it('rend une fonction inerte quand le module natif est absent', () => {
+    // Sous Jest, sur iOS, et dans un binaire construit sans lui. L'appeler ne
+    // doit pas jeter — le nettoyage d'un effet ne rattrape rien.
+    expect(() => watchPreferredDevice(() => false)()).not.toThrow();
   });
 });
 

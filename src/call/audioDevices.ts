@@ -37,6 +37,40 @@ export type AudioDeviceChoice = {
   readonly ordinal: number | null;
 };
 
+// Les seules catégories qu'on choisit d'office. Le haut-parleur et l'écouteur
+// en sont ABSENTS à dessein : arbitrer entre eux n'est pas la question posée, et
+// le système le fait déjà. On ne pose une route que pour corriger un tort
+// constaté — un casque sur la tête et le son ailleurs.
+const HEADSET_KINDS: readonly AudioOutputKind[] = ['bluetooth', 'headset'];
+
+/**
+ * L'appareil vers lequel router quand personne n'a encore choisi, ou `null`
+ * quand il n'y a rien à corriger.
+ *
+ * MESURÉ trois fois le 2026-08-02 sur Pixel 10 Pro Fold, dans trois états
+ * différents — casque connecté pendant la séance, connecté avant de rejoindre,
+ * et séance déjà en cours : `dumpsys audio` lit
+ * `Active communication device: type:earpiece` alors que le Jabra est connecté
+ * en HFP et que le mode de communication nous appartient. Le son sort de
+ * l'écouteur du téléphone avec un casque sur la tête.
+ *
+ * La cause est structurelle et non accidentelle : sur le chemin 'devices',
+ * `src/call/audioRoute.ts` ne démarre plus AudioSwitch — délibérément, deux
+ * arbitres sur le même canal étant la cause classique du « le son est reparti
+ * tout seul » — mais c'était AudioSwitch qui appelait `startBluetoothSco()`.
+ * Plus personne ne choisissait. La feuille annonce pourtant, en première ligne,
+ * « Le son suit l'appareil que vous branchez ».
+ */
+export function preferredAudioDevice(
+  devices: readonly AudioDeviceChoice[],
+): AudioDeviceChoice | null {
+  for (const kind of HEADSET_KINDS) {
+    const found = devices.find((device) => device.kind === kind);
+    if (found !== undefined) return found;
+  }
+  return null;
+}
+
 type Parsed = { readonly id: number; readonly kind: AudioOutputKind; readonly name: string | null };
 
 function labelOf(device: Parsed): string {

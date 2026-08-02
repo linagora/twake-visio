@@ -1,0 +1,19 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Le <service> ne peut pas s'exprimer dans `app.json` : Expo n'y expose que les
+    permissions. Il vit donc dans le manifeste de ce module, que le fusionneur
+    Android reverse dans celui de l'application. Les permissions, elles, restent
+    dans `app.json` — le seul endroit du dépôt où on les lit.
+
+    `foregroundServiceType` doit nommer ICI les deux types, sans quoi
+    `startForeground(id, notification, CAMERA or MICROPHONE)` lève un
+    `SecurityException` à l'exécution : le type demandé au démarrage doit être
+    déclaré dans le manifeste.
+  -->
+  <application>
+    <service
+      android:name=".CallForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="camera|microphone" />
+  </application>
+</manifest>

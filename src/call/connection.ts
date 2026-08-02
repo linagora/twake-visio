@@ -2,6 +2,7 @@ import { registerGlobals } from '@livekit/react-native';
 import { Room, RoomEvent } from 'livekit-client';
 
 import { startAudioRoute, stopAudioRoute } from 'src/call/audioRoute';
+import { startCallService, stopCallService } from 'src/call/callService';
 import type { CallState, RoomAccess } from 'src/call/types';
 
 // `livekit-client` s'appuie sur les objets WebRTC globaux — RTCPeerConnection,
@@ -186,6 +187,11 @@ export function createCallSession(): CallSession {
       // cause. Constaté sur appareil.
       await startAudioRoute();
       await room.connect(access.livekitUrl, access.token);
+      // APRÈS la connexion, pas avant : le service pose une notification
+      // « Réunion en cours », et l'afficher pendant une tentative qui échoue
+      // annoncerait une séance qui n'a jamais commencé. La route audio, elle,
+      // doit précéder `connect()` — c'est elle qui configure le moteur audio.
+      await startCallService();
       outcome = { status: 'connected' };
     } catch (err: unknown) {
       outcome = {
@@ -249,6 +255,10 @@ export function createCallSession(): CallSession {
     listeners.clear();
 
     void stopAudioRoute().catch(() => undefined);
+    // Sans `.catch` : `stopCallService` ne rejette jamais, il avale déjà. Un
+    // démontage qui laisserait la notification en place annoncerait une séance
+    // que plus personne ne tient.
+    void stopCallService();
 
     // Le nettoyage d'un `useEffect` est synchrone : il ne peut pas attendre.
     // La coupure part donc sans être attendue. Sans elle, la Room reste
@@ -283,6 +293,7 @@ export function createCallSession(): CallSession {
     // le mode de routage audio de la plateforme, et le haut-parleur reste
     // détourné pour le reste de l'application.
     await stopAudioRoute().catch(() => undefined);
+    await stopCallService();
 
     // Une coupure lente peut se terminer après qu'une nouvelle tentative a
     // repris la main. Publier `idle` raturerait alors le `connecting` de cette

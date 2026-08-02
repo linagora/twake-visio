@@ -40,6 +40,8 @@
   "call.permissionsDenied": "Für die Teilnahme sind Kamera- und Mikrofonzugriff erforderlich",
   "call.reconnecting": "Verbindung wird wiederhergestellt…",
   "call.ended": "Die Besprechung ist beendet",
+  "call.ongoingTitle": "Besprechung läuft",
+  "call.ongoingBody": "Tippen, um zur Besprechung zurückzukehren",
   "call.cameraFront": "Frontkamera",
   "call.cameraBack": "Rückkamera",
   "call.cameraUnknown": "Kamera",

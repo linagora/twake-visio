@@ -1,6 +1,7 @@
 import { registerGlobals } from '@livekit/react-native';
 
 import { startAudioRoute, stopAudioRoute } from 'src/call/audioRoute';
+import { startCallService, stopCallService } from 'src/call/callService';
 import { createCallSession, type CallSession } from 'src/call/connection';
 import type { RoomAccess } from 'src/call/types';
 
@@ -34,6 +35,14 @@ const mockHandlers = new Map<string, (...args: unknown[]) => void>();
 jest.mock('src/call/audioRoute', () => ({
   startAudioRoute: jest.fn(async (): Promise<void> => undefined),
   stopAudioRoute: jest.fn(async (): Promise<void> => undefined),
+}));
+
+// Doublé pour la même raison que `audioRoute`, et pour une de plus : sans ce
+// double, le module natif est absent sous Jest, `startCallService` se referme
+// donc en silence, et RETIRER l'appel de `connection.ts` ne rougirait rien.
+jest.mock('src/call/callService', () => ({
+  startCallService: jest.fn(async (): Promise<void> => undefined),
+  stopCallService: jest.fn(async (): Promise<void> => undefined),
 }));
 
 jest.mock('livekit-client', () => ({
@@ -141,6 +150,8 @@ beforeEach(() => {
   // « session audio » fuirait vers les suivants.
   jest.mocked(startAudioRoute).mockReset().mockResolvedValue(undefined);
   jest.mocked(stopAudioRoute).mockReset().mockResolvedValue(undefined);
+  jest.mocked(startCallService).mockReset().mockResolvedValue(undefined);
+  jest.mocked(stopCallService).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -228,6 +239,60 @@ describe('createCallSession — session audio', () => {
     // resterait bloqué sur une séance que l'utilisateur vient de quitter.
     await expect(session.disconnect()).resolves.toBeUndefined();
     expect(session.getState()).toEqual({ status: 'idle' });
+  });
+});
+
+describe('createCallSession — service de premier plan', () => {
+  it('démarre le service APRÈS le transport, pas avant', async () => {
+    // L'ordre inverse de celui de la route audio, et pour une raison opposée :
+    // le service pose une notification « Réunion en cours ». L'afficher pendant
+    // une tentative annoncerait une séance qui n'a peut-être jamais commencé.
+    const order: string[] = [];
+    mockConnect.mockImplementation(async () => {
+      order.push('transport');
+    });
+    jest.mocked(startCallService).mockImplementation(async () => {
+      order.push('service');
+    });
+
+    const session = createCallSession();
+    await session.connect(ACCESS);
+
+    expect(order).toEqual(['transport', 'service']);
+  });
+
+  it('ne démarre aucun service quand le transport échoue', async () => {
+    // La seconde polarité de la conditionnelle ci-dessus : `startCallService`
+    // est APRÈS le `await` qui jette, donc il ne doit pas être atteint.
+    mockConnect.mockRejectedValueOnce(new Error('transport refusé'));
+
+    const session = createCallSession();
+    await session.connect(ACCESS);
+
+    expect(jest.mocked(startCallService)).not.toHaveBeenCalled();
+  });
+
+  it('arrête le service au raccrochage', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    jest.mocked(stopCallService).mockClear();
+
+    await session.disconnect();
+
+    // Laissé tourner, il garde une notification qui annonce une séance que
+    // plus personne ne tient — et il garde le processus au premier plan pour
+    // le système.
+    expect(jest.mocked(stopCallService)).toHaveBeenCalled();
+  });
+
+  it('arrête le service au démontage', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+    jest.mocked(stopCallService).mockClear();
+
+    session.dispose();
+
+    expect(jest.mocked(stopCallService)).toHaveBeenCalled();
   });
 });
 
