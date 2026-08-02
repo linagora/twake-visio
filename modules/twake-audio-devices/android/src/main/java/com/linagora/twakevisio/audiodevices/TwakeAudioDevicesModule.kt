@@ -184,6 +184,21 @@ class TwakeAudioDevicesModule : Module() {
         focusRequest = request
         manager.requestAudioFocus(request)
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
+        // MESURÉ le 2026-08-02, et ce n'est pas ce qu'on croit : le focus est
+        // ACCORDÉ (`requestAudioFocus` rend 1) et `manager.mode` vaut bien 3
+        // — MODE_IN_COMMUNICATION — juste après, comme six secondes plus tard.
+        // Rien ne défait ce réglage.
+        //
+        // Et pourtant `dumpsys audio` lit `mode (internal) = NORMAL` pendant la
+        // même séance. Depuis Android 12, `getMode()` rend ce que
+        // l'application APPELANTE a demandé, pas le mode effectif : le système
+        // arbitre entre les demandeurs, et il ne nous l'a pas accordé. Ce n'est
+        // donc ni un appel raté, ni une annulation — c'est un refus
+        // d'arbitrage, silencieux par construction.
+        //
+        // Conséquence à l'écran : hors mode de communication effectif, Android
+        // n'offre pas le Bluetooth SCO dans `availableCommunicationDevices`, et
+        // un casque connecté ne peut JAMAIS apparaître dans la feuille.
 
         val listener = AudioManager.OnCommunicationDeviceChangedListener {
             sendEvent(DEVICES_CHANGED)
