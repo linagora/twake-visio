@@ -144,5 +144,12 @@
   "settings.version": "Twake Visio 1.0 · Sovereign server",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
-  "welcome.tagline": "Your meetings, anywhere,\nsecurely."
+  "welcome.tagline": "Your meetings, anywhere,\nsecurely.",
+  "join.title": "Join a meeting",
+  "join.instructions": "Enter the room code given by the organiser.",
+  "join.hint": "Tap the boxes to enter the code",
+  "join.paste": "Paste a meeting link",
+  "join.pasteFailed": "That link does not point to a known meeting server.",
+  "join.submit": "Join",
+  "join.close": "Close"
 }

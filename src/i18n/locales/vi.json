@@ -144,5 +144,12 @@
   "settings.version": "Twake Visio 1.0 · Máy chủ chủ quyền",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
-  "welcome.tagline": "Cuộc họp của bạn, mọi nơi,\nhoàn toàn an toàn."
+  "welcome.tagline": "Cuộc họp của bạn, mọi nơi,\nhoàn toàn an toàn.",
+  "join.title": "Tham gia cuộc họp",
+  "join.instructions": "Nhập mã phòng do người tổ chức cung cấp.",
+  "join.hint": "Chạm vào các ô để nhập mã",
+  "join.paste": "Dán liên kết cuộc họp",
+  "join.pasteFailed": "Liên kết này không trỏ đến máy chủ cuộc họp đã biết.",
+  "join.submit": "Tham gia",
+  "join.close": "Đóng"
 }

@@ -144,5 +144,12 @@
   "settings.version": "Twake Visio 1.0 · Server sovrano",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
-  "welcome.tagline": "Le tue riunioni, ovunque,\nin tutta sicurezza."
+  "welcome.tagline": "Le tue riunioni, ovunque,\nin tutta sicurezza.",
+  "join.title": "Partecipa a una riunione",
+  "join.instructions": "Inserisci il codice della stanza fornito dall’organizzatore.",
+  "join.hint": "Tocca le caselle per inserire il codice",
+  "join.paste": "Incolla un link di riunione",
+  "join.pasteFailed": "Questo link non punta a un server di riunioni conosciuto.",
+  "join.submit": "Partecipa",
+  "join.close": "Chiudi"
 }

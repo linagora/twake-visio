@@ -144,5 +144,12 @@
   "settings.version": "Twake Visio 1.0 · Servidor soberano",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
-  "welcome.tagline": "Sus reuniones, en todas partes,\ncon total seguridad."
+  "welcome.tagline": "Sus reuniones, en todas partes,\ncon total seguridad.",
+  "join.title": "Unirse a una reunión",
+  "join.instructions": "Introduzca el código de la sala facilitado por el organizador.",
+  "join.hint": "Toque las casillas para introducir el código",
+  "join.paste": "Pegar un enlace de reunión",
+  "join.pasteFailed": "Ese enlace no apunta a un servidor de reuniones conocido.",
+  "join.submit": "Unirse",
+  "join.close": "Cerrar"
 }
