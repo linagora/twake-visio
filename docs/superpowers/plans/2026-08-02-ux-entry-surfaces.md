@@ -54,6 +54,23 @@ comptent pour ce lot :
 
 ## Task 1: `BrandTile` et `ActionCard`
 
+> **Corrigé après livraison (commit `1a5f6ea`).** Le plan citait les dégradés du
+> mockup sans les mesurer. **Aucun des deux ne porte du blanc de façon
+> accessible** — 2,41:1 pour le glyphe de la tuile, 2,78:1 pour le titre de la
+> carte —, exactement comme les cinq valeurs de palette corrigées au Lot 1.
+>
+> | | mockup | blanc | retenu | blanc |
+> | --- | --- | --- | --- | --- |
+> | tuile, butée claire | `#2FBE6C` | 2,41 | `#2AA960` | 3,02 |
+> | tuile, butée foncée | `#159049` | 4,10 | `#138041` | 5,01 |
+> | carte, butée claire | `#26B166` | 2,78 | `#1D874E` | 4,54 |
+> | carte, butée foncée | `#158B48` | 4,36 | `#106A37` | 6,69 |
+>
+> La butée CLAIRE gouverne : un dégradé ne moyenne pas. Deux seuils distincts —
+> la tuile ne porte qu'un glyphe (3:1), la carte un titre (4,5:1) —, d'où deux
+> facteurs, 0,892 et 0,765, appliqués aux deux butées. `theme.spec.ts` garde les
+> quatre.
+
 **Files:**
 - Create: `src/ui/brandTile.tsx` + `src/ui/brandTile.spec.tsx`
 - Create: `src/ui/actionCard.tsx` + `src/ui/actionCard.spec.tsx`
@@ -191,6 +208,17 @@ git commit -m "feat(ui): Add the brand tile and the home action cards"
 ---
 
 ## Task 2: `FormSheet`
+
+> **Corrigé après livraison (commit `d3e1a5e`).** Le plan disait de passer
+> `keyboardMode()` à `behavior`. **`tsc` l'a refusé** : cette aide rend
+> `'resize'` sur Android, qui n'est pas une valeur de `behavior` — elle veut
+> dire « ne rien faire », la fenêtre y étant déjà redimensionnée
+> (`src/ui/keyboard.ts:3-7`). La forme juste est le ternaire de `call.tsx:919`,
+> repris tel quel.
+>
+> Et l'ordre a changé : la **Task 6** (connexion) a été faite avant les Tasks 4
+> et 5, parce que c'était l'écran affiché sur le simulateur pendant la session
+> et qu'elle ne dépend que de `BrandTile`.
 
 **Files:**
 - Create: `src/ui/formSheet.tsx` + `src/ui/formSheet.spec.tsx`
@@ -424,6 +452,27 @@ describe('JoinSheet', () => {
 ---
 
 ## Task 5: L'accueil
+
+> **Corrigé après livraison (commit `caddb65`).** Le plan annonçait **un** test
+> cassé. En ouvrant le fichier il y en avait **cinq** : le champ de code
+> (`:63`, `:74`), l'instance (`:174`), la déconnexion (`:188`) et le compte nul
+> (`:203`). Tous portent sur des éléments que la refonte retire.
+>
+> **`instanceLabel` n'a pas été supprimée, elle a suivi l'information.** C'est
+> l'HÔTE qui distingue deux instances — la même personne y porte souvent la même
+> adresse —, donc la jeter aurait laissé l'écran muet sur l'endroit où l'on est.
+> Elle vit désormais dans `src/instance/label.ts`, avec son propre spec, et
+> Réglages l'affiche sous l'adresse.
+>
+> **Deux obstacles trouvés en exécutant** :
+>
+> 1. L'accueil héberge maintenant un `Portal` (par la feuille), donc le rendre
+>    nu jette un `AggregateError` peu bavard. Le spec l'enveloppe d'un
+>    `PaperProvider`, même préambule que les specs de feuille.
+> 2. La mutation a exposé un trou **antérieur à ce lot** : `rooms.length > 5`,
+>    qui décide de l'affichage du filtre, n'était gardé par rien — le figer à
+>    `true` ne rougissait aucun test. Deux tests franchissent désormais la borne
+>    dans les deux sens.
 
 **Files:**
 - Modify: `src/screens/home.tsx` + `src/screens/home.spec.tsx`
