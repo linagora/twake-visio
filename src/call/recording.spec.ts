@@ -210,6 +210,7 @@ const FEATURES = (recording: boolean): InstanceFeatures => ({
   recording,
   subtitle: true,
   telephony: false,
+  calendar: false,
 });
 
 const ACCESS = (isAdministrable: boolean): RoomAccess => ({

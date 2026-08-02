@@ -20,7 +20,7 @@ const ACCOUNT: login.LoginResult = {
       issuer: 'https://sso.linagora.com',
       clientId: 'twake-visio',
       livekitUrl: 'wss://livekit.linagora.com',
-      features: { recording: true, subtitle: true, telephony: false },
+      features: { recording: true, subtitle: true, telephony: false, calendar: false },
     },
     email: 'ada@linagora.com',
     displayName: 'Ada',

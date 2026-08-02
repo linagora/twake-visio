@@ -134,7 +134,7 @@ const NO_ACCOUNT: Account = {
     issuer: '',
     clientId: '',
     livekitUrl: '',
-    features: { recording: false, subtitle: false, telephony: false },
+    features: { recording: false, subtitle: false, telephony: false, calendar: false },
   },
   email: '',
   displayName: '',

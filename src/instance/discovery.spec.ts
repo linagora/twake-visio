@@ -254,4 +254,60 @@ describe('fetchInstanceConfig, origine du client_id', () => {
 
     expect(result).toEqual({ ok: false, error: 'oidc-undiscoverable' });
   });
+
+  describe('la capacité calendrier', () => {
+    // Mesuré le 2026-08-02 : aucune des trois instances connues ne porte de
+    // champ de calendrier. La capacité doit donc être FERMÉE quand rien ne la
+    // déclare — c'est le sens sûr, et le seul que l'observation permette.
+    // `CONFIG_WITH_OIDC` reproduit exactement cette forme : pas de clé.
+    it('ferme la capacité quand la configuration ne la déclare pas du tout', async () => {
+      mockFetch(() => new Response(JSON.stringify(CONFIG_WITH_OIDC), { status: 200 }));
+
+      const result = await fetchInstanceConfig('https://meet.linagora.com');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.features.calendar).toBe(false);
+    });
+
+    // La branche vraie doit être empruntée, sinon l'implémentation pourrait
+    // être `calendar: false` en dur et personne ne le verrait — c'est
+    // exactement ce que produirait un nom de champ deviné.
+    it("ouvre la capacité quand l'instance la déclare", async () => {
+      mockFetch(
+        () =>
+          new Response(JSON.stringify({ ...CONFIG_WITH_OIDC, calendar: { enabled: true } }), {
+            status: 200,
+          }),
+      );
+
+      const result = await fetchInstanceConfig('https://meet.linagora.com');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.features.calendar).toBe(true);
+    });
+
+    // `=== true`, pas une coercition : une clé présente mais fausse, nulle, ou
+    // portant une chaîne doit fermer la capacité, comme pour ses trois voisins.
+    it.each([
+      ['déclarée fausse', { enabled: false }],
+      ['déclarée nulle', { enabled: null }],
+      ['portant une chaîne', { enabled: 'yes' }],
+      ['vide', {}],
+    ])('reste fermée quand la clé est %s', async (_label, calendar) => {
+      mockFetch(
+        () =>
+          new Response(JSON.stringify({ ...CONFIG_WITH_OIDC, calendar }), {
+            status: 200,
+          }),
+      );
+
+      const result = await fetchInstanceConfig('https://meet.linagora.com');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.features.calendar).toBe(false);
+    });
+  });
 });
