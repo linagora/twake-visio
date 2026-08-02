@@ -19,6 +19,7 @@ import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
+import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
 import { createRoomViewStore } from 'src/call/participants';
@@ -227,6 +228,12 @@ export function CallScreen(): React.ReactElement {
   // démontage du panneau des participants est sans conséquence : elle est
   // remesurée en une trame au remontage.
   const [box, setBox] = useState<Box | null>(null);
+
+  // Reprise après interruption. Posé sur l'écran et non sur la barre de
+  // commandes : la barre disparaît en plein écran, alors que la reprise doit
+  // valoir pour toute la durée de la séance. L'état DÉSIRÉ est lu dans les
+  // publications de LiveKit, donc rien n'a besoin de descendre d'ici.
+  useInterruptionRecovery(session.getRoom());
 
   // Tout ce qui se décide de l'affichage est derrière ce seul appel :
   // `src/call/participants` lit la Room, `src/call/layout` choisit, et l'écran
