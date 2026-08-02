@@ -53,6 +53,8 @@
   "call.audioOutput": "Вывод звука",
   "call.outputFollowsDevice": "Звук следует за подключаемым устройством",
   "call.outputManualUntilEnd": "Звук больше не будет следовать за подключённым устройством до конца встречи",
+  "call.outputAutomatic": "Автоматически",
+  "call.outputNumbered": "{{name}} {{index}}",
   "call.unnamedParticipant": "Участник без имени",
   "call.raiseHand": "Поднять руку",
   "call.lowerHand": "Опустить руку",

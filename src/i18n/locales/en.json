@@ -53,6 +53,8 @@
   "call.audioOutput": "Audio output",
   "call.outputFollowsDevice": "Sound follows the device you plug in",
   "call.outputManualUntilEnd": "Sound will no longer follow a plugged-in device for the rest of this meeting",
+  "call.outputAutomatic": "Automatic",
+  "call.outputNumbered": "{{name}} {{index}}",
   "call.unnamedParticipant": "Unnamed participant",
   "call.raiseHand": "Raise hand",
   "call.lowerHand": "Lower hand",
