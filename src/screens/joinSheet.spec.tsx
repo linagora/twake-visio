@@ -232,6 +232,21 @@ describe('JoinSheet', () => {
       expect(screen.getByTestId('join-submit')).toBeTruthy();
     });
 
+    // La seule chose que RNTL puisse dire du CENTRAGE de la barre. Elle ne
+    // dispose rien, donc « centré » ne se voit que sur un appareil — mais la
+    // direction, elle, se lit, et c'est elle qui décide. En colonne, la barre
+    // et le nœud de texte vide s'empilaient : ~48 dp dans une case de 52, donc
+    // la barre remontait dans la moitié haute. Signalé sur appareil.
+    it('dispose la case en RANGÉE, pour que la barre soit centrée', async () => {
+      await render(sheet());
+      await fireEvent(screen.getByTestId('join-input'), 'focus');
+
+      expect(screen.getByTestId('join-box-0')).toHaveStyle({
+        alignItems: 'center',
+        flexDirection: 'row',
+      });
+    });
+
     it('retire le repère quand le champ perd le focus', async () => {
       await render(sheet());
       await fireEvent(screen.getByTestId('join-input'), 'focus');

@@ -107,6 +107,7 @@ export function JoinSheet({
                   index < code.length ? styles.cellFilled : null,
                   index === caretIndex ? styles.cellCaret : null,
                 ]}
+                testID={`${testID}-box-${index}`}
               >
                 {/* Une BARRE, et non la case entière colorée : une case remplie
                     porte déjà le lavis de marque, et deux marquages par la même
@@ -172,6 +173,14 @@ const styles = StyleSheet.create({
     borderColor: tokens.color.fieldBorder,
     borderRadius: 11,
     borderWidth: 1,
+    // `row` et non le défaut `column` de Yoga. La case du curseur porte DEUX
+    // enfants — la barre et le nœud de texte, vide mais présent —, et un `Text`
+    // vide occupe quand même une hauteur de LIGNE. Empilés en colonne, les deux
+    // faisaient ~48 dp centrés dans 52, ce qui repoussait la barre dans la
+    // moitié haute. En rangée, chacun est centré sur l'axe transverse, donc
+    // verticalement. Le texte vide ne mesure aucune largeur : la barre reste
+    // centrée horizontalement.
+    flexDirection: 'row',
     flex: 1,
     height: 52,
     justifyContent: 'center',
