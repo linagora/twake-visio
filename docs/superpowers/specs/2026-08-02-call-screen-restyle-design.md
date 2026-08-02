@@ -83,6 +83,45 @@ supposer.
 - Toute logique : ce lot ne déplace aucun appel réseau, aucun état, aucun
   branchement. Un test existant qui rougit est un signal, pas une permission.
 
+## Corrigé après livraison, contre le code livré
+
+**Le découpage a tenu.** Les quatre sous-lots ont fusionné sans un seul conflit,
+et l'ensemble était vert à la première exécution : 1286 tests, 85 suites. Les
+fichiers disjoints, la racine de composition réservée, et l'en-tête créé sans
+être monté — les trois règles ont fait ce qu'on attendait d'elles.
+
+**Sauf sur un point, et c'est ma faute.** `src/i18n/locales/*.json` est une
+surface d'**ajout partagée** : j'en avais interdit l'accès aux quatre agents pour
+cette raison exacte, puis j'y ai ajouté des clés depuis **deux branches sœurs**
+— `ux-call` pour l'en-tête, `ux-prejoin` pour le Lot 3. Sept conflits, résolus
+par union. Un découpage futur doit compter ces fichiers explicitement : soit une
+seule branche les possède, soit chaque lot pose ses clés dans un fichier à lui.
+
+### Trois refus des sous-lots, tous justes
+
+Vérifiés un par un plutôt que pris au mot :
+
+| Refus | Raison | Vérification |
+| --- | --- | --- |
+| A1 n'applique pas les 52 dp du mockup | la rangée demanderait 373 dp sur un écran de 360 | arithmétique recalculée, juste |
+| A3 n'affiche pas d'état « micro actif » | `micTrackSid` reste renseigné pour une piste publiée **puis coupée** (`participants.ts:120-124`) — l'afficher serait un mensonge | lu dans les sources, exact |
+| A2 ne pose pas le glyphe de micro coupé | la donnée n'existe nulle part : il faudrait `publication.isMuted` dans `readParticipant`, donc deux fichiers hors périmètre | cohérent avec le refus d'A3 |
+
+**Le mockup ne tient pas dans sa propre largeur** : sa rangée de six commandes
+demande 368 dp. C'est un fait sur le mockup, pas sur le code, et il n'était écrit
+nulle part avant qu'A1 le mesure.
+
+### La dépendance croisée qui reste ouverte **[?]**
+
+Le bouton des participants est désormais **en double** : dans la barre, où A1 l'a
+gardé faute de pouvoir toucher l'en-tête, et dans l'en-tête qu'A4 a créé. Le
+mockup ne le met qu'à un seul endroit.
+
+Le retirer de la barre libère les 16 dp qui manquaient pour monter les commandes
+de 44 à 52 dp. **Ce n'est pas fait** : déplacer une commande que les gens
+connaissent est une décision d'usage, pas de mise en page, et elle revient au
+propriétaire.
+
 ## Ce que ça vaut
 
 C'est l'écran où l'on passe le plus de temps, et le dernier à porter la mise en
