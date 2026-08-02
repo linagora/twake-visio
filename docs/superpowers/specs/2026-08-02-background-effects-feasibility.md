@@ -73,9 +73,10 @@ public void registerTrack(VideoTrack track, VideoSource source,
 ```
 
 `public`, et `AbstractVideoCaptureController` est une classe abstraite publique
-avec **une seule** méthode abstraite (`getDeviceId()`). `CameraCaptureController`
-et `ScreenCaptureController` en héritent déjà : un troisième — caméra + MLKit —
-est architecturalement prévu.
+avec **deux** méthodes abstraites — `createVideoCapturer()` et `getDeviceId()` ;
+voir la correction plus bas. `CameraCaptureController` et
+`ScreenCaptureController` en héritent déjà : un troisième — caméra + MLKit — est
+architecturalement prévu.
 
 **iOS — une couture plus fruste, mais réelle.** Pas de `registerTrack`, mais
 `WebRTCModule.h:40-46` expose en propriétés **publiques** :
@@ -169,12 +170,26 @@ public VideoTrack createVideoTrack(AbstractVideoCaptureController controller)   
 dans le registre des pistes, puis `startCapture()`.
 
 **Et le contrat à remplir tient en deux méthodes.**
-`AbstractVideoCaptureController` n'a **qu'une seule** méthode abstraite —
-`getDeviceId()` — et tout le reste a une implémentation par défaut. Une
-sous-classe doit :
+`AbstractVideoCaptureController` a **deux** méthodes abstraites, tout le reste
+portant une implémentation par défaut :
 
-1. surcharger `initializeVideoCapturer()` pour poser son `videoCapturer` ;
-2. implémenter `getDeviceId()`.
+1. `createVideoCapturer()` — ligne **107** ;
+2. `getDeviceId()` — ligne **41**.
+
+> **Correction.** La première version de ce paragraphe disait « une seule
+> méthode abstraite, `getDeviceId()` », et proposait de surcharger
+> `initializeVideoCapturer()`. **C'était faux, et de la pire façon** : écrit
+> depuis un `grep … | head -20` qui coupait la ligne 107. Le compilateur l'a
+> refusé — `Class 'SyntheticCaptureController' is not abstract and does not
+> implement abstract base class member: fun createVideoCapturer()`.
+>
+> `initializeVideoCapturer()` est **concrète** et se borne à appeler
+> `createVideoCapturer()` (lignes 37-39) : la surcharger marcherait, mais
+> court-circuiterait le point d'extension prévu.
+>
+> C'est la faute que ce dépôt documente déjà — une affirmation tirée d'une
+> lecture tronquée. Elle a coûté une compilation ; elle aurait coûté davantage
+> si personne n'avait écrit le code depuis la spec.
 
 Le `VideoCapturer` est l'interface standard de WebRTC : il reçoit un
 `CapturerObserver` et lui pousse des `VideoFrame`. Pour l'étape 3, c'est une

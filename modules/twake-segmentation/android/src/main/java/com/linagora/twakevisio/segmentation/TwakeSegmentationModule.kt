@@ -13,7 +13,10 @@ import com.google.mlkit.vision.segmentation.Segmentation
 import com.google.mlkit.vision.segmentation.SegmentationMask
 import com.google.mlkit.vision.segmentation.Segmenter
 import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
+import com.facebook.react.bridge.ReactApplicationContext
 import com.google.android.gms.tasks.Tasks
+import com.oney.WebRTCModule.WebRTCModule
+import org.webrtc.VideoTrack
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.concurrent.TimeUnit
@@ -49,6 +52,53 @@ class TwakeSegmentationModule : Module() {
     AsyncFunction("benchmark") { width: Int, height: Int, iterations: Int ->
       runBenchmark(width, height, iterations)
     }
+
+    // ÉTAPE 3 : une piste de couleur unie, publiable. Elle ne sert à rien
+    // d'autre qu'à prouver que la plomberie tient — voir `SolidColorCapturer`.
+    AsyncFunction("createSyntheticTrack") { width: Int, height: Int, fps: Int ->
+      createSyntheticTrack(width, height, fps)
+    }
+  }
+
+  /**
+   * Fabrique une piste vidéo et rend à JavaScript de quoi la reconstruire.
+   *
+   * Le retour n'est PAS un objet natif : c'est le descripteur qu'attend le
+   * constructeur de `MediaStreamTrack` (`MediaStreamTrack.ts:54`). Une piste
+   * JavaScript n'est qu'un identifiant plus quelques champs — c'est ce fait qui
+   * rend toute la chaîne possible sans forker le moindre paquet.
+   */
+  private fun createSyntheticTrack(width: Int, height: Int, fps: Int): Map<String, Any> {
+    val reactContext = appContext.reactContext as? ReactApplicationContext
+      ?: throw IllegalStateException("Aucun contexte React : le pont natif n'est pas prêt")
+
+    // Le module de `react-native-webrtc`, obtenu par le registre du pont. C'est
+    // la MÊME instance que celle qu'utilise `getUserMedia` : la piste
+    // fabriquée ici atterrit donc dans le registre où JavaScript la cherchera.
+    val webRTCModule = reactContext.getNativeModule(WebRTCModule::class.java)
+      ?: throw IllegalStateException("WebRTCModule introuvable")
+
+    val controller = SyntheticCaptureController(width, height, fps)
+    // Tout est fait ici : source, piste, SurfaceTextureHelper, inscription au
+    // registre et démarrage de la capture (`GetUserMediaImpl.java:399-430`).
+    val track: VideoTrack = webRTCModule.createVideoTrack(controller)
+      ?: throw IllegalStateException("createVideoTrack a rendu null")
+
+    Log.i(TAG, "piste de synthèse créée : ${track.id()} (${width}x$height @ $fps)")
+
+    return mapOf(
+      "id" to track.id(),
+      "kind" to "video",
+      "enabled" to true,
+      "readyState" to "live",
+      // `false` : c'est une piste LOCALE. Le constructeur JS n'enregistre ses
+      // écouteurs d'événements que dans ce cas (`MediaStreamTrack.ts:68-70`).
+      "remote" to false,
+      // `-1` est la convention de `react-native-webrtc` pour « pas encore
+      // rattachée à une PeerConnection » : c'est ce que rend `getUserMedia`.
+      "peerConnectionId" to -1,
+      "deviceId" to SyntheticCaptureController.DEVICE_ID,
+    )
   }
 
   private fun runBenchmark(width: Int, height: Int, iterations: Int): Map<String, Any> {

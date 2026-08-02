@@ -16,6 +16,21 @@ android {
 }
 
 dependencies {
+  // `compileOnly` et non `implementation` : l'application embarque DÉJÀ ce
+  // paquet — c'est lui qui porte tout WebRTC. Le lier en `implementation`
+  // dupliquerait ses classes dans l'APK. On ne veut que le compilateur.
+  //
+  // Le nom du projet vient de l'autolinking de React Native, qui translittère
+  // `@livekit/react-native-webrtc` : la barre oblique devient un souligné, le
+  // reste est conservé. Vérifié par `./gradlew projects`, pas deviné.
+  compileOnly project(':livekit_react-native-webrtc')
+
+  // Les classes du PONT React Native — `ReactApplicationContext`, et
+  // `getNativeModule` qui donne accès au registre où vit `WebRTCModule`.
+  // `compileOnly` n'est pas transitif : la dépendance ci-dessus ne les apporte
+  // pas, bien que `AbstractVideoCaptureController` les importe elle-même.
+  compileOnly 'com.facebook.react:react-android'
+
   // MLKit Selfie Segmentation, EMBARQUÉ dans l'application (`segmentation-selfie`)
   // et non téléchargé à la demande par les Google Play Services. C'est ce que
   // demande une mesure : un modèle dont l'absence ferait échouer le premier
