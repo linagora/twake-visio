@@ -163,8 +163,16 @@ class TwakeAudioDevicesModule : Module() {
     private fun acquireRoute() {
         val manager = audioManager
         previousMode = manager.mode
-        manager.mode = AudioManager.MODE_IN_COMMUNICATION
 
+        // LE FOCUS D'ABORD, LE MODE ENSUITE. L'ordre inverse compile, résout
+        // sans jeter, et ne fait RIEN : depuis Android 12 le système arbitre le
+        // mode audio entre applications et ne l'accorde qu'à celle qui détient
+        // le focus. Mesuré sur appareil — `acquire()` répondait « OK » pendant
+        // que `dumpsys audio` lisait `mode (internal) = NORMAL`, séance en
+        // cours. Et hors mode de communication, Android n'offre pas le
+        // Bluetooth SCO dans `availableCommunicationDevices` : le casque ne
+        // pouvait donc JAMAIS apparaître dans la feuille, quel que soit le
+        // nombre de relectures.
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -175,6 +183,7 @@ class TwakeAudioDevicesModule : Module() {
             .build()
         focusRequest = request
         manager.requestAudioFocus(request)
+        manager.mode = AudioManager.MODE_IN_COMMUNICATION
 
         val listener = AudioManager.OnCommunicationDeviceChangedListener {
             sendEvent(DEVICES_CHANGED)
