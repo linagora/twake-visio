@@ -332,6 +332,38 @@ C'est compatible avec la règle du dépôt ; ce serait le premier module natif d
 
 ---
 
+> ### Décision du 2026-08-02, prise par le propriétaire : **le périmètre complet**, choix par appareil compris
+>
+> Ce document recommandait un module en **lecture seule** — afficher le vrai nom, laisser
+> AudioSwitch piloter — et de reporter le choix entre deux Bluetooth jusqu'à ce qu'une mesure
+> en voiture prouve qu'il est cassé. **Cette recommandation a été écartée.** Le périmètre
+> retenu est le complet : reprendre le volant à AudioSwitch et sélectionner par appareil.
+>
+> Ce que cela engage, et qui reste vrai malgré la décision :
+>
+> - Il faut porter le **focus audio, le mode audio et le cycle SCO** d'une application de
+>   visioconférence en production. Deux choses qui arbitrent le même canal restent la cause
+>   classique du « le son rebascule tout seul ».
+> - `startBluetoothSco()` et `setSpeakerphoneOn()` sont **dépréciés depuis l'API 34** alors que
+>   le manifeste vise 36 : reprendre le pilotage veut dire passer à
+>   `setCommunicationDevice`, donc un **plancher API 31** à garder pendant que `minSdkVersion`
+>   reste à 24.
+> - Le comparateur d'AudioSwitch rend `0` pour deux appareils de même classe, et un `SortedSet`
+>   y lit une égalité : **le second Bluetooth n'est jamais ajouté**. Le nom seul ne suffirait
+>   donc pas à en choisir un — ce qui est précisément l'argument qui rend cette décision
+>   cohérente.
+> - `getHeadset(name)` **rend le nom qu'on lui passe** sans vérifier qu'un casque de ce nom
+>   soit connecté. Toute sélection par nom bâtie sur AudioSwitch serait un mensonge
+>   d'interface qui compile : raison de plus de ne pas la bâtir dessus.
+>
+> **La mesure en voiture reste due, et elle n'est plus un préalable mais un garde-fou** : elle
+> dira si Android choisissait déjà correctement, donc si le pilotage repris fait mieux ou
+> moins bien que ce qu'il remplace. Sans elle, aucun moyen de savoir si la reprise est un
+> progrès.
+>
+> **Livraison amont** : module Expo local d'abord, PR à `@livekit/react-native` ensuite —
+> recommandation suivie. Ni fork, ni `patch-package`.
+
 ## Les trois questions
 
 Chacune se termine par une recommandation. **Aucune n'est arrêtée : ce sont trois décisions

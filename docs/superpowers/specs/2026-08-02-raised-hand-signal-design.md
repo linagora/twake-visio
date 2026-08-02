@@ -224,6 +224,27 @@ peut faire autrement, puisque le contrat backend ne conserve pas d'historique
 (`hands.ts:18-20` : chaîne vide = baissée, absence de clé = jamais levée ; les deux se
 lisent `null`, indiscernables).
 
+> ### Décision du 2026-08-02, prise par le propriétaire : le bandeau **reste visible en plein écran**
+>
+> La forme recommandée — un **bandeau** plutôt qu'une pastille — est retenue telle quelle.
+>
+> Mais ce document recommandait de le masquer en plein écran, comme les trois autres.
+> **Cette recommandation a été écartée : le bandeau des mains levées y reste visible.**
+>
+> Conséquence à traiter, et elle ne concerne pas ce bandeau-ci : l'arbitrage du 2026-08-01
+> masquait TOUT, y compris le bandeau d'admission. Or **une demande d'admission est plus
+> urgente qu'une demande de parole** — la première laisse quelqu'un hors de la réunion, la
+> seconde attend son tour dedans. Livrer les deux décisions telles quelles donnerait un écran
+> dont la logique ne s'explique plus : le moins urgent passe, le plus urgent est masqué.
+>
+> La règle du plein écran devient donc : **il masque la barre et les commandes, jamais une
+> demande qui attend une réponse.** Le commentaire de `call.tsx` qui énonce le critère
+> — « survit ce dont l'absence rendrait l'écran trompeur » — devra être réécrit avec elle,
+> puisqu'une main levée est *manquée* et non *trompeuse*.
+>
+> Ce que cela ne change pas : le bandeau ne porte **aucun bouton**, ce qui reste vrai dans les
+> deux lectures de la règle et rend la décision applicable sans rouvrir le reste.
+
 ## Le plein écran
 
 **Recommandation : masqué, exactement comme les trois autres.** Le bandeau vit dans la
