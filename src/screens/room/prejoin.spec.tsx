@@ -21,6 +21,20 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// `style` est une prop que `StatusBar` CONSOMME : elle n'atteint aucun élément
+// hôte, et `toHaveProp` y serait vert dans les deux états — la borne écrite dans
+// `AGENTS.md`. Le composant rend d'ailleurs `null` sur Android.
+//
+// On observe donc ce que l'écran DEMANDE, en doublant le module. Ce n'est pas
+// assertir sur le comportement d'un double : l'unité sous test est « quel style
+// cet écran réclame », et c'est exactement ce que ce relevé montre.
+jest.mock('expo-status-bar', () => ({ StatusBar: jest.fn(() => null) }));
+
+const statusBarStyles = (): unknown[] =>
+  jest
+    .mocked(jest.requireMock('expo-status-bar').StatusBar as jest.Mock)
+    .mock.calls.map((call) => (call[0] as { style?: unknown }).style);
+
 // Les deux interrupteurs partent désormais des Réglages. Sans ce double, le
 // test lirait le vrai magasin MMKV — un état partagé entre fichiers de spec,
 // donc un résultat qui dépendrait de l'ordre d'exécution.
@@ -65,6 +79,11 @@ const GRANTED = {
 beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockReset();
+  // `jest.restoreAllMocks()` ne touche PAS un double de module : sans cette
+  // remise à zéro, `mock.calls` s'accumule sur tout le fichier et le `light`
+  // d'un test précédent satisfait l'assertion du suivant. Mesuré : retirer
+  // l'une des deux déclarations de `prejoin.tsx` ne rougissait alors RIEN.
+  jest.mocked(jest.requireMock('expo-status-bar').StatusBar as jest.Mock).mockClear();
   journal.rememberVisit.mockClear();
   // Le double vit à côté de `node_modules` et n'est pas remis à zéro par
   // `restoreAllMocks` : sans cela, les appels s'accumulent d'un test à l'autre
@@ -335,5 +354,35 @@ describe('PrejoinScreen', () => {
 
       expect(journal.rememberVisit).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("PrejoinScreen — barre d'état", () => {
+  it('réclame des icônes claires sur le fond sombre de la pré-séance', async () => {
+    // MESURÉ sur appareil avant ce correctif : le thème Android généré est
+    // `Theme.AppCompat.DayNight.NoActionBar` avec une barre transparente et
+    // AUCUN `windowLightStatusBar`. `dumpsys window` lisait
+    // `mLastAppearance=LIGHT_NAVIGATION_BARS`, sans `LIGHT_STATUS_BARS` : icônes
+    // blanches. Invisibles sur les écrans clairs, correctes ici.
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(<PrejoinScreen />);
+    await waitFor(() => expect(screen.getByTestId('prejoin-root')).toBeTruthy());
+
+    expect(statusBarStyles()).toContain('light');
+  });
+
+  it("réclame aussi des icônes claires quand l'accès est refusé", async () => {
+    // La branche d'échec peint `errorRoot`, sombre elle aussi. Elle a sa propre
+    // déclaration : l'oublier laisserait des icônes sombres sur du noir, et
+    // aucun test de la branche nominale ne l'aurait vu.
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+
+    await render(<PrejoinScreen />);
+    await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
+
+    expect(statusBarStyles()).toContain('light');
   });
 });
