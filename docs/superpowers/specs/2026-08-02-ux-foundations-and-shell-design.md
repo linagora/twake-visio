@@ -645,3 +645,50 @@ dépend de branches qui ne sont pas encore fusionnées.
 Le pari du découpage est que livrer les jetons **tôt** vaut mieux que livrer une
 refonte **complète** en un bloc : les quatorze branches en vol pourront rebaser
 dessus au lieu de produire quatorze conflits de style à la fusion.
+
+## Corrigé après livraison, contre le code livré
+
+Deux défauts trouvés sur appareil, tous deux nés d'une décision de CE lot, tous
+deux hors de l'écran où ils se voyaient.
+
+### La coque appliquait les encoches sans les peindre
+
+`app/_layout.tsx` enveloppait tout le Stack dans une `SafeAreaView` de style
+`{ flex: 1 }` — **sans `backgroundColor`**. Elle transformait les encoches en
+rembourrage, et la bande dégagée laissait voir la vue racine, blanche sur iOS.
+`call.tsx` peint bien son noir, mais sur SA racine, qui vit à l'intérieur de ce
+rembourrage : elle ne pouvait pas l'atteindre. D'où un bandeau blanc en haut et
+en bas de la séance.
+
+**Le bord appartient à la surface qui le BORDE**, seule à savoir si elle est
+claire ou sombre. La coque n'inserte plus rien.
+
+Trois choses que la correction a coûté, et qu'un plan futur doit prévoir :
+
+| # | Ce qui n'était pas prévu | Pourquoi |
+| --- | --- | --- |
+| 1 | ce n'est pas la RACINE qui borde, sur cinq écrans | la racine peint `appBackground`, l'en-tête `cardSurface` : posé sur la racine, le bandeau d'état sortait gris sous un en-tête blanc. `AppHeader` et `ScreenHeader` le portent |
+| 2 | `KeyboardAvoidingView` ÉCRASE `paddingBottom` | la racine de `call.tsx` en est une. L'encart y disparaissait en silence — trouvé par un test, pas par une relecture. La barre et la garde du calque des réactions le portent |
+| 3 | `useSafeAreaInsets` JETTE hors d'un fournisseur | dix-neuf spécs seraient tombées sur « No safe area value available », qui ne nomme ni encoche ni écran. Le double est passé dans `jest.setup.ts` |
+
+La neutralisation `safeAreaInsets={{ bottom: 0 }}` de la barre d'onglets a été
+retirée : elle n'existait que parce que la coque consommait l'encart d'abord.
+`home.spec.tsx` garde désormais les deux règles — l'en-tête porte le haut, la
+racine ne double PAS le bas.
+
+### `headerShown: false` fait de tout écran poussé un cul-de-sac
+
+La coque masque l'en-tête du Stack. Un écran poussé ne reçoit donc **aucune**
+commande de sortie du cadre. `prejoin.tsx` l'avait découvert et l'avait écrit en
+commentaire ; personne ne l'a balayé vers ses voisins.
+
+Trois écrans étaient des culs-de-sac — `create`, signalé sur appareil ; `server` ;
+et `lobby`, dont **les cinq états** n'offraient aucune sortie, trois étant
+terminaux (refusé, aucun modérateur, échec). D'où `src/ui/screenHeader.tsx`,
+pour que le quatrième site ne soit pas un quatrième chevron recopié, et un
+`lobby` qui rend ses états comme CONTENU seul et pose la sortie une fois, après :
+un état ne peut plus l'oublier par construction.
+
+> **La leçon est celle qu'`AGENTS.md` énonce déjà : un site qui CITE la règle en
+> dépend autant qu'un site qui l'applique.** Un commentaire n'est pas un
+> balayage.

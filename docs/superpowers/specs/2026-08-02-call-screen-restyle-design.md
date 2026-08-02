@@ -34,7 +34,9 @@ travail reste à faire, et ce n'est pas ce lot.
 participants**. Le mockup en pose un :
 
 - nom de la réunion, tronqué à une ligne ;
-- pastille verte + minuteur + « Chiffré » ;
+- pastille verte + minuteur + « Chiffré » — cette dernière mention a été
+  RETIRÉE après livraison, voir plus bas : rien ne la mesurait, et rien dans
+  l'application ne permettait de la mesurer ;
 - à droite, une pastille pressable portant le nombre de participants, qui ouvre
   le panneau.
 
@@ -77,9 +79,12 @@ supposer.
 
 ## Hors périmètre
 
-- `prejoin.tsx` — Lot 3, qui reste à faire.
-- `lobby.tsx` — inchangé.
-- `create.tsx` — déjà restylé au Lot 2.
+- `prejoin.tsx` — Lot 3. _(Livré et fusionné depuis.)_
+- `lobby.tsx` — inchangé. _(Ne l'est plus : il n'offrait aucune sortie dans
+  aucun de ses cinq états, dont trois terminaux. Corrigé hors de ce lot, voir la
+  spec du Lot 1.)_
+- `create.tsx` — déjà restylé au Lot 2. _(Lui non plus n'offrait aucune sortie,
+  même cause, même correction.)_
 - Toute logique : ce lot ne déplace aucun appel réseau, aucun état, aucun
   branchement. Un test existant qui rougit est un signal, pas une permission.
 
@@ -111,16 +116,56 @@ Vérifiés un par un plutôt que pris au mot :
 demande 368 dp. C'est un fait sur le mockup, pas sur le code, et il n'était écrit
 nulle part avant qu'A1 le mesure.
 
-### La dépendance croisée qui reste ouverte **[?]**
+### La dépendance croisée, tranchée par le propriétaire
 
-Le bouton des participants est désormais **en double** : dans la barre, où A1 l'a
+Le bouton des participants était **en double** : dans la barre, où A1 l'avait
 gardé faute de pouvoir toucher l'en-tête, et dans l'en-tête qu'A4 a créé. Le
-mockup ne le met qu'à un seul endroit.
+mockup ne le met qu'à un seul endroit — **l'en-tête l'emporte**.
 
-Le retirer de la barre libère les 16 dp qui manquaient pour monter les commandes
-de 44 à 52 dp. **Ce n'est pas fait** : déplacer une commande que les gens
-connaissent est une décision d'usage, pas de mise en page, et elle revient au
-propriétaire.
+La rangée passe donc de sept cibles à six, et les 52 dp du mockup deviennent
+atteignables :
+
+```
+avant   7 × 44 + 1 + 5 × 8 + 2 × 4 = 357 dp
+après   6 × 52 + 1 + 4 × 8 + 2 × 4 = 353 dp
+```
+
+**Moins de largeur qu'avant, pour une cible plus grande.** Et
+`justifyContent: 'space-evenly'` plutôt que `center` : 353 dp est un MINIMUM, un
+téléphone en fait rarement 360 tout juste — 402 sur un iPhone 17 Pro. Groupée au
+centre, la rangée laissait 49 dp inutilisés aux deux bouts pendant que les
+commandes se touchaient. Le `gap` reste le plancher : `justifyContent` ne
+distribue que l'espace libre, il ne peut pas en retirer.
+
+`BAR_HEIGHT` suit à 60, donc la garde de `reactionOverlay` passe à 68 et 140.
+**Deux sites citaient ces nombres**, pas un — `reactionOverlay.spec.tsx` et
+`call.spec.tsx`. Le second a été manqué à la première passe et rattrapé par la
+suite : exactement la dette qu'`AGENTS.md` décrit.
+
+### « Chiffré » a été retiré, et c'est une décision de sécurité
+
+Le mockup pose la mention, A4 l'a rendue, et elle était **inconditionnelle** —
+`t('call.encrypted')`, sans rien qui la mesure.
+
+Mesuré avant de trancher : `connection.ts:76` construit `new Room()` **sans
+options E2EE**, `connection.ts:188` appelle `room.connect(url, token)` sans
+options, aucune occurrence de `e2ee` / `keyProvider` / `frameCryptor` dans
+`src/`, et `/api/v1.0/config/` n'expose que `recording`, `subtitle`, `telephony`
+et `calendar` (`discovery.ts:120-127`).
+
+Le transport EST chiffré — DTLS-SRTP, toujours, c'est WebRTC. Mais un SFU
+déchiffre et rechiffre : l'exploitant du serveur voit le média. Le mot seul,
+posé à côté d'une pastille de séance en cours, promet du bout en bout que
+l'application ne fait pas.
+
+**Un conditionnel n'aurait pas aidé** : sans E2EE, la seule chose mesurable est
+toujours vraie. Le propriétaire a choisi de retirer la mention plutôt que de la
+reformuler. `callHeader.spec.tsx` garde son ABSENCE.
+
+Activer l'E2EE de LiveKit reste possible, et son prix est connu : il **casse
+l'enregistrement et la transcription côté serveur**, que cette instance annonce
+tous les deux. Et la sécurité réelle se jouerait dans la circulation de la clé,
+pas dans le libellé.
 
 ## Ce que ça vaut
 
