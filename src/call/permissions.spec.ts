@@ -1,6 +1,10 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 
-import { ensureBluetoothPermission, ensureMediaPermissions } from 'src/call/permissions';
+import {
+  ensureBluetoothPermission,
+  ensureMediaPermissions,
+  ensureNotificationPermission,
+} from 'src/call/permissions';
 
 describe('ensureMediaPermissions', () => {
   afterEach(() => {
@@ -99,5 +103,56 @@ describe('ensureBluetoothPermission', () => {
     jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue('never_ask_again' as never);
 
     await expect(ensureBluetoothPermission()).resolves.toBe(false);
+  });
+});
+
+describe('ensureNotificationPermission', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("ne demande rien hors d'Android", async () => {
+    const request = jest.spyOn(PermissionsAndroid, 'request');
+    jest.replaceProperty(Platform, 'OS', 'ios');
+
+    await expect(ensureNotificationPermission()).resolves.toBe(true);
+
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("ne demande rien sous l'API 33, où POST_NOTIFICATIONS n'est pas une permission d'exécution", async () => {
+    // Même remarque que pour BLUETOOTH_CONNECT : `Platform.Version` est un
+    // ACCESSEUR, `jest.replaceProperty` y jette.
+    const request = jest.spyOn(PermissionsAndroid, 'request');
+    jest.replaceProperty(Platform, 'OS', 'android');
+    jest.spyOn(Platform, 'Version', 'get').mockReturnValue(32);
+
+    await expect(ensureNotificationPermission()).resolves.toBe(true);
+
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("demande POST_NOTIFICATIONS à partir de l'API 33, jamais une autre permission", async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    jest.spyOn(Platform, 'Version', 'get').mockReturnValue(33);
+    const request = jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue('granted' as never);
+
+    await expect(ensureNotificationPermission()).resolves.toBe(true);
+
+    expect(request).toHaveBeenCalledWith(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  });
+
+  it('rend false sur un refus, y compris définitif', async () => {
+    // MESURÉ sur appareil le 2026-08-02 : sans cette demande,
+    // `POST_NOTIFICATIONS: granted=false`, et la notification du service de
+    // premier plan est SUPPRIMÉE — `dumpsys activity services` la montrait bien
+    // attachée (`isForeground=true types=0x000000C0`) alors qu'aucune ligne
+    // n'apparaissait dans le volet. Le service tourne quand même ; c'est la
+    // seule raison pour laquelle un refus ne bloque pas la séance.
+    jest.replaceProperty(Platform, 'OS', 'android');
+    jest.spyOn(Platform, 'Version', 'get').mockReturnValue(33);
+    jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue('never_ask_again' as never);
+
+    await expect(ensureNotificationPermission()).resolves.toBe(false);
   });
 });
