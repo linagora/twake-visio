@@ -13,6 +13,26 @@ import { tokens } from 'src/ui/tokens';
 //
 // `borderRadius` est relu depuis le `style` aplati par `IconButton`, donc
 // l'ondulation reste ronde.
+//
+// **Le mockup de la refonte donne 52 dp, et ce nombre ne peut pas y monter
+// tant que la rangée porte SEPT cibles.** Il n'en dessine que six, et sa
+// rangée mesurée demanderait déjà :
+//
+//     76 + 76 + 52 + 52 + 52 + 60 = 368 dp
+//
+// avant le moindre écart, sur un téléphone qui en fait 360. La nôtre en porte
+// une de plus — le compteur de participants, que la conception du lot annonce
+// dans l'EN-TÊTE, pas ici — et coûterait donc :
+//
+//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp
+//
+// Même arithmétique pour la seule pastille « raccrocher » de 60 × 52, à
+// gabarit inchangé par ailleurs : 273 + 60 + 5 × 8 = 373 dp.
+//
+// D'où le partage retenu : ce qui du mockup ne coûte AUCUNE largeur est
+// appliqué — le voile, les deux rouges, le vert du compteur ; ce qui en coûte
+// attend l'intégration, seule à pouvoir sortir une cible de la rangée.
+//
 // La cible tactile d'un bouton de barre, en dp. Nommée plutôt qu'écrite trois
 // fois : `barStyles.button` la pose, `BAR_HEIGHT` s'en déduit, et les deux ne
 // peuvent plus diverger au premier changement de gabarit.
@@ -37,34 +57,94 @@ export const BAR_PADDING = tokens.spacing.xs;
 // `leave-btn` termine cette rangée.
 export const BAR_HEIGHT = BAR_BUTTON_SIZE + 2 * BAR_PADDING;
 
+// Le voile du mockup : du blanc à 10 %, et non une teinte de plus. C'est lui
+// qui donne une SURFACE à chaque commande de la barre, là où elles n'étaient
+// que des glyphes nus posés sur le fond noir de `call.tsx`.
+//
+// C'est la seule couleur de ce fichier qui ne vienne pas de `src/ui/tokens`,
+// et la raison est bornée : le jeu de jetons ne porte aucun translucide, et
+// `src/ui/` est hors du périmètre de ce sous-lot. Ce n'est pas une couleur
+// inventée — c'est `surfaceLight` (#FFFFFF) à 10 % d'opacité. Précédent du
+// même office et de la même forme : `src/ui/actionCard.tsx:93`,
+// `rgba(255,255,255,0.18)`.
+//
+// 1,26:1 sur `backgroundDark`, et c'est VOULU : ce fond est décoratif. Ce qui
+// identifie une commande reste son glyphe — `BAR_ICON_COLOR`, 16,65:1 — donc
+// WCAG 1.4.11 ne s'applique pas ici, exactement comme pour `cardBorder` et
+// `rowSeparator` dans `src/ui/tokens`. Un voile qui passerait 3:1 sur ce fond
+// ne serait plus un voile.
+//
+// Il ne touche pas que la rangée : `barStyles.button` habille aussi les deux
+// boutons de `chatPanel.tsx`, posés sur `surfaceDark`, où le même voile donne
+// 1,30:1. Deux fonds, deux ratios — les confondre est l'erreur que ce dépôt a
+// déjà commise pour `BAR_RIPPLE_COLOR`.
+export const BAR_SURFACE_COLOR = 'rgba(255, 255, 255, 0.1)';
+
 export const barStyles = StyleSheet.create({
   button: {
     margin: 0,
     width: BAR_BUTTON_SIZE,
     height: BAR_BUTTON_SIZE,
     borderRadius: BAR_BUTTON_SIZE / 2,
+    // Posé ICI et non au cas par cas : `cameraMenu.tsx`, `audioOutputControl.tsx`
+    // et `moreMenu.tsx` rendent trois des sept boutons de la rangée et ne
+    // connaissent que ce style. Un voile appliqué dans `callControlBar.tsx`
+    // seul laisserait ces trois-là nus au milieu des autres.
+    backgroundColor: BAR_SURFACE_COLOR,
   },
+  // Le rouge d'alerte du mockup, POSÉ PAR-DESSUS `button` et jamais seul : il
+  // ne porte que le fond, tout le reste du gabarit vient de là. Deux emplois,
+  // et le mockup leur donne bien le même rouge — un micro ou une caméra
+  // coupés, et « raccrocher ».
+  //
+  // `tokens.color.danger` (#D03939) plutôt que le #E03B3B du mockup, qui n'a
+  // pas de jeton : c'est déjà la version assombrie que ce dépôt a retenue de
+  // la même famille (voir le tableau de `src/ui/tokens`), et elle mesure
+  // MIEUX sous le glyphe — 4,11:1 avec `BAR_ICON_COLOR`, contre 3,66:1 pour
+  // la valeur du mockup. La pastille elle-même donne 4,05:1 sur
+  // `backgroundDark`, au-dessus des 3:1 qu'un objet graphique demande pour se
+  // détacher de son fond.
+  danger: { backgroundColor: tokens.color.danger },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
   // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 357 dp —
   // le calcul ci-dessus n'a pas bougé d'un dp.
   anchor: { position: 'relative' },
-  // Aucune couleur posée : Paper appaire lui-même `theme.colors.error` et
-  // `theme.colors.onError` (`Badge.tsx:88-100`).
+  // Le compteur du mockup : fond vert, texte blanc. Les DEUX couleurs sont
+  // posées ici, et les deux atteignent bien le rendu — `Badge` extrait
+  // `backgroundColor` du style aplati pour le placer lui-même, puis répand le
+  // RESTE de ce style APRÈS la couleur de texte qu'il tire du thème
+  // (`Badge.tsx:88-120`). Sans elles, Paper appaire `theme.colors.error` et
+  // `theme.colors.onError` : un rouge, là où le mockup veut du vert.
   //
-  // Depuis que `makeTheme` rend toujours le thème clair, la paire ne dépend
-  // plus du schéma de l'appareil : c'est TOUJOURS du blanc sur `danger`
-  // (#D03939), mesuré à 4,85:1. Au-dessus du seuil AA de 4,5.
+  // `brandStrong` et non `brand` : le vert de marque #1FA45C ne donne que
+  // 3,22:1 sous du blanc, sous le seuil AA de 4,5 — c'est écrit dans
+  // `src/ui/tokens`, « `brand` ne porte JAMAIS de texte ». #177E44 donne
+  // 5,12:1 sous le même blanc, et 3,85:1 contre `backgroundDark`, de quoi
+  // détacher la pastille du fond de la barre.
   //
-  // Le commentaire précédent citait 5,62:1 en clair et 5,73:1 en sombre, sur
-  // des valeurs — #C62828 et #FF8A80 — que le thème n'emploie plus.
-  badge: { position: 'absolute', top: 2, right: 2 },
+  // La hauteur reste celle de Paper — 20 dp (`Badge.tsx:15`, `defaultSize`) —,
+  // déjà au-dessus des 19 du mockup.
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: tokens.color.brandStrong,
+    color: tokens.color.onBrand,
+  },
 });
 
-// 16,65:1 sur `backgroundDark`. Aucun `IconButton` de cette barre ne porte
-// `disabled` : Paper teste `disabled` avant la couleur passée par l'appelant et
-// rend `onSurfaceDisabled`, un quasi-noir, sur un fond sombre. Ce qui n'est pas
-// actionnable n'est pas rendu.
+// 16,65:1 sur `backgroundDark`, et TROIS fonds désormais, pas un : 13,23:1 sur
+// le voile de `BAR_SURFACE_COLOR`, 4,11:1 sur le rouge de `barStyles.danger`.
+// C'est le troisième qui gouverne — au-dessus des 3:1 d'un objet graphique, en
+// dessous des 4,5:1 d'un texte, ce qu'un glyphe n'est pas. Une seule couleur de
+// glyphe pour les sept boutons : `dangerDark` sur ce même rouge tomberait à
+// 2,13:1.
+//
+// Aucun `IconButton` de cette barre ne porte `disabled` : Paper teste
+// `disabled` avant la couleur passée par l'appelant et rend `onSurfaceDisabled`,
+// un quasi-noir, sur un fond sombre. Ce qui n'est pas actionnable n'est pas
+// rendu.
 export const BAR_ICON_COLOR = tokens.color.textDark;
 
 // Sans lui, Paper calcule l'ondulation depuis `theme.colors.onSurface` à 12 %
@@ -140,10 +220,15 @@ export const sheetStyles = StyleSheet.create({
   },
   rowTitle: { color: tokens.color.textDark },
   // 8,21:1 sur `surfaceDark` (8,62:1 est `dangerDark` sur `backgroundDark` —
-  // le fond de `call.tsx`, pas celui de cette feuille). La seule couleur
-  // d'alerte de cette barre qui ne soit pas celle de « quitter » : elle vit
-  // dans une feuille, à deux appuis, donc jamais adjacente au combiné
-  // raccroché.
+  // le fond de `call.tsx`, pas celui de cette feuille). La seule alerte de cet
+  // écran qui soit du TEXTE : elle vit dans une feuille, à deux appuis, donc
+  // jamais adjacente au combiné raccroché.
+  //
+  // Les deux autres rouges sont des FONDS, et ils portent un autre jeton —
+  // `barStyles.danger`, sur `danger` : la lisibilité y est celle du glyphe posé
+  // dessus, pas celle du rouge lui-même. Ne pas confondre les deux rôles.
+  // (Cette ligne disait « la seule couleur d'alerte de cette barre qui ne soit
+  // pas celle de quitter », et le remplissage du micro coupé l'a périmée.)
   rowTitleDanger: { color: tokens.color.dangerDark },
   // Secondaire par la taille (`variant="labelSmall"`), jamais par un gris :
   // `tokens.color.muted` donne 3,88:1 sur cette surface, sous le seuil AA.

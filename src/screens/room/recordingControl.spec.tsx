@@ -77,10 +77,10 @@ describe('RecordingControl', () => {
 
     expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop');
     // Le pendant du contrôle ci-dessus, côté arrêt : `rowTitleDanger` est la
-    // seule couleur d'alerte de cette barre qui ne soit pas celle de
-    // « quitter » (`controlBar.ts`), et c'est cette phase-ci que §5.3 refuse de
-    // griser — la lisibilité de « ça s'arrête » compte donc particulièrement
-    // ici.
+    // seule alerte de cet écran qui soit du TEXTE (`controlBar.ts`) — les deux
+    // autres rouges, le micro coupé et « quitter », sont des fonds sous un
+    // glyphe. Et c'est cette phase-ci que §5.3 refuse de griser : la lisibilité
+    // de « ça s'arrête » compte donc particulièrement ici.
     expect(screen.getByTestId('recording-toggle-title')).toHaveStyle({
       color: tokens.color.dangerDark,
     });

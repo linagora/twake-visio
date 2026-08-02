@@ -321,12 +321,18 @@ export function CallControlBar({
 
   return (
     <View style={styles.controls}>
+      {/* Le rouge plein du mockup dit « coupé » une seconde fois, à côté du
+          glyphe barré : c'est la seule information de cette rangée qu'on
+          cherche du coin de l'œil pendant qu'on parle. Un TABLEAU de styles,
+          jamais une couleur en ligne — `IconButton` aplatit son `style` pour
+          en relire `borderRadius` (`IconButton.tsx:158-161`), et le rayon
+          reste donc celui de `barStyles.button`. */}
       <IconButton
         testID="mic-toggle"
         icon={micOn ? 'microphone' : 'microphone-off'}
         iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        style={[barStyles.button, micOn ? null : barStyles.danger]}
         hitSlop={BAR_HIT_SLOP}
         onPress={handleToggleMic}
         accessibilityLabel={t('call.muted')}
@@ -338,7 +344,7 @@ export function CallControlBar({
           icon={cameraOn ? 'video' : 'video-off'}
           iconColor={BAR_ICON_COLOR}
           rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
+          style={[barStyles.button, cameraOn ? null : barStyles.danger]}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleCamera}
           accessibilityLabel={t('prejoin.cameraOff')}
@@ -397,11 +403,14 @@ export function CallControlBar({
       <IconButton
         testID="leave-btn"
         icon="phone-hangup"
-        // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
-        // seuil WCAG AA, et la scène est sombre dans les deux schémas.
-        iconColor={tokens.color.dangerDark}
+        // Le rouge a changé de place : il REMPLIT la pastille, il ne colore
+        // plus le glyphe. C'est ce que demande le mockup, et le glyphe doit
+        // suivre — #FF8A80 (`dangerDark`, la couleur d'avant) sur ce rouge ne
+        // donne que 2,13:1, sous les 3:1 d'un objet graphique. `BAR_ICON_COLOR`
+        // en donne 4,11:1, comme sur les six autres boutons de la rangée.
+        iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        style={[barStyles.button, barStyles.danger]}
         hitSlop={BAR_HIT_SLOP}
         onPress={onLeave}
         accessibilityLabel={t('call.leave')}
