@@ -1,5 +1,6 @@
-import { AudioSession, registerGlobals } from '@livekit/react-native';
+import { registerGlobals } from '@livekit/react-native';
 
+import { startAudioRoute, stopAudioRoute } from 'src/call/audioRoute';
 import { createCallSession, type CallSession } from 'src/call/connection';
 import type { RoomAccess } from 'src/call/types';
 
@@ -22,6 +23,18 @@ const mockOff = jest.fn();
 // être rejouée. Un seul `createCallSession()` par test, sinon la seconde
 // session écrase les gestionnaires de la première.
 const mockHandlers = new Map<string, (...args: unknown[]) => void>();
+
+// La possession de la route est une décision d'un SEUL module
+// (`src/call/audioRoute.ts`), et `audioRoute.spec.ts` prouve ce que fait chacune
+// de ses deux branches. Ce fichier n'a qu'une chose à prouver : que la
+// connexion passe bien par lui. Sans ce double, un appel direct à
+// `AudioSession.startAudioSession()` — le code d'avant — resterait vert, parce
+// que sous Jest le module natif est absent et que les deux chemins retombent
+// alors sur le même appel.
+jest.mock('src/call/audioRoute', () => ({
+  startAudioRoute: jest.fn(async (): Promise<void> => undefined),
+  stopAudioRoute: jest.fn(async (): Promise<void> => undefined),
+}));
 
 jest.mock('livekit-client', () => ({
   Room: class {
@@ -122,6 +135,12 @@ beforeEach(() => {
   mockOff.mockReset();
   mockConnect.mockReset().mockResolvedValue(undefined);
   mockDisconnect.mockReset().mockResolvedValue(undefined);
+
+  // Le double de `audioRoute` est un objet de module PARTAGÉ : sans cette
+  // remise à zéro, l'implémentation posée par le premier test de la section
+  // « session audio » fuirait vers les suivants.
+  jest.mocked(startAudioRoute).mockReset().mockResolvedValue(undefined);
+  jest.mocked(stopAudioRoute).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -158,14 +177,14 @@ describe('createCallSession — état initial', () => {
 });
 
 describe('createCallSession — session audio', () => {
-  it('ouvre la session audio avant le transport, pas après', async () => {
-    // L'ordre est tout : `@livekit/react-native` configure le moteur audio de
-    // la plateforme dans `startAudioSession()`. Ouvrir le transport d'abord
-    // laisse la publication sans moteur, et la négociation expire sur un
-    // « negotiation timed out » qui ne nomme pas sa cause. Constaté sur
-    // appareil avant que ce module ne l'appelle.
+  it('ouvre la route audio avant le transport, pas après', async () => {
+    // L'ordre est tout : le propriétaire de la route configure le moteur audio
+    // de la plateforme. Ouvrir le transport d'abord laisse la publication sans
+    // moteur, et la négociation expire sur un « negotiation timed out » qui ne
+    // nomme pas sa cause. Constaté sur appareil avant que ce module ne
+    // l'appelle.
     const order: string[] = [];
-    jest.mocked(AudioSession.startAudioSession).mockImplementation(async () => {
+    jest.mocked(startAudioRoute).mockImplementation(async () => {
       order.push('audio');
     });
     mockConnect.mockImplementation(async () => {
@@ -178,32 +197,32 @@ describe('createCallSession — session audio', () => {
     expect(order).toEqual(['audio', 'transport']);
   });
 
-  it('referme la session audio au raccrochage', async () => {
+  it('referme la route audio au raccrochage', async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
-    jest.mocked(AudioSession.stopAudioSession).mockClear();
+    jest.mocked(stopAudioRoute).mockClear();
 
     await session.disconnect();
 
     // Laissée ouverte, elle garde le routage audio de la plateforme et le
     // haut-parleur reste détourné pour le reste de l'application.
-    expect(jest.mocked(AudioSession.stopAudioSession)).toHaveBeenCalled();
+    expect(jest.mocked(stopAudioRoute)).toHaveBeenCalled();
   });
 
-  it('referme la session audio au démontage', async () => {
+  it('referme la route audio au démontage', async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
-    jest.mocked(AudioSession.stopAudioSession).mockClear();
+    jest.mocked(stopAudioRoute).mockClear();
 
     session.dispose();
 
-    expect(jest.mocked(AudioSession.stopAudioSession)).toHaveBeenCalled();
+    expect(jest.mocked(stopAudioRoute)).toHaveBeenCalled();
   });
 
-  it("n'empêche pas la séance quand la session audio échoue à se refermer", async () => {
+  it("n'empêche pas la séance quand la route audio échoue à se rendre", async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
-    jest.mocked(AudioSession.stopAudioSession).mockRejectedValueOnce(new Error('route occupée'));
+    jest.mocked(stopAudioRoute).mockRejectedValueOnce(new Error('route occupée'));
 
     // Un échec de fermeture ne doit pas faire rejeter `disconnect()` : l'écran
     // resterait bloqué sur une séance que l'utilisateur vient de quitter.
