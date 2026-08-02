@@ -30,8 +30,12 @@ export default function TabsLayout(): React.ReactElement {
         headerShown: false,
         tabBarActiveTintColor: tokens.color.brandStrong,
         tabBarInactiveTintColor: tokens.color.textTabInactive,
+        // `semiBold` et non `bold` : les trois glyphes sont des variantes
+        // `-outline`, donc des traits fins, et du gras 700 pèse plus qu'un
+        // contour à taille égale. Le libellé dominait l'icône qu'il coiffe.
+        // C'est le POIDS qui déséquilibrait, pas la taille — laissée à 11.
         tabBarLabelStyle: {
-          fontFamily: tokens.font.bold,
+          fontFamily: tokens.font.semiBold,
           fontSize: tokens.typography.tabLabel.fontSize,
         },
         tabBarStyle: {
