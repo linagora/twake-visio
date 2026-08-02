@@ -9,9 +9,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { initI18n } from 'src/i18n';
 import { listKnownHosts } from 'src/instance/knownInstances';
@@ -71,18 +70,20 @@ export default function RootLayout(): React.ReactElement | null {
           icon: (props) => <MaterialCommunityIcons {...props} />,
         }}
       >
-        {/* Les en-têtes sont masqués, donc rien ne pousse le contenu sous la
-            barre d'état : sans ces marges, le premier élément de chaque écran
-            passe sous l'heure et les icônes système. Appliquées ici une fois
-            plutôt que dans chacun des sept écrans. */}
-        <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
-          <Stack screenOptions={{ headerShown: false }} />
-        </SafeAreaView>
+        {/* AUCUNE `SafeAreaView` ici, et c'est le point.
+            Elle y était, avec ses quatre bords, et elle transformait les
+            encoches en REMBOURRAGE de la coque. La bande ainsi dégagée laissait
+            voir ce qu'il y a derrière — la vue racine, blanche sur iOS — parce
+            que ce style n'avait pas de `backgroundColor`. Or `call.tsx` peint
+            bien son noir, mais sur SA racine, qui vit à l'intérieur de ce
+            rembourrage : elle ne pouvait pas l'atteindre. D'où un bandeau blanc
+            en haut ET en bas de la séance, signalé sur appareil.
+            Le fond d'une encoche appartient donc à l'écran qui la borde, jamais
+            à la coque : c'est lui qui sait s'il est clair ou sombre. Chaque
+            racine d'écran applique ses propres encoches et les peint, puisqu'un
+            rembourrage est peint par le fond de la vue qui le porte. */}
+        <Stack screenOptions={{ headerShown: false }} />
       </PaperProvider>
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1 },
-});

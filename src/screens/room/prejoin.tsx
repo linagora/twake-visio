@@ -5,6 +5,7 @@ import { RTCView } from '@livekit/react-native-webrtc';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator, Button } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
@@ -177,12 +178,22 @@ export function PrejoinScreen(): React.ReactElement {
     router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
   };
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   // L'échec passe AVANT l'attente : les deux ont `access === null`, et tester
   // l'attente d'abord rendrait le sablier pour toujours, ce qui est exactement
   // le défaut corrigé ici.
   if (failure !== null) {
     return (
-      <View style={styles.errorRoot}>
+      <View style={[styles.errorRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Text style={styles.errorText} testID="prejoin-error">
           {t(failure)}
         </Text>
@@ -200,7 +211,10 @@ export function PrejoinScreen(): React.ReactElement {
   if (access === null) return <ActivityIndicator testID="prejoin-loading" />;
 
   return (
-    <View style={styles.root} testID="prejoin-root">
+    <View
+      style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      testID="prejoin-root"
+    >
       <View style={styles.header}>
         <Pressable
           accessibilityLabel={t('prejoin.back')}

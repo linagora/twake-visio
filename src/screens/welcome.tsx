@@ -3,6 +3,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { signIn } from 'src/auth/login';
 import { DEFAULT_SERVER_URL } from 'src/constants';
@@ -26,8 +27,13 @@ export function WelcomeScreen(): React.ReactElement {
     router.push('/server');
   };
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.identity}>
         <BrandTile size="lg" testID="welcome-tile" />
         {/* Deux `Text` et non un : le mockup pose « Twake » en texte principal

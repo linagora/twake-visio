@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { instanceLabel } from 'src/instance/label';
@@ -78,8 +79,17 @@ export function ReglagesScreen(): React.ReactElement {
   const languageId = preferences.language ?? SYSTEM_LANGUAGE;
   const languageLabel = languageOptions.find((option) => option.id === languageId)?.label ?? '';
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc la bande sous l'heure
+  // prend la couleur de l'écran au lieu du blanc de la vue système. C'était le
+  // défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // `top` seulement : le bas appartient à la barre d'onglets, qui applique son
+  // propre encart et le peint de son fond. Les deux ensemble empilaient ~34 pt
+  // de vide sous les libellés.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.root} testID="reglages-screen">
+    <View style={[styles.root, { paddingTop: insets.top }]} testID="reglages-screen">
       <AppHeader
         onAvatarPress={() => setOpenRow(null)}
         testID="settings-header"

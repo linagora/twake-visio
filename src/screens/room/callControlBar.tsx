@@ -1,6 +1,7 @@
 import type { Room } from 'livekit-client';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyleSheet, View } from 'react-native';
 import { IconButton } from 'react-native-paper';
 
@@ -155,6 +156,11 @@ export function CallControlBar({
   onLeave,
 }: CallControlBarProps): React.ReactElement | null {
   const { t } = useTranslation();
+
+  // La rangée BORDE le bas de l'écran, donc elle porte l'écart de l'indicateur
+  // d'accueil. La racine de `call.tsx` ne peut pas le faire : sa
+  // `KeyboardAvoidingView` écrase `paddingBottom`.
+  const insets = useSafeAreaInsets();
 
   const [micOn, setMicOn] = useState(defaultMicOn);
   const [cameraOn, setCameraOn] = useState(defaultCameraOn);
@@ -327,7 +333,10 @@ export function CallControlBar({
   if (hidden) return null;
 
   return (
-    <View style={styles.controls}>
+    <View
+      style={[styles.controls, { paddingBottom: BAR_PADDING + insets.bottom }]}
+      testID="call-controls"
+    >
       {/* Le rouge plein du mockup dit « coupé » une seconde fois, à côté du
           glyphe barré : c'est la seule information de cette rangée qu'on
           cherche du coin de l'œil pendant qu'on parle. Un TABLEAU de styles,

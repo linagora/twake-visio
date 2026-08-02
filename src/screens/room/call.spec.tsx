@@ -4,7 +4,9 @@ import { Track } from 'livekit-client';
 import React from 'react';
 import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { tokens } from 'src/ui/tokens';
 import * as hand from 'src/api/hand';
 import * as participants from 'src/api/participants';
 import * as recordingApi from 'src/api/recording';
@@ -52,6 +54,22 @@ function grantedAccess(accessLevel: AccessLevel, isAdministrable: boolean): ApiR
 // l'enveloppement de tous les rendus existants a été vérifié sans régression.
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
+}
+
+// Des encoches NON NULLES, injectées : le double de `jest.setup.ts` en rend
+// zéro par défaut, et un rembourrage de zéro passerait aussi bien avec le
+// crochet qu'avec une constante. Le fournisseur du double lit `initialMetrics`
+// (`jest/mock.tsx:45-58`).
+const IPHONE_INSETS = { bottom: 34, left: 0, right: 0, top: 59 };
+
+function withInsets(node: React.ReactElement): React.ReactElement {
+  return (
+    <SafeAreaProvider
+      initialMetrics={{ frame: { height: 874, width: 402, x: 0, y: 0 }, insets: IPHONE_INSETS }}
+    >
+      {withPaper(node)}
+    </SafeAreaProvider>
+  );
 }
 
 // La boîte de contenu de l'écran de couverture du Pixel 10 Pro Fold tenu en
@@ -3376,5 +3394,43 @@ describe('CallScreen — le chat', () => {
     await view.unmount();
 
     expect(mockTextStreamHandlers.has('lk.chat')).toBe(false);
+  });
+});
+
+// C'est ICI que le défaut se voyait : `call.tsx` peint `backgroundDark`, la
+// coque appliquait les encoches SANS fond, et la bande dégagée laissait voir
+// la vue système — blanche, en haut ET en bas d'un écran noir. Signalé sur
+// appareil.
+describe('CallScreen, les encoches', () => {
+  it('peint son noir JUSQU’AU bord haut, encoche comprise', async () => {
+    await render(withInsets(<CallScreen />));
+
+    // Les deux ensemble, jamais séparément : un rembourrage sans fond ne peint
+    // rien, et c'est exactement ce qui produisait la bande blanche.
+    expect(screen.getByTestId('call-root')).toHaveStyle({
+      backgroundColor: tokens.color.backgroundDark,
+      paddingTop: 59,
+    });
+  });
+
+  // Le bas n'est PAS sur la racine, et ce test dit pourquoi plutôt que de le
+  // taire : `call-root` est une `KeyboardAvoidingView`, qui écrase
+  // `paddingBottom` avec la hauteur du clavier — zéro sans clavier. La première
+  // version de la correction posait l'encart là et il disparaissait ; c'est ce
+  // test qui l'a montré, pas une relecture.
+  it('laisse la KeyboardAvoidingView écraser le bas de la racine', async () => {
+    await render(withInsets(<CallScreen />));
+
+    expect(screen.getByTestId('call-root')).toHaveStyle({ paddingBottom: 0 });
+  });
+
+  // Donc c'est la BARRE qui écarte les commandes de l'indicateur d'accueil,
+  // elle qui borde le bas. 4 (le rembourrage de la rangée) + 34 (l'encart).
+  it('écarte les commandes de l’indicateur d’accueil', async () => {
+    await render(withInsets(<CallScreen />));
+
+    expect(screen.getByTestId('leave-btn').parent).toBeTruthy();
+    expect(screen.getByTestId('mic-toggle')).toBeTruthy();
+    expect(screen.getByTestId('call-controls')).toHaveStyle({ paddingBottom: 38 });
   });
 });

@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore 
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toggleHand } from 'src/api/hand';
 import {
@@ -163,6 +164,28 @@ const styles = StyleSheet.create({
 export function CallScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  //
+  // Déclaré AVEC les autres crochets, jamais près du `return` : cet écran a des
+  // retours anticipés — connexion, échec — et un crochet posé après eux n'est
+  // plus appelé dans le même ordre à chaque rendu. `react-hooks/rules-of-hooks`
+  // l'a refusé, à raison.
+  //
+  // Le HAUT seulement. Le bas est hors d'atteinte ici : la racine est une
+  // `KeyboardAvoidingView`, qui écrase `paddingBottom` avec la hauteur du
+  // clavier — zéro sans clavier. Un test l'a montré, pas une relecture. Le fond
+  // noir, lui, atteint bien le bord bas puisque plus rien ne l'en écarte ; ce
+  // qui manquait était l'écart pour l'INDICATEUR D'ACCUEIL, et il est posé par
+  // la barre de commandes et par le calque des réactions, qui le bordent.
+  const insets = useSafeAreaInsets();
   const { slug, camera, mic } = useLocalSearchParams<{
     slug: string;
     camera?: string;
@@ -958,7 +981,7 @@ export function CallScreen(): React.ReactElement {
     // une spec de rendre les deux branches sans bouchonner `Platform`.
     <KeyboardAvoidingView
       testID="call-root"
-      style={styles.root}
+      style={[styles.root, { paddingTop: insets.top }]}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
       {/* **En plein écran : la barre et les commandes disparaissent, jamais

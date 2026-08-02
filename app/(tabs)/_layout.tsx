@@ -26,23 +26,6 @@ export default function TabsLayout(): React.ReactElement {
 
   return (
     <Tabs
-      // L'encart bas est DÉJÀ consommé par le `SafeAreaView` de
-      // `app/_layout.tsx:78`, qui l'applique une fois pour toute l'application.
-      // La barre d'onglets ajoute le sien par défaut — la documentation de
-      // l'option le dit : « the device's safe area insets are automatically
-      // detected ».
-      //
-      // Les deux ensemble empilaient deux fois la même marge : ~34 pt de vide
-      // sous les libellés sur un iPhone à indicateur d'accueil, et des icônes
-      // qui paraissaient poussées vers le haut de leur barre.
-      //
-      // On neutralise ICI plutôt que de retirer `bottom` de la racine :
-      // `welcome`, `server`, `prejoin` et surtout la barre de commande de
-      // l'appel en dépendent, et passeraient sous l'indicateur d'accueil.
-      //
-      // C'est une prop du NAVIGATEUR (`BottomTabNavigationConfig`), pas une
-      // option d'écran — `tsc` l'a refusée dans `screenOptions`.
-      safeAreaInsets={{ bottom: 0 }}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: tokens.color.brandStrong,

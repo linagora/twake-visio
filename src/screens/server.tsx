@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { Button, HelperText, TextInput } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { signIn, type LoginError } from 'src/auth/login';
 import { fetchServerUrlForEmail } from 'src/instance/emailResolution';
@@ -99,8 +100,18 @@ export function ServerScreen(): React.ReactElement {
     }
   };
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {/* Le retour va à `welcome`, pas à `home` : on n'est pas encore connecté
           ici, et `home` renverrait aussitôt vers l'accueil non authentifié. */}
       <ScreenHeader

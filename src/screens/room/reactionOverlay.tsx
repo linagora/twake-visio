@@ -7,6 +7,8 @@ import { reactionGlyph, type Reaction } from 'src/call/reactions';
 import { CALL_SURFACE_HAIRLINE } from 'src/screens/room/callHeader';
 import { CHAT_FOOTER_HEIGHT } from 'src/screens/room/chatPanel';
 import { BAR_HEIGHT } from 'src/screens/room/controlBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { tokens } from 'src/ui/tokens';
 
 // Ce que la plus basse des bulles doit dégager, en dp. CALCULÉ à partir des
@@ -104,13 +106,25 @@ export function ReactionOverlay({
   chatOpen,
 }: ReactionOverlayProps): React.ReactElement | null {
   const { t } = useTranslation();
+  // AVANT le retour anticipé : `react-hooks/rules-of-hooks` refuse un crochet
+  // qui ne serait pas appelé à chaque rendu.
+  //
+  // La barre de commandes porte désormais l'écart de l'indicateur d'accueil
+  // — la racine de `call.tsx` ne le peut pas, sa `KeyboardAvoidingView` écrase
+  // `paddingBottom`. Elle est donc plus haute de cet écart, et la garde qui
+  // empêche une bulle de se poser sur « raccrocher » doit grandir d'autant.
+  const insets = useSafeAreaInsets();
   if (reactions.length === 0) return null;
 
   return (
     <View
       testID="reaction-overlay"
       pointerEvents="none"
-      style={chatOpen ? [styles.root, styles.rootWithChat] : styles.root}
+      style={[
+        styles.root,
+        chatOpen ? styles.rootWithChat : null,
+        { paddingBottom: (chatOpen ? BOTTOM_GUARD_WITH_CHAT : BOTTOM_GUARD) + insets.bottom },
+      ]}
     >
       {reactions.map((reaction) => {
         const trimmed = reaction.name.trim();

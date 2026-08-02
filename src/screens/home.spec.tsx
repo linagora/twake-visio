@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import * as rooms from 'src/api/rooms';
 import type { Room } from 'src/call/types';
 import { forgetRoomTitle, rememberRoomTitle } from 'src/rooms/titles';
 import * as accounts from 'src/auth/accounts';
+import { tokens } from 'src/ui/tokens';
 import { filterRooms, HomeScreen } from './home';
 
 const mockPush = jest.fn();
@@ -36,6 +38,27 @@ function renderHome(): Promise<unknown> {
     <PaperProvider theme={{ animation: { scale: 0 } }}>
       <HomeScreen />
     </PaperProvider>,
+  );
+}
+
+// Des encoches NON NULLES, injectées : le double de `jest.setup.ts` rend zéro
+// par défaut, et un rembourrage de zéro passerait aussi bien avec le crochet
+// qu'avec une constante. Le fournisseur du double lit `initialMetrics`
+// (`jest/mock.tsx:45-58`), donc ces valeurs atteignent bien l'écran.
+const IPHONE_INSETS = { bottom: 34, left: 0, right: 0, top: 59 };
+
+function renderHomeWithInsets(): Promise<unknown> {
+  return render(
+    <SafeAreaProvider
+      initialMetrics={{
+        frame: { height: 874, width: 402, x: 0, y: 0 },
+        insets: IPHONE_INSETS,
+      }}
+    >
+      <PaperProvider theme={{ animation: { scale: 0 } }}>
+        <HomeScreen />
+      </PaperProvider>
+    </SafeAreaProvider>,
   );
 }
 
@@ -142,6 +165,37 @@ describe('HomeScreen', () => {
     await fireEvent.press(screen.getByTestId('home-create'));
 
     expect(mockPush).toHaveBeenCalledWith('/room/create');
+  });
+
+  // La coque n'applique plus les encoches — sa `SafeAreaView` les transformait
+  // en rembourrage SANS fond, d'où une bande blanche que l'écran d'appel ne
+  // pouvait pas peindre. Chaque racine les porte donc elle-même, ET la peint :
+  // les deux assertions vont ensemble, un rembourrage sans fond ne peint rien.
+  describe('les encoches', () => {
+    it('applique l’encart HAUT sur la racine, qui porte le fond', async () => {
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+      jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+      await renderHomeWithInsets();
+
+      expect(screen.getByTestId('home-screen')).toHaveStyle({
+        backgroundColor: tokens.color.appBackground,
+        paddingTop: 59,
+      });
+    });
+
+    // LA garde de cet écran, et elle vaut plus que la précédente : l'encart bas
+    // appartient à la barre d'onglets, qui applique le sien et le peint de son
+    // fond. Les deux ensemble empilaient ~34 pt de vide sous les libellés —
+    // signalé sur appareil, corrigé une fois, et rien n'empêchait le retour.
+    it('laisse l’encart BAS à la barre d’onglets', async () => {
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+      jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+      await renderHomeWithInsets();
+
+      expect(screen.getByTestId('home-screen')).not.toHaveStyle({ paddingBottom: 34 });
+    });
   });
 });
 

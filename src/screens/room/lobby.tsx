@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
@@ -29,6 +30,10 @@ const ADMISSION_POLL_MS = 5000;
 
 const styles = StyleSheet.create({
   root: {
+    // Un fond EXPLICITE, et non l'absence de fond qui laissait voir la vue
+    // système. Sans lui, le rembourrage d'encoche posé sur cette racine ne
+    // peindrait rien : une bande blanche, exactement le défaut corrigé.
+    backgroundColor: tokens.color.appBackground,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -156,8 +161,18 @@ export function LobbyScreen(): React.ReactElement {
     );
   };
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {renderBody()}
       {/* `replace` et non `back` : on arrive ici par un `replace` depuis le
           pré-join, donc la pile est vide et `back` ne mènerait nulle part. */}
