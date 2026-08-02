@@ -3,7 +3,7 @@ import React from 'react';
 import { PaperProvider, Text } from 'react-native-paper';
 
 import { tokens } from 'src/ui/tokens';
-import { BottomSheet } from './bottomSheet';
+import { BottomSheet, SHEET_HANDLE_COLOR, SHEET_SURFACE_COLOR } from './bottomSheet';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -59,15 +59,73 @@ describe('BottomSheet', () => {
     });
   });
 
+  // La constante est importée plutôt que recopiée : c'est la CAUSE qu'on garde
+  // — « une couleur explicite est posée » — et non la valeur du jour. Le repli
+  // que ce test attrape reste le même : sans elle, `Modal` laisse sa `Surface`
+  // transparente (`Modal.tsx:243-246`) et l'égalité stricte échoue.
   it('force la surface et le titre, que le thème clair de Paper trahirait', async () => {
     await render(sheet(true));
 
     expect(screen.getByTestId('test-sheet-surface')).toHaveStyle({
-      backgroundColor: tokens.color.surfaceDark,
+      backgroundColor: SHEET_SURFACE_COLOR,
     });
     expect(screen.getByTestId('test-sheet-title')).toHaveStyle({
       color: tokens.color.textDark,
     });
+  });
+
+  // La feuille se distingue de la scène par sa FORME autant que par son fond,
+  // et les deux coins hauts sont deux propriétés distinctes : n'en garder qu'un
+  // laisserait l'autre libre de disparaître, sur une feuille qui paraîtrait
+  // alors de travers.
+  it('arrondit les deux coins hauts de la feuille', async () => {
+    await render(sheet(true));
+
+    expect(screen.getByTestId('test-sheet-surface')).toHaveStyle({
+      borderTopLeftRadius: 26,
+      borderTopRightRadius: 26,
+    });
+  });
+
+  // La poignée est le seul élément de la feuille qui ne dise rien : elle se
+  // garde donc par son rendu et par son fond, faute de texte à observer. Sans
+  // couleur, un `View` sans fond est parfaitement invisible et rien d'autre ne
+  // le signalerait.
+  it('pose une poignée, avec son gabarit et son fond', async () => {
+    await render(sheet(true));
+
+    expect(screen.getByTestId('test-sheet-handle')).toHaveStyle({
+      alignSelf: 'center',
+      backgroundColor: SHEET_HANDLE_COLOR,
+      borderRadius: 3,
+      height: 4,
+      width: 42,
+    });
+  });
+
+  // Le mockup fixe la taille ET la graisse du titre. La couleur a son propre
+  // test ci-dessus ; celui-ci garde ce qu'aucune couleur ne dit — sans lui,
+  // retirer la police laisserait le titre retomber sur la police système et le
+  // `fontSize: 14` d'une `variant` de Paper.
+  it('pose la taille et la graisse du titre', async () => {
+    await render(sheet(true));
+
+    expect(screen.getByTestId('test-sheet-title')).toHaveStyle({
+      fontFamily: tokens.font.extraBold,
+      fontSize: 20,
+    });
+  });
+
+  // La poignée et le titre restent hors du défilement pour la même raison : ce
+  // qui nomme la feuille et ce qui dit comment la refermer ne doivent pas
+  // pouvoir sortir de l'écran quand son contenu s'allonge. Le titre a son test
+  // plus bas ; celui-ci vise la poignée, ajoutée après lui.
+  it('garde la poignée hors du conteneur défilant', async () => {
+    await render(sheet(true));
+
+    expect(within(screen.getByTestId('test-sheet-scroll')).queryByTestId('test-sheet-handle')).toBe(
+      null,
+    );
   });
 
   it('referme sur un appui hors de la feuille', async () => {

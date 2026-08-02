@@ -63,8 +63,14 @@ export function CameraMenu({
           <SheetRow
             key={camera.deviceId}
             testID={`camera-option-${camera.deviceId}`}
-            // `SheetRow` applique `rowTitle` en dessous : plus de `titleStyle`
-            // à passer pour la couleur ordinaire.
+            // `SheetRow` applique sa couleur de titre en dessous : plus de
+            // `titleStyle` à passer pour la couleur ordinaire.
+            //
+            // Le lavis et la coche disent la MÊME chose et viennent donc du
+            // même prédicat, écrit une fois. Le lavis seul ne se distingue du
+            // fond de repos que par 1,14:1 : c'est la coche qui porte
+            // l'information, le lavis qui l'accompagne.
+            selected={camera.deviceId === activeDeviceId}
             leading={
               camera.deviceId === activeDeviceId ? (
                 <SheetCheck testID={`camera-check-${camera.deviceId}`} />
