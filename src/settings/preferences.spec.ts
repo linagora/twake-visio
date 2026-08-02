@@ -1,3 +1,5 @@
+import { createMMKV } from 'react-native-mmkv';
+
 import {
   DEFAULT_PREFERENCES,
   readPreferences,
@@ -89,7 +91,10 @@ describe('préférences', () => {
 
 // Écrit directement dans le magasin, en court-circuitant le typage, pour
 // simuler une valeur laissée par une version antérieure de l'application.
+//
+// Import nommé ordinaire, et non l'idiome `require` d'`AGENTS.md` : celui-ci ne
+// sert qu'à ESPIONNER un export de module. Ici on ne fait qu'appeler la
+// fonction, et le mock est substitué automatiquement.
 function writeRawLanguage(value: string): void {
-  const { createMMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
   createMMKV({ id: 'preferences' }).set('language', value);
 }

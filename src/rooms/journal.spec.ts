@@ -1,3 +1,5 @@
+import { createMMKV } from 'react-native-mmkv';
+
 import { listVisits, MAX_VISITS, rememberVisit, resetJournal } from 'src/rooms/journal';
 
 describe('journal des réunions', () => {
@@ -108,7 +110,12 @@ describe('journal des réunions', () => {
 
 // Écrit directement dans le magasin pour simuler une valeur qu'une version
 // antérieure, ou une écriture interrompue, aurait laissée.
+//
+// Import nommé ordinaire, et non l'idiome `require` d'`AGENTS.md` : celui-ci ne
+// sert qu'à ESPIONNER un export de module, où la copie de namespace de Babel
+// ferait poser l'espion sur un objet que le module testé ne touche jamais. Ici
+// on ne fait qu'appeler la fonction, et `__mocks__/react-native-mmkv.ts` est
+// substitué automatiquement.
 function writeRawVisits(value: string): void {
-  const { createMMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
   createMMKV({ id: 'room-journal' }).set('visits', value);
 }
