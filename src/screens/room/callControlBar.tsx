@@ -4,10 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { IconButton } from 'react-native-paper';
 
+import type { AudioDeviceChoice } from 'src/call/audioDevices';
 import {
   audioRouteControl,
+  clearAudioDevice,
+  listAudioDevices,
   listAudioOutputs,
   openSystemRoutePicker,
+  readCurrentAudioDeviceId,
+  selectAudioDevice,
   selectAudioOutput,
 } from 'src/call/audioRoute';
 import type { AudioOutputKind, CameraChoice } from 'src/call/devices';
@@ -159,6 +164,15 @@ export function CallControlBar({
   // automatique côté Android, et le persister la désarmerait pour toujours.
   const [chosenOutput, setChosenOutput] = useState<AudioOutputKind | null>(null);
 
+  // Chemin 'devices' (Android >= 31). `currentDeviceId` est l'état CONSTATÉ, lu
+  // par `getCommunicationDevice()` : la première fois de ce dépôt qu'un écran
+  // peut montrer où le son part vraiment plutôt que ce qu'on a demandé.
+  // `manualOutput` est distinct, parce qu'un identifiant courant est renseigné
+  // même quand personne n'a rien choisi.
+  const [devices, setDevices] = useState<readonly AudioDeviceChoice[]>([]);
+  const [currentDeviceId, setCurrentDeviceId] = useState<number | null>(null);
+  const [manualOutput, setManualOutput] = useState(false);
+
   // Une valeur, pas une lecture de `Platform` par le composant : c'est ce qui
   // permet à une spec de rendre les deux branches sans bouchonner la
   // plateforme.
@@ -229,9 +243,55 @@ export function CallControlBar({
   // de la dernière ouverture réussie — même discipline que
   // `handleOpenCameraMenu`.
   const handleOpenAudioOutput = (): void => {
+    // Le chemin 'devices' n'emprunte JAMAIS `listAudioOutputs()` : c'est
+    // AudioSwitch qui la sert, et AudioSwitch ne tourne pas quand notre module
+    // tient la route.
+    if (routeControl === 'devices') {
+      Promise.all([listAudioDevices(), readCurrentAudioDeviceId()])
+        .then(([list, current]) => {
+          setDevices(list);
+          setCurrentDeviceId(current);
+        })
+        .catch(() => {
+          setDevices([]);
+          setCurrentDeviceId(null);
+        });
+      return;
+    }
     listAudioOutputs()
       .then(setOutputs)
       .catch(() => setOutputs([]));
+  };
+
+  // `setCommunicationDevice()` rend un booléen, et un `false` est un vrai
+  // refus du système : la coche reste alors où elle était plutôt que d'annoncer
+  // une route qui n'a pas pris. Même discipline que `handleSelectCamera`.
+  const handleSelectAudioDevice = (device: AudioDeviceChoice): void => {
+    selectAudioDevice(device.id)
+      .then((routed) => {
+        if (!routed) {
+          onNotice('call.deviceSwitchFailed');
+          return;
+        }
+        setCurrentDeviceId(device.id);
+        setManualOutput(true);
+        onNotice(null);
+      })
+      .catch(() => onNotice('call.deviceSwitchFailed'));
+  };
+
+  // `clearCommunicationDevice()` rend la main au système, ce qu'AudioSwitch ne
+  // sait pas faire. L'identifiant courant est relu APRÈS : le système
+  // rebasculera sur son propre choix, et l'écran doit montrer celui-là, pas le
+  // nôtre effacé.
+  const handleAutomaticAudioOutput = (): void => {
+    clearAudioDevice()
+      .then(() => readCurrentAudioDeviceId())
+      .then((current) => {
+        setManualOutput(false);
+        setCurrentDeviceId(current);
+      })
+      .catch(() => onNotice('call.deviceSwitchFailed'));
   };
 
   // Posé immédiatement, pas dans un `.then()` : la promesse native est résolue
@@ -241,6 +301,7 @@ export function CallControlBar({
   // jamais comme un état constaté.
   const handleSelectAudioOutput = (kind: AudioOutputKind): void => {
     setChosenOutput(kind);
+    setManualOutput(true);
     // Aucune branche d'échec, parce qu'il n'en existe aucune : afficher un
     // succès serait du bruit, afficher un échec serait une invention.
     selectAudioOutput(kind).catch(() => undefined);
@@ -293,13 +354,13 @@ export function CallControlBar({
         mode={routeControl}
         outputs={outputs}
         chosen={chosenOutput}
-        devices={[]}
-        currentDeviceId={null}
-        manual={chosenOutput !== null}
+        devices={devices}
+        currentDeviceId={currentDeviceId}
+        manual={manualOutput}
         onOpen={handleOpenAudioOutput}
         onSelect={handleSelectAudioOutput}
-        onSelectDevice={() => undefined}
-        onAutomatic={() => undefined}
+        onSelectDevice={handleSelectAudioDevice}
+        onAutomatic={handleAutomaticAudioOutput}
         onSystemPicker={handleOpenSystemRoutePicker}
       />
       {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en

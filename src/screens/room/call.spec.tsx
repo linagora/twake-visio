@@ -1722,6 +1722,157 @@ const STARTED_METADATA = JSON.stringify({
   recording_status: 'started',
 });
 
+describe('CallScreen, sortie audio par appareil', () => {
+  const TESLA = {
+    id: 7,
+    kind: 'bluetooth' as const,
+    name: 'Tesla Model 3',
+    nameKey: 'call.output.bluetooth' as const,
+    ordinal: null,
+  };
+  const SPEAKER = {
+    id: 2,
+    kind: 'speaker' as const,
+    name: null,
+    nameKey: 'call.output.speaker' as const,
+    ordinal: null,
+  };
+
+  beforeEach(() => {
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('devices');
+    jest.spyOn(audioRoute, 'listAudioDevices').mockResolvedValue([TESLA, SPEAKER]);
+    jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(null);
+    jest.spyOn(audioRoute, 'selectAudioDevice').mockResolvedValue(true);
+    jest.spyOn(audioRoute, 'clearAudioDevice').mockResolvedValue();
+  });
+
+  it("lit la liste ET l'état constaté à l'ouverture, jamais avant", async () => {
+    // Deux lectures, un seul instant — même discipline que le menu caméra. La
+    // seconde est ce que le périmètre A ne pouvait pas avoir.
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    expect(audioRoute.listAudioDevices).not.toHaveBeenCalled();
+    expect(audioRoute.readCurrentAudioDeviceId).not.toHaveBeenCalled();
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(audioRoute.listAudioDevices).toHaveBeenCalledTimes(1));
+    expect(audioRoute.readCurrentAudioDeviceId).toHaveBeenCalledTimes(1);
+    // L'autre chemin n'est PAS emprunté : sans cette borne, un écran qui
+    // appellerait les deux passerait aussi le test du mode catégories.
+    expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
+  });
+
+  it("demande l'appareil pressé, jamais le premier de la liste", async () => {
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-device-2'));
+
+    await waitFor(() => expect(audioRoute.selectAudioDevice).toHaveBeenCalledWith(2));
+    expect(audioRoute.selectAudioDevice).not.toHaveBeenCalledWith(7);
+  });
+
+  it('coche ce que le système a réellement pris, et prévient du désarmement', async () => {
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() =>
+      expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
+    );
+    await fireEvent.press(screen.getByTestId('audio-output-device-7'));
+
+    // Le système confirme la route à la réouverture. La coche affichée est
+    // TOUJOURS celle de la relecture, jamais celle de notre demande : c'est ce
+    // qui distingue ce chemin du mode catégories, et c'est pour cela que la
+    // fixture doit bouger ici. Mesuré : sans ce `mockResolvedValue(7)`, le test
+    // échoue — parce que le code fait bien ce qu'il annonce.
+    jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(7);
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-check-7')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-2')).toBeNull();
+    expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputManualUntilEnd');
+  });
+
+  it('signale un refus du système, et ne coche rien', async () => {
+    // `setCommunicationDevice()` rend `false` quand la route n'a pas pris.
+    // L'autre polarité du même booléen : sans elle, un écran qui cocherait
+    // toujours passerait le test précédent.
+    jest.spyOn(audioRoute, 'selectAudioDevice').mockResolvedValue(false);
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-device-7'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-notice')).toHaveTextContent('call.deviceSwitchFailed'),
+    );
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
+    expect(screen.queryByTestId('audio-output-check-7')).toBeNull();
+  });
+
+  it("rend la route au système, et relit l'état constaté APRÈS", async () => {
+    // Les trois instructions du gestionnaire : `clearCommunicationDevice()`,
+    // la relecture, et la note qui redevient « suit l'appareil ». Le système
+    // rebascule sur SON choix, et c'est celui-là que l'écran doit montrer.
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-device-7'));
+
+    jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(2);
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('audio-output-automatic'));
+
+    await waitFor(() => expect(audioRoute.clearAudioDevice).toHaveBeenCalledTimes(1));
+    // La relecture est la DEUXIÈME instruction du gestionnaire, et elle n'est
+    // observable QUE par son appel : cet appui referme la feuille, donc plus
+    // aucune coche n'est montée pour la montrer. La réouverture ci-dessous ne
+    // peut rien en dire — elle relit de toute façon, et écrase.
+    //
+    // Trouvé par mutation : retirer `.then(() => readCurrentAudioDeviceId())`
+    // du gestionnaire ne rougissait RIEN sans cette ligne. Trois lectures ici :
+    // la première ouverture, la seconde, puis celle-ci.
+    await waitFor(() => expect(audioRoute.readCurrentAudioDeviceId).toHaveBeenCalledTimes(3));
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-check-2')).toBeTruthy());
+    expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice');
+    expect(screen.queryByTestId('audio-output-automatic')).toBeNull();
+  });
+
+  it("n'affiche rien quand l'énumération échoue, et ouvre une feuille vide", async () => {
+    jest.spyOn(audioRoute, 'listAudioDevices').mockRejectedValue(new Error('énumération refusée'));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
+    expect(screen.queryByTestId('call-notice')).toBeNull();
+    expect(screen.queryByTestId('audio-output-device-7')).toBeNull();
+  });
+});
+
 describe('CallScreen, indicateur d’enregistrement', () => {
   it('montre l’indicateur à qui rejoint une réunion déjà enregistrée', async () => {
     // Le SDK n'émet PAS `RoomMetadataChanged` à la jonction : un indicateur
