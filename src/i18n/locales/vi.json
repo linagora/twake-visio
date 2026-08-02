@@ -161,5 +161,7 @@
   "home.createSubtitle": "Bắt đầu ngay và chia sẻ liên kết",
   "home.joinTitle": "Tham gia cuộc họp",
   "home.joinSubtitle": "Bằng mã phòng hoặc liên kết",
-  "settings.instance": "Máy chủ"
+  "settings.instance": "Máy chủ",
+  "call.encrypted": "Đã mã hóa",
+  "call.participantCount": "{{count}}"
 }

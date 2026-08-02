@@ -161,5 +161,7 @@
   "home.createSubtitle": "Начать сейчас и поделиться ссылкой",
   "home.joinTitle": "Присоединиться к встрече",
   "home.joinSubtitle": "По коду комнаты или ссылке",
-  "settings.instance": "Сервер"
+  "settings.instance": "Сервер",
+  "call.encrypted": "Зашифровано",
+  "call.participantCount": "{{count}}"
 }

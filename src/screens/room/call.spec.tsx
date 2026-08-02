@@ -3305,6 +3305,62 @@ describe('CallScreen — le chat', () => {
     expect(screen.getByTestId('call-root')).toHaveStyle({ paddingBottom: 0 });
   });
 
+  describe('l’en-tête de séance', () => {
+    // Le montage lui-même n'était gardé par RIEN : quatre mutations —
+    // en-tête absent, compteur figé, minuteur figé, pastille non câblée —
+    // rougissaient zéro test. Ces cinq-là ferment le trou.
+    it('nomme la réunion', async () => {
+      await renderCall();
+
+      expect(screen.getByTestId('call-header-title')).toHaveTextContent('Réunion');
+    });
+
+    it('compte les personnes présentes', async () => {
+      await renderCall();
+
+      // Le double d'i18n rend `clé|{valeurs}` dès qu'on lui passe des
+      // valeurs : c'est le COMPTE interpolé qu'on observe, pas la chaîne
+      // rendue. Une REGEX, parce que `toHaveTextContent` de RNTL compare
+      // sinon la chaîne entière. Le fixture par défaut n'a que le
+      // participant local.
+      await waitFor(() => {
+        expect(screen.getByTestId('call-header-participants-count')).toHaveTextContent(/"count":1/);
+      });
+    });
+
+    it('ouvre le panneau des participants depuis la pastille', async () => {
+      await renderCall();
+
+      await fireEvent.press(screen.getByTestId('call-header-participants'));
+
+      // Le panneau démonte la scène : son ouverture se lit à la disparition
+      // de la grille, comme `enterFullscreen` lit celle de `mic-toggle`.
+      await waitFor(() => {
+        expect(screen.queryByTestId('stage-root')).toBeNull();
+      });
+    });
+
+    // La règle du plein écran, appliquée à l'en-tête : il DÉCRIT l'état du
+    // monde — quelle réunion, depuis quand, combien de personnes — et n'attend
+    // aucune réponse. Il disparaît donc, là où le bandeau d'admission survit.
+    it('disparaît en plein écran, comme tout ce qui ne demande rien', async () => {
+      await renderCall();
+      await enterFullscreen('me:camera');
+
+      expect(screen.queryByTestId('call-header')).toBeNull();
+    });
+
+    it('revient en quittant le plein écran', async () => {
+      await renderCall();
+      await enterFullscreen('me:camera');
+      await fireEvent.press(screen.getByTestId('tile-me:camera'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('call-header')).toBeTruthy();
+      });
+    });
+  });
+
   it('enregistre lk.chat une seule fois, et le libère au démontage', async () => {
     // Un gestionnaire laissé sur une Room vivante est une fuite qu'aucun écran
     // ne rattrape ; deux enregistrements feraient jeter le SDK.

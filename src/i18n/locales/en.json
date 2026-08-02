@@ -161,5 +161,7 @@
   "home.createSubtitle": "Start now and share the link",
   "home.joinTitle": "Join a meeting",
   "home.joinSubtitle": "With a room code or a link",
-  "settings.instance": "Server"
+  "settings.instance": "Server",
+  "call.encrypted": "Encrypted",
+  "call.participantCount": "{{count}}"
 }

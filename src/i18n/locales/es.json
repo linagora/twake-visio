@@ -161,5 +161,7 @@
   "home.createSubtitle": "Empezar ahora y compartir el enlace",
   "home.joinTitle": "Unirse a una reunión",
   "home.joinSubtitle": "Con un código de sala o un enlace",
-  "settings.instance": "Servidor"
+  "settings.instance": "Servidor",
+  "call.encrypted": "Cifrado",
+  "call.participantCount": "{{count}}"
 }

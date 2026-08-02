@@ -161,5 +161,7 @@
   "home.createSubtitle": "Jetzt starten und den Link teilen",
   "home.joinTitle": "Einer Besprechung beitreten",
   "home.joinSubtitle": "Mit einem Raumcode oder einem Link",
-  "settings.instance": "Server"
+  "settings.instance": "Server",
+  "call.encrypted": "Verschlüsselt",
+  "call.participantCount": "{{count}}"
 }
