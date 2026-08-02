@@ -163,5 +163,9 @@
   "home.joinSubtitle": "Con un código de sala o un enlace",
   "settings.instance": "Servidor",
   "call.encrypted": "Cifrado",
-  "call.participantCount": "{{count}}"
+  "call.participantCount": "{{count}}",
+  "prejoin.title": "¿Listo para unirse?",
+  "prejoin.yourName": "Su nombre",
+  "prejoin.back": "Volver",
+  "prejoin.cameraPreview": "Vista previa de la cámara"
 }

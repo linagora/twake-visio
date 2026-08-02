@@ -163,5 +163,9 @@
   "home.joinSubtitle": "По коду комнаты или ссылке",
   "settings.instance": "Сервер",
   "call.encrypted": "Зашифровано",
-  "call.participantCount": "{{count}}"
+  "call.participantCount": "{{count}}",
+  "prejoin.title": "Готовы присоединиться?",
+  "prejoin.yourName": "Ваше имя",
+  "prejoin.back": "Назад",
+  "prejoin.cameraPreview": "Предпросмотр камеры"
 }

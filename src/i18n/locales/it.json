@@ -163,5 +163,9 @@
   "home.joinSubtitle": "Con un codice stanza o un link",
   "settings.instance": "Server",
   "call.encrypted": "Crittografato",
-  "call.participantCount": "{{count}}"
+  "call.participantCount": "{{count}}",
+  "prejoin.title": "Pronto a partecipare?",
+  "prejoin.yourName": "Il tuo nome",
+  "prejoin.back": "Indietro",
+  "prejoin.cameraPreview": "Anteprima fotocamera"
 }

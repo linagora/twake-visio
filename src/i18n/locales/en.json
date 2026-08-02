@@ -163,5 +163,9 @@
   "home.joinSubtitle": "With a room code or a link",
   "settings.instance": "Server",
   "call.encrypted": "Encrypted",
-  "call.participantCount": "{{count}}"
+  "call.participantCount": "{{count}}",
+  "prejoin.title": "Ready to join?",
+  "prejoin.yourName": "Your name",
+  "prejoin.back": "Back",
+  "prejoin.cameraPreview": "Camera preview"
 }

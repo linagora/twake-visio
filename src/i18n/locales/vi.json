@@ -163,5 +163,9 @@
   "home.joinSubtitle": "Bằng mã phòng hoặc liên kết",
   "settings.instance": "Máy chủ",
   "call.encrypted": "Đã mã hóa",
-  "call.participantCount": "{{count}}"
+  "call.participantCount": "{{count}}",
+  "prejoin.title": "Sẵn sàng tham gia?",
+  "prejoin.yourName": "Tên của bạn",
+  "prejoin.back": "Quay lại",
+  "prejoin.cameraPreview": "Xem trước máy ảnh"
 }
