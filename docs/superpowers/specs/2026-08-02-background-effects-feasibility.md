@@ -58,14 +58,44 @@ JavaScript :
 | iOS | `VNGeneratePersonSegmentationRequest` (Vision), ou un modèle CoreML | `RTCVideoCapturer` personnalisé |
 | Android | MLKit *Selfie Segmentation* | `VideoSource` / `CapturerObserver` personnalisé |
 
-**[?] Non établi** : que `@livekit/react-native` permette de publier une piste
-issue d'une source vidéo personnalisée. C'est la question qui décide, et elle
-demande de lire le pont natif du SDK — pas ses déclarations TypeScript, qui n'en
-disent rien.
+### La question qui décidait est tranchée : **oui, il y a une couture** **[V]**
+
+Relevé le 2026-08-02 dans les sources natives, après que la première version de
+cette note l'ait laissée ouverte. Les deux plateformes exposent de quoi
+enregistrer une piste vidéo **sans forker `react-native-webrtc`**.
+
+**Android — une couture explicite.** `WebRTCModule.java:487` :
+
+```java
+public void registerTrack(VideoTrack track, VideoSource source,
+                          AbstractVideoCaptureController controller,
+                          SurfaceTextureHelper surfaceTextureHelper)
+```
+
+`public`, et `AbstractVideoCaptureController` est une classe abstraite publique
+avec **une seule** méthode abstraite (`getDeviceId()`). `CameraCaptureController`
+et `ScreenCaptureController` en héritent déjà : un troisième — caméra + MLKit —
+est architecturalement prévu.
+
+**iOS — une couture plus fruste, mais réelle.** Pas de `registerTrack`, mais
+`WebRTCModule.h:40-46` expose en propriétés **publiques** :
+
+- `peerConnectionFactory` — de quoi créer un `RTCVideoSource` et un `RTCVideoTrack` ;
+- `localTracks`, un `NSMutableDictionary` — de quoi y déposer la piste pour que
+  JavaScript la référence.
+
+Le chemin est donc : `RTCVideoCapturer` personnalisé → Vision → `RTCVideoSource`
+→ dépôt dans `localTracks`.
+
+> **Correction de la première version de cette note.** Elle concluait « il
+> faudrait un module natif » sans dire si c'était seulement possible. Ça l'est,
+> et sans forker : les deux paquets laissent la porte ouverte. Ce qui reste
+> n'est pas un blocage d'architecture, c'est du travail.
 
 **Ordre de grandeur, honnêtement** : deux implémentations natives distinctes, un
-modèle par plateforme, et le coût par image sur un téléphone d'entrée de gamme à
-mesurer. Ce n'est pas une tâche du Lot 3, c'est un chantier à soi.
+modèle de segmentation par plateforme, et le coût par image à mesurer sur un
+appareil d'entrée de gamme. Ce n'est pas une tâche du Lot 3, c'est un chantier à
+soi — mais un chantier *faisable*, pas un mur.
 
 ## Les arrière-plans de la DINUM **[V]**
 
@@ -101,12 +131,28 @@ arrière-plans.
 
 ## Ce qui reste à vérifier avant de trancher **[?]**
 
-1. Le pont natif de `@livekit/react-native` accepte-t-il une source vidéo
-   personnalisée ?
-2. Existe-t-il un module React Native tiers, maintenu, qui produise une piste
-   WebRTC segmentée ? Aucun n'a été trouvé au 2026-08-02, mais la recherche n'a
-   pas été exhaustive.
-3. Le coût par image de MLKit et de Vision sur les appareils visés.
+La question d'architecture est réglée (§ ci-dessus). Restent trois **mesures**,
+qui décident du coût, pas de la possibilité :
 
-Les trois sont des **mesures**, pas des choix. Elles se font avant d'écrire une
-conception, sans quoi celle-ci promettrait ce qu'elle ne peut pas tenir.
+1. **Le coût par image** de MLKit et de Vision sur les appareils visés — c'est
+   lui qui dira si l'effet tient 30 images par seconde ou dégrade l'appel.
+2. **Le comportement de `registerTrack` avec LiveKit** : une piste enregistrée
+   par cette voie est-elle publiable telle quelle par
+   `@livekit/react-native` ? La couture existe côté WebRTC ; que le SDK LiveKit
+   la reprenne sans rien de plus n'est pas démontré.
+3. **Un module tiers maintenu** existe-t-il déjà ? Aucun trouvé au 2026-08-02,
+   mais la recherche n'a pas été exhaustive — et en trouver un changerait tout
+   l'ordre de grandeur.
+
+La première est la plus importante : un détourage à 8 images par seconde est
+pire qu'aucun détourage.
+
+## Ce que cela change pour le Lot 3 **[D]**
+
+Rien, à court terme. Le Lot 3 livre le pré-join **sans** panneau d'effets — la
+recommandation ci-dessus tient : une surface qu'on ne peut pas honorer coûte
+plus cher que son absence.
+
+Mais la note ne se conclut plus par « impossible ». Elle se conclut par **un
+chantier chiffrable**, dont la première étape est la mesure n° 1, et qui peut
+être ouvert quand le propriétaire le décidera.
