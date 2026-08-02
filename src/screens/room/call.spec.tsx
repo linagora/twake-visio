@@ -941,13 +941,13 @@ describe('CallScreen, panneau des participants', () => {
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('grid')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
 
     await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
     // Le panneau remplace la scène plutôt que de se poser par-dessus.
     expect(screen.queryByTestId('grid')).toBeNull();
 
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
 
     // La boîte mesurée vit dans `call.tsx`, pas dans `CallStage` : elle
     // SURVIT au démontage du panneau, donc la grille revient sans attendre une
@@ -971,7 +971,7 @@ describe('CallScreen, panneau des participants', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     // La SECONDE ligne : `openParticipantActions(0)` donnerait Alice, et le
     // test ne distinguerait plus rien.
     await openParticipantActions(1);
@@ -1009,7 +1009,7 @@ describe('CallScreen, panneau des participants', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     // Une action referme la feuille : on la rouvre entre les deux, toujours
     // celle de la seconde ligne.
     await openParticipantActions(1);
@@ -1028,7 +1028,7 @@ describe('CallScreen, panneau des participants', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
 
     await waitFor(() => expect(screen.getAllByTestId('participant-row')).toHaveLength(2));
     expect(screen.queryByTestId('participant-mute')).toBeNull();
@@ -1053,7 +1053,7 @@ describe('CallScreen, panneau des participants', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
 
     await waitFor(() => expect(screen.getAllByTestId('participant-row')).toHaveLength(2));
     expect(screen.queryByTestId('participant-mute')).toBeNull();
@@ -1077,7 +1077,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1102,7 +1102,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1133,7 +1133,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1159,7 +1159,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1180,7 +1180,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-remove'));
@@ -1199,7 +1199,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-promote'));
@@ -1218,7 +1218,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1244,7 +1244,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1268,7 +1268,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
 
     await fireEvent.press(screen.getByTestId('participant-mute'));
@@ -1305,7 +1305,7 @@ describe('CallScreen, échec de modération', () => {
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await openParticipantActions();
     await fireEvent.press(screen.getByTestId('participant-mute'));
     await waitFor(() => {
@@ -1314,7 +1314,7 @@ describe('CallScreen, échec de modération', () => {
 
     // Le panneau se referme, puis le chat s'ouvre : les deux corps s'excluent,
     // mais la Snackbar vit hors d'eux et traverse le changement.
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await settleMenus();
     await fireEvent.press(screen.getByTestId('more-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
@@ -2732,7 +2732,7 @@ describe('CallScreen, plein écran, sortie', () => {
       expect(screen.getByTestId('filmstrip')).toBeTruthy();
       expect(screen.getByTestId('mic-toggle')).toBeTruthy();
       expect(screen.getByTestId('camera-toggle')).toBeTruthy();
-      expect(screen.getByTestId('participants-toggle')).toBeTruthy();
+      expect(screen.getByTestId('call-header-participants')).toBeTruthy();
       expect(screen.getByTestId('leave-btn')).toBeTruthy();
     });
   });
@@ -2822,21 +2822,23 @@ describe('CallScreen, plein écran, enfermement', () => {
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('tile-u-ada:camera')).toBeTruthy());
 
-    // Plein écran : grille et barre masquées, `participants-toggle` compris —
-    // rien n'est atteignable tant qu'on n'en est pas sorti.
+    // Plein écran : grille, barre ET en-tête masqués. La pastille des
+    // participants vit désormais dans l'en-tête, plus dans la barre — les deux
+    // tombent sous la même garde, donc rien n'est atteignable tant qu'on n'en
+    // est pas sorti.
     await enterFullscreen('u-ada:camera');
     expect(screen.queryByTestId('grid')).toBeNull();
-    expect(screen.queryByTestId('participants-toggle')).toBeNull();
+    expect(screen.queryByTestId('call-header-participants')).toBeNull();
 
     // La sortie : un appui, où qu'il porte sur l'unique tuile affichée.
     await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
-    await waitFor(() => expect(screen.getByTestId('participants-toggle')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('call-header-participants')).toBeTruthy());
 
     // Le panneau s'ouvre et se referme normalement après ce passage par le
     // plein écran.
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await waitFor(() => expect(screen.getByText('participants.title')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
 
     // Une sortie reste atteignable : la zone vidéo et le bouton pour raccrocher
     // sont bien revenus. La GRILLE, et non une scène : le plein écran ouvert
@@ -3169,7 +3171,7 @@ describe('CallScreen — le chat', () => {
     // impossible.
     mockRoom.remoteParticipants.set('u-bob', remoteParticipant('u-bob', 'Bob'));
     await renderCall();
-    await fireEvent.press(screen.getByTestId('participants-toggle'));
+    await fireEvent.press(screen.getByTestId('call-header-participants'));
     await waitFor(() => expect(screen.getAllByTestId('participant-row').length).toBeGreaterThan(0));
 
     await openChat();

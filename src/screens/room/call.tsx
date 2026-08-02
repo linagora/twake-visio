@@ -1114,7 +1114,6 @@ export function CallScreen(): React.ReactElement {
         onToggleHand={handleToggleHand}
         onSendReaction={handleSendReaction}
         onOpenChat={handleOpenChat}
-        onToggleParticipants={handleToggleParticipants}
         onLeave={handleLeave}
       />
 

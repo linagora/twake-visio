@@ -73,7 +73,6 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       onToggleHand={jest.fn()}
       onSendReaction={jest.fn()}
       onOpenChat={jest.fn()}
-      onToggleParticipants={jest.fn()}
       onLeave={jest.fn()}
     />,
   );
@@ -106,7 +105,6 @@ describe('CallControlBar', () => {
     expect(fill('camera-toggle')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
     expect(fill('audio-output-btn')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
     expect(fill('more-btn')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
-    expect(fill('participants-toggle')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
   });
 
   it('remplit le micro coupé de rouge, et lui seul', async () => {

@@ -2,36 +2,33 @@ import { StyleSheet } from 'react-native';
 
 import { tokens } from 'src/ui/tokens';
 
-// Sept cibles sur une rangée. `IconButton` de Paper fait 40 dp de côté plus
+// SIX cibles sur une rangée. `IconButton` de Paper fait 40 dp de côté plus
 // `margin: 6`, soit 52 dp d'encombrement : six suffisaient à demander 424 dp
 // sur un téléphone qui en fait 360. La marge de Paper est neutralisée par la
 // prop `style`, appliquée en dernier, et la cible ramenée à 44 dp — la
 // recommandation Apple, au lieu des 48 dp de Material. Le coût est nommé, et
 // il est compensé verticalement par le `hitSlop` ci-dessous.
 //
-//     7 × 44 + 1 (dans la paire caméra) + 5 × 8 + 2 × 4 = 357 dp
+//     6 × 44 + 1 (dans la paire caméra) + 4 × 8 + 2 × 4 = 305 dp
 //
 // `borderRadius` est relu depuis le `style` aplati par `IconButton`, donc
 // l'ondulation reste ronde.
 //
-// **Le mockup de la refonte donne 52 dp, et ce nombre ne peut pas y monter
-// tant que la rangée porte SEPT cibles.** Il n'en dessine que six, et sa
-// rangée mesurée demanderait déjà :
+// **La rangée en portait SEPT, et le compteur de participants y faisait
+// doublon avec celui de l'en-tête** — le mockup ne le pose qu'à un seul
+// endroit, et le propriétaire a tranché pour l'en-tête. À sept cibles elle
+// demandait 357 dp, et les 52 dp du mockup étaient hors d'atteinte :
 //
-//     76 + 76 + 52 + 52 + 52 + 60 = 368 dp
+//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp   (sept, à 52)
 //
-// avant le moindre écart, sur un téléphone qui en fait 360. La nôtre en porte
-// une de plus — le compteur de participants, que la conception du lot annonce
-// dans l'EN-TÊTE, pas ici — et coûterait donc :
+// À six, ce n'est plus vrai — et c'est mesuré, pas supposé :
 //
-//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp
+//     6 × 52 + 1 + 4 × 8 + 2 × 4 = 353 dp
 //
-// Même arithmétique pour la seule pastille « raccrocher » de 60 × 52, à
-// gabarit inchangé par ailleurs : 273 + 60 + 5 × 8 = 373 dp.
-//
-// D'où le partage retenu : ce qui du mockup ne coûte AUCUNE largeur est
-// appliqué — le voile, les deux rouges, le vert du compteur ; ce qui en coûte
-// attend l'intégration, seule à pouvoir sortir une cible de la rangée.
+// soit MOINS que les 357 dp d'aujourd'hui, pour une cible plus grande. Le
+// gabarit reste néanmoins à 44 dp ici : monter à 52 change `BAR_HEIGHT`, donc
+// la garde de `reactionOverlay` et la boîte que cite `src/call/layout.ts`.
+// C'est un changement à faire d'un bloc, pas un effet de bord de celui-ci.
 //
 // La cible tactile d'un bouton de barre, en dp. Nommée plutôt qu'écrite trois
 // fois : `barStyles.button` la pose, `BAR_HEIGHT` s'en déduit, et les deux ne
@@ -87,7 +84,7 @@ export const barStyles = StyleSheet.create({
     height: BAR_BUTTON_SIZE,
     borderRadius: BAR_BUTTON_SIZE / 2,
     // Posé ICI et non au cas par cas : `cameraMenu.tsx`, `audioOutputControl.tsx`
-    // et `moreMenu.tsx` rendent trois des sept boutons de la rangée et ne
+    // et `moreMenu.tsx` rendent trois des six boutons de la rangée et ne
     // connaissent que ce style. Un voile appliqué dans `callControlBar.tsx`
     // seul laisserait ces trois-là nus au milieu des autres.
     backgroundColor: BAR_SURFACE_COLOR,
@@ -107,7 +104,7 @@ export const barStyles = StyleSheet.create({
   danger: { backgroundColor: tokens.color.danger },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
-  // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 357 dp —
+  // 44 dp et la pastille est hors flux, donc la rangée vaut toujours 305 dp —
   // le calcul ci-dessus n'a pas bougé d'un dp.
   anchor: { position: 'relative' },
   // Le compteur du mockup : fond vert, texte blanc. Les DEUX couleurs sont
@@ -138,7 +135,7 @@ export const barStyles = StyleSheet.create({
 // le voile de `BAR_SURFACE_COLOR`, 4,11:1 sur le rouge de `barStyles.danger`.
 // C'est le troisième qui gouverne — au-dessus des 3:1 d'un objet graphique, en
 // dessous des 4,5:1 d'un texte, ce qu'un glyphe n'est pas. Une seule couleur de
-// glyphe pour les sept boutons : `dangerDark` sur ce même rouge tomberait à
+// glyphe pour les six boutons : `dangerDark` sur ce même rouge tomberait à
 // 2,13:1.
 //
 // Aucun `IconButton` de cette barre ne porte `disabled` : Paper teste

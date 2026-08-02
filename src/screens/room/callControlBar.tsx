@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
-    // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
+    // six cibles de 44 dp sur 305 dp, donc largement sur un écran de 360.
     //
     // `BAR_PADDING` et non le token directement : `BAR_HEIGHT` en dépend, et
     // `ReactionOverlay` en tire la garde qui empêche une bulle de se poser sur
@@ -65,7 +65,7 @@ export type CallControlBarProps = {
   // directement (`onExitFullscreen`, câblé par `stage.tsx`) — la sortie est
   // donc totale par construction, prouvée par un test dans `call.spec.tsx`
   // plutôt qu'affirmée ici. Revient dès le premier appui sur cette même tuile :
-  // sept boutons, `leave-btn` compris, qui reste un moyen de quitter la séance
+  // six boutons, `leave-btn` compris, qui reste un moyen de quitter la séance
   // entière.
   //
   // Une PROP, et non une ternaire chez l'appelant : la barre reste alors MONTÉE
@@ -113,11 +113,10 @@ export type CallControlBarProps = {
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
 
-  readonly onToggleParticipants: () => void;
   readonly onLeave: () => void;
 };
 
-// La rangée de sept commandes, et les quatre états de périphérique qu'elle est
+// La rangée de six commandes, et les quatre états de périphérique qu'elle est
 // seule à lire — la liste des caméras, celle en service, la liste des sorties
 // audio et celle qu'on a demandée. Aucun de ces quatre n'intéresse le reste de
 // l'écran, et les garder ici évite d'en faire descendre huit props de plus.
@@ -144,7 +143,6 @@ export function CallControlBar({
   onToggleHand,
   onSendReaction,
   onOpenChat,
-  onToggleParticipants,
   onLeave,
 }: CallControlBarProps): React.ReactElement | null {
   const { t } = useTranslation();
@@ -369,12 +367,13 @@ export function CallControlBar({
         onAutomatic={handleAutomaticAudioOutput}
         onSystemPicker={handleOpenSystemRoutePicker}
       />
-      {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
-          demanderait 409. Le partage, seule commande de la barre qu'on
-          n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
-          porte aussi l'enregistrement et la main levée. Sept cibles avant,
-          sept après — et la commande d'enregistrement n'est jamais adjacente
-          au bouton quitter. */}
+      {/* Le partage, seule commande de la barre qu'on n'utilise qu'une fois
+          par réunion, passe derrière ce menu, qui porte aussi l'enregistrement
+          et la main levée. La raison d'origine était la LARGEUR — la rangée
+          était pleine à 357 dp sur 360 —, et le départ du compteur de
+          participants l'a détendue à 305. Le menu reste : la commande
+          d'enregistrement n'y est jamais adjacente au bouton quitter, et
+          c'est cette raison-là qui survit. */}
       <MoreMenu
         recording={recording}
         canRecord={canRecord}
@@ -389,16 +388,6 @@ export function CallControlBar({
         onToggleHand={onToggleHand}
         onSendReaction={onSendReaction}
         onOpenChat={onOpenChat}
-      />
-      <IconButton
-        testID="participants-toggle"
-        icon="account-multiple"
-        iconColor={BAR_ICON_COLOR}
-        rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
-        hitSlop={BAR_HIT_SLOP}
-        onPress={onToggleParticipants}
-        accessibilityLabel={t('participants.title')}
       />
       <IconButton
         testID="leave-btn"
