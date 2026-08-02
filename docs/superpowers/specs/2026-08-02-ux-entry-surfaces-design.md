@@ -115,10 +115,13 @@ tuile de 92 px arrondie à 26, dégradé `#2FBE6C → #159049`, glyphe caméra b
 sur deux lignes en `textSecondary` ; puis « S'inscrire » plein, « Se connecter »
 contour, et le lien serveur d'organisation.
 
-**Le dégradé demande `expo-linear-gradient`** — un aplat vert perdrait la
-signature. À installer, ou à rendre par un aplat `brand` si l'on refuse la
-dépendance : **[?]** à trancher à l'écriture du plan, en pesant une dépendance
-de plus contre la seule tuile qui en aurait besoin.
+**Le dégradé demande `expo-linear-gradient`, et le propriétaire l'accorde [D].**
+Deux éléments l'emploient — la tuile de 92 px ici, et la carte « Nouvelle
+réunion » de l'accueil —, et ce sont les deux surfaces de marque de
+l'application. Un aplat `brand` aurait fait de la grande tuile un carré vert uni.
+
+Paquet officiel Expo, installé par `npx expo install` donc aligné sur le SDK 57,
+et pris en charge par la génération native continue sans configuration.
 
 **Inversion de hiérarchie assumée** : le mockup met « S'inscrire » en bouton
 plein et « Se connecter » en contour. `welcome.tsx` fait l'inverse aujourd'hui.
