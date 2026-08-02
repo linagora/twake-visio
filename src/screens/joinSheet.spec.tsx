@@ -181,4 +181,65 @@ describe('JoinSheet', () => {
       });
     });
   });
+
+  // Le champ réel est TRANSPARENT — c'est ce qui permet aux dix cases
+  // d'afficher un seul état. Son curseur système l'est donc aussi : sans ce
+  // repère, rien ne dit où l'on en est, ni même que le champ a le focus.
+  describe('le repère de saisie', () => {
+    // La position, case par case. Les deux états de `focused` ET les deux
+    // bornes de `code.length` : un repère posé sans condition, ou posé toujours
+    // au même endroit, échoue ici.
+    it('ne marque aucune case tant que le champ n’a pas le focus', async () => {
+      await render(sheet());
+
+      expect(screen.queryByTestId('join-caret')).toBe(null);
+    });
+
+    it('marque la PREMIÈRE case dès la prise de focus', async () => {
+      await render(sheet());
+
+      await fireEvent(screen.getByTestId('join-input'), 'focus');
+
+      expect(screen.getByTestId('join-caret')).toBeTruthy();
+      expect(screen.getByTestId('join-cell-0')).toHaveStyle({ color: tokens.color.textPrimary });
+    });
+
+    it('avance le repère derrière le dernier caractère saisi', async () => {
+      await render(sheet());
+      await fireEvent(screen.getByTestId('join-input'), 'focus');
+
+      await fireEvent.changeText(screen.getByTestId('join-input'), 'abc');
+
+      // Le repère est UNIQUE : s'il en restait un sur la case 0, `getByTestId`
+      // jetterait sur la multiplicité plutôt que de rendre le bon.
+      expect(screen.getByTestId('join-caret')).toBeTruthy();
+      // Et les trois cases précédentes portent bien les caractères, donc le
+      // repère est en quatrième position et nulle part ailleurs.
+      expect(screen.getByTestId('join-cell-0')).toHaveTextContent('a');
+      expect(screen.getByTestId('join-cell-2')).toHaveTextContent('c');
+      expect(screen.getByTestId('join-cell-3')).toHaveTextContent('');
+    });
+
+    it('ne marque plus rien une fois le code complet', async () => {
+      await render(sheet());
+      await fireEvent(screen.getByTestId('join-input'), 'focus');
+
+      await fireEvent.changeText(screen.getByTestId('join-input'), 'abcdefghij');
+
+      // `code.length` vaut alors le nombre de cases, un index hors du rang :
+      // il n'y a plus rien à saisir, et le bouton d'envoi vient d'apparaître.
+      expect(screen.queryByTestId('join-caret')).toBe(null);
+      expect(screen.getByTestId('join-submit')).toBeTruthy();
+    });
+
+    it('retire le repère quand le champ perd le focus', async () => {
+      await render(sheet());
+      await fireEvent(screen.getByTestId('join-input'), 'focus');
+      expect(screen.getByTestId('join-caret')).toBeTruthy();
+
+      await fireEvent(screen.getByTestId('join-input'), 'blur');
+
+      expect(screen.queryByTestId('join-caret')).toBe(null);
+    });
+  });
 });

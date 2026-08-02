@@ -42,7 +42,22 @@ export function JoinSheet({
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [pasteFailed, setPasteFailed] = useState(false);
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
+
+  // La case où le prochain caractère atterrira. `code.length` la donne
+  // exactement : 0 sur un champ vide, et sinon la position qui SUIT le dernier
+  // caractère saisi.
+  //
+  // Elle vaut `TOTAL_CELLS` une fois le code complet — un index hors des cases,
+  // donc aucune n'est marquée, ce qui est juste : il n'y a plus rien à saisir,
+  // et le bouton d'envoi vient d'apparaître.
+  //
+  // Ce repère n'est pas cosmétique. Le champ réel est TRANSPARENT
+  // (`styles.hiddenInput`) : son curseur système l'est donc aussi, et sans ce
+  // marquage rien à l'écran ne dit où l'on en est ni même que le champ a le
+  // focus.
+  const caretIndex = focused ? code.length : -1;
 
   function handleChange(raw: string): void {
     setCode(normalizeCodeInput(raw));
@@ -86,7 +101,24 @@ export function JoinSheet({
         <View style={styles.cells}>
           {Array.from({ length: TOTAL_CELLS }, (_, index) => (
             <React.Fragment key={index}>
-              <View style={[styles.cell, index < code.length ? styles.cellFilled : null]}>
+              <View
+                style={[
+                  styles.cell,
+                  index < code.length ? styles.cellFilled : null,
+                  index === caretIndex ? styles.cellCaret : null,
+                ]}
+              >
+                {/* Une BARRE, et non la case entière colorée : une case remplie
+                    porte déjà le lavis de marque, et deux marquages par la même
+                    couleur de fond seraient indistinguables. Le trait dit « le
+                    prochain caractère arrive ICI ».
+                    Rendue À CÔTÉ du texte et jamais à sa place : la case du
+                    curseur est toujours vide — c'est la position SUIVANTE —,
+                    donc le nœud de texte ne montre rien, mais il reste
+                    joignable et les gardes des autres tests tiennent. */}
+                {index === caretIndex ? (
+                  <View style={styles.caret} testID={`${testID}-caret`} />
+                ) : null}
                 <Text style={styles.cellText} testID={`${testID}-cell-${index}`}>
                   {code[index] ?? ''}
                 </Text>
@@ -98,7 +130,9 @@ export function JoinSheet({
         <TextInput
           autoCapitalize="none"
           autoCorrect={false}
+          onBlur={() => setFocused(false)}
           onChangeText={handleChange}
+          onFocus={() => setFocused(true)}
           ref={inputRef}
           style={styles.hiddenInput}
           testID={`${testID}-input`}
@@ -142,6 +176,20 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: 'center',
   },
+  // La barre de saisie. `brandStrong` et non `brand` : 5,12:1 sur le blanc de
+  // la feuille, quand `brand` n'en donne que 3,22 — au-dessus des 3:1 d'un
+  // objet graphique, mais ce trait est FIN, et un repère de 2 dp de large
+  // mérite la marge que le seuil ne demande pas.
+  caret: {
+    backgroundColor: tokens.color.brandStrong,
+    borderRadius: 1,
+    height: 22,
+    width: 2,
+  },
+  // La case du curseur : le filet passe au vert soutenu, la LARGEUR ne bouge
+  // pas. Un filet qui épaissirait décalerait le contenu de la case d'un dp à
+  // chaque frappe, et le rang entier tressauterait.
+  cellCaret: { borderColor: tokens.color.brandStrong },
   cellFilled: {
     backgroundColor: tokens.color.brandWash,
     borderColor: tokens.color.brand,
