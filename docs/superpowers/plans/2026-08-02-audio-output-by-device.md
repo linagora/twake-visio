@@ -215,6 +215,25 @@ prouver de ce lot est donc :
 
 ## Tâche 1 : Mesurer les deux Bluetooth, et écrire le relevé dans la spécification
 
+> ### ⚠️ NON FAITE. Le lot 2 à 8 a été livré sans elle.
+>
+> Cette mesure demande **une voiture et deux appareils Bluetooth appairés**, en séance, sur un
+> téléphone. L'agent qui a déroulé les Tâches 2 à 8 n'avait ni l'un ni l'autre, et **le relevé
+> n'a pas été simulé** — écrire des valeurs plausibles dans le tableau ci-dessous aurait été pire
+> que de le laisser vide, ce que ce plan dit lui-même de ses cellules de relevé.
+>
+> **Ce que cela coûte, exactement** : la Tâche 9 perd sa colonne « Avant (AudioSwitch) ». La
+> reprise de la route est donc livrée **sans point de comparaison** — personne ne pourra dire si
+> elle fait mieux ou moins bien que ce qu'elle remplace, ce qui est précisément la fonction de
+> garde-fou que le bloc de décision lui assignait.
+>
+> **Ce que cela ne coûte pas** : rien dans le code. Aucune tâche de code n'en dépendait, et le
+> périmètre était décidé quoi qu'elle dise.
+>
+> **Elle n'est plus reproductible à l'identique** : elle devait être prise **avant** que le
+> comportement de référence ne soit remplacé, et il l'est désormais sur cette branche. La prendre
+> maintenant demande de repartir de `b6c7666`, ou d'une build sans le module.
+
 **Cette tâche ne touche aucun code.** Elle produit une **mesure**, et cette mesure est un
 garde-fou : elle dira si la route que nous reprenons se comporte **mieux ou moins bien** que celle
 que nous remplaçons. Sans elle, personne ne pourra le savoir après coup.
@@ -366,7 +385,7 @@ une sortie intégrée, le nom du **produit**, c'est-à-dire le modèle du télé
 recommandation Q2 de la spécification, et c'est une **conditionnelle**, donc elle a son test dans
 les deux polarités. **[S]** — la lecture de la documentation Android ; à confirmer en Tâche 9.
 
-- [ ] **Étape 1 : Écrire la spec qui échoue**
+- [x] **Étape 1 : Écrire la spec qui échoue**
 
 Créer `src/call/audioDevices.spec.ts` :
 
@@ -523,7 +542,7 @@ describe('readAudioDevices', () => {
 });
 ```
 
-- [ ] **Étape 2 : Exécuter, et vérifier que ça échoue POUR LA BONNE RAISON**
+- [x] **Étape 2 : Exécuter, et vérifier que ça échoue POUR LA BONNE RAISON**
 
 ```bash
 npx jest src/call/audioDevices.spec.ts
@@ -541,7 +560,7 @@ npx jest src/call/audioDevices.spec.ts
 Si le message est différent — un `TypeError`, une assertion qui échoue —, **arrêter** : la spec est
 fautive, pas absente.
 
-- [ ] **Étape 3 : Écrire l'implémentation minimale**
+- [x] **Étape 3 : Écrire l'implémentation minimale**
 
 Créer `src/call/audioDevices.ts` :
 
@@ -638,7 +657,7 @@ Trois notes, chacune vérifiée en exécutant :
    « numérote deux sorties sans nom » couvre, et il n'est pas hypothétique — c'est ce que donne un
    refus de `BLUETOOTH_CONNECT`.
 
-- [ ] **Étape 4 : Exécuter et vérifier que ça passe**
+- [x] **Étape 4 : Exécuter et vérifier que ça passe**
 
 ```bash
 npx jest src/call/audioDevices.spec.ts
@@ -646,7 +665,7 @@ npx jest src/call/audioDevices.spec.ts
 
 **Exécuté** : `13 passed, 13 total`.
 
-- [ ] **Étape 5 : Muter, pour vérifier que les tests localisent**
+- [x] **Étape 5 : Muter, pour vérifier que les tests localisent**
 
 Deux mutations, **exécutées** sur une copie jetable :
 
@@ -657,7 +676,7 @@ Deux mutations, **exécutées** sur une copie jetable :
 
 Remettre le code en état après chaque mutation.
 
-- [ ] **Étape 6 : Vérifier la barre**
+- [x] **Étape 6 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -665,7 +684,7 @@ npm test && npm run typecheck && npm run lint && npx prettier --check .
 
 Attendu : **63 suites / 949 tests**, `tsc` muet, **3 avertissements**, prettier propre.
 
-- [ ] **Étape 7 : Committer**
+- [x] **Étape 7 : Committer**
 
 ```bash
 git add src/call/audioDevices.ts src/call/audioDevices.spec.ts
@@ -719,7 +738,7 @@ Conséquence vérifiée : `prettier --file-info` rend `"ignored": true` pour `.k
 (aucun analyseur), et `"inferredParser": "json"` pour `expo-module.config.json` — **ce dernier doit
 donc être au format Prettier**.
 
-- [ ] **Étape 1 : Créer la configuration du module**
+- [x] **Étape 1 : Créer la configuration du module**
 
 `modules/twake-audio-devices/expo-module.config.json` :
 
@@ -759,7 +778,7 @@ android {
 c'est le lint `NewApi` qui attrapera un appel d'API 31 laissé sans garde, et un lint qui n'échoue
 pas ne sert à rien ici.
 
-- [ ] **Étape 2 : Vérifier que l'autolinking voit le module**
+- [x] **Étape 2 : Vérifier que l'autolinking voit le module**
 
 ```bash
 npx expo-modules-autolinking resolve -p android --json | python3 -c "
@@ -769,7 +788,7 @@ print([m['packageName'] for m in d['modules'] if 'twake' in m['packageName']])"
 
 Attendu : `['twake-audio-devices']`. Si la liste est vide, rien de ce qui suit ne servira.
 
-- [ ] **Étape 3 : Vérifier que git suivra bien le dossier `android/` du module**
+- [x] **Étape 3 : Vérifier que git suivra bien le dossier `android/` du module**
 
 ```bash
 git check-ignore -v modules/twake-audio-devices/android/build.gradle; echo "exit=$?"
@@ -779,7 +798,23 @@ Attendu : **aucune sortie**, `exit=1` — c'est-à-dire **non ignoré**. `.gitig
 **ancré à la racine**, donc `modules/*/android` est suivi. **Vérifié en l'exécutant.** Si un jour
 cette ligne perdait son `/`, tout ce lot disparaîtrait du dépôt sans bruit.
 
-- [ ] **Étape 4 : Écrire le module Kotlin, en lecture seule**
+> **Correction, mesurée à l'exécution : cet ancrage a un revers que ce plan n'avait pas vu.**
+> Il fait suivre `modules/*/android` **en entier**, `build/` compris — et Gradle en écrit un dès
+> la première compilation (étape 6). Le premier `git add modules/` a donc versionné **106
+> fichiers de sortie de compilation**, `.class` et `.jar` inclus, sans que rien ne le signale.
+> `/android` protège la racine, il ne protège pas le module.
+>
+> **Ajouter cette ligne à `.gitignore` AVANT la première compilation**, sans quoi il faut
+> défaire le commit :
+>
+> ```
+> modules/*/android/build/
+> ```
+>
+> Vérifier ensuite que `git ls-files modules/` ne rend que **trois** fichiers : le
+> `expo-module.config.json`, le `build.gradle`, et le `.kt`.
+
+- [x] **Étape 4 : Écrire le module Kotlin, en lecture seule**
 
 `modules/twake-audio-devices/android/src/main/java/com/linagora/twakevisio/audiodevices/TwakeAudioDevicesModule.kt` :
 
@@ -875,7 +910,19 @@ Signatures vérifiées dans `android-36/api-versions.xml`, pas de mémoire :
 `CharSequence`, disponible depuis la classe (API 23) ; `Exceptions.ReactContextLost` existe bien
 (`expo-modules-core/android/…/exception/CommonExceptions.kt:26`).
 
-- [ ] **Étape 5 : Vérifier la barre — le natif ne doit RIEN casser**
+> **Correction, appliquée au code livré : les deux appels d'API 31 sont sortis des lambdas.**
+> Ce plan les laissait dans le corps de l'`AsyncFunction`, derrière une garde `SDK_INT` posée
+> **à l'intérieur de la lambda**, et comptait sur le lint `NewApi` de l'étape 6 pour trancher.
+> Or **ce lint ne peut pas tourner** (voir l'étape 6) : la garde ne pouvait donc être vérifiée
+> par personne. Le code livré les met dans deux fonctions privées annotées
+> `@RequiresApi(Build.VERSION_CODES.S)` — `readDevices()` et `readCurrentDeviceId()` —, la garde
+> de l'appelant étant conservée telle quelle. C'est exactement la discipline que la Tâche 4
+> applique déjà à `acquireRoute()` / `releaseRoute()`, et pour la même raison, écrite là-bas :
+> « le lint Android `NewApi` ne suit pas la garde `SDK_INT` d'un appelant à travers un appel de
+> méthode ». La rendre uniforme coûte trois lignes et supprime le seul point que la compilation
+> ne couvre pas.
+
+- [x] **Étape 5 : Vérifier la barre — le natif ne doit RIEN casser**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -886,26 +933,48 @@ prettier propre. **Exécuté** : avec `modules/` en place, le compte est bien in
 n'inclut que `**/*.ts(x)` et il n'y en a aucun sous `modules/`, eslint non plus, et prettier ne
 connaît ni `.kt` ni `.gradle`.
 
-- [ ] **Étape 6 : Compiler, et vérifier la liaison sur appareil**
+- [x] **Étape 6 : Compiler, et vérifier la liaison sur appareil**
 
 **Ce que Jest ne peut pas faire.**
 
+> **Correction : `--clean` est à proscrire dans un worktree, et il n'est pas nécessaire.**
+> `expo prebuild` termine par une installation de dépendances ; or `node_modules` est un **lien
+> symbolique** vers le dépôt principal, et les contraintes globales de ce plan interdisent
+> `npm install`. La forme qui marche, **exécutée** :
+>
+> ```bash
+> npx expo prebuild --platform android --no-install
+> ```
+>
+> `--clean` ne sert de toute façon à rien quand `android/` n'existe pas encore.
+
 ```bash
-npx expo prebuild --platform android --clean
-npx expo run:android --device
+npx expo prebuild --platform android --no-install
+cd android && ./gradlew :twake-audio-devices:compileDebugKotlin
 ```
 
-Attendu : la compilation Kotlin **passe**, le lint Android ne signale **aucun `NewApi`**, et le
-module est lié. À vérifier depuis l'application, en séance :
+- [x] **La compilation Kotlin aboutit**, sans erreur ni avertissement sur le fichier du module.
+      **Exécuté** : `BUILD SUCCESSFUL`. C'est la première fois que ce fichier voit un compilateur.
+- [x] `android/` n'est **pas** apparu dans `git status` (il est gitignoré, et il doit le rester).
+      En revanche `modules/twake-audio-devices/android/build/` y est apparu : voir l'étape 3.
 
-- [ ] La compilation aboutit sans erreur Kotlin ni `NewApi`.
-- [ ] Sur un appareil Android ≥ 12, `requireOptionalNativeModule('TwakeAudioDevices')` ne rend
-      **pas** `null` — le plus simple est de le constater en Tâche 5, quand la liaison existe ; si
-      cette tâche est revue seule, un `console.warn` temporaire suffit, **retiré avant le commit**
-      (`no-console` autorise `warn`, mais un `warn` de sonde n'a rien à faire dans un commit).
-- [ ] `android/` n'est **pas** apparu dans `git status` (il est gitignoré, et il doit le rester).
+> **Le lint Android ne peut pas tourner sur cette machine, et ce n'est pas ce module.** Mesuré :
+> `:twake-audio-devices:lintDebug` échoue dans `react-native-worklets:lintAnalyzeDebug` sur
+> `Cannot find a KaModule for the VirtualFile`, une **erreur interne de lint** levée en visitant
+> les scripts Gradle (`LintDriver.checkBuildScripts` → `UastGradleVisitor.visitBuildScript`).
+> **La preuve que ce n'est pas notre code** : `:expo-constants:lintDebug`, module tiers que
+> personne n'a touché, échoue **identiquement**. Ni `checkOnly 'NewApi'` ni
+> `checkDependencies false` ne le contournent, et le JDK n'y change rien (24 échoue plus tôt, sur
+> `configureCMakeDebug` ; 21 va jusqu'au crash de lint). `abortOnError true` reste **juste** et
+> reste dans le `build.gradle` : c'est l'environnement qui est cassé, pas la configuration.
+> **Conséquence à assumer : aucun verdict `NewApi` n'a été rendu sur ce lot** — d'où les
+> `@RequiresApi` posées partout à l'étape 4 plutôt qu'une garde en ligne.
 
-- [ ] **Étape 7 : Committer**
+Reste à constater sur un appareil Android ≥ 12 (Tâche 9) :
+
+- [ ] `requireOptionalNativeModule('TwakeAudioDevices')` ne rend **pas** `null`.
+
+- [x] **Étape 7 : Committer**
 
 ```bash
 git add modules/
@@ -959,7 +1028,7 @@ champ à `null`**, donc il n'existe, ni en JavaScript ni en Java, aucune valeur 
 « reviens en automatique ». `clearCommunicationDevice()`, elle, le fait. C'est la commande que la
 Tâche 7 rendra visible.
 
-- [ ] **Étape 1 : Ajouter les imports et l'état de la route**
+- [x] **Étape 1 : Ajouter les imports et l'état de la route**
 
 Dans le même fichier, en tête :
 
@@ -986,35 +1055,55 @@ private const val DEVICES_CHANGED = "onDevicesChanged"
         get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 ```
 
-- [ ] **Étape 2 : Déclarer l'événement et les quatre fonctions, dans `definition()`**
+- [x] **Étape 2 : Déclarer l'événement et les quatre fonctions, dans `definition()`**
 
 Sous `Name("TwakeAudioDevices")`, ajouter `Events(DEVICES_CHANGED)`, puis, à la suite des deux
 fonctions de lecture :
 
+> **Correction : les trois gardes ci-dessous, telles que ce plan les écrivait, NE COMPILENT
+> PAS.** Mesuré — c'est la première erreur qu'a rendue le premier `compileDebugKotlin` de
+> l'histoire de ce fichier :
+>
+> ```
+> e: TwakeAudioDevicesModule.kt:87:64 Return type mismatch: expected 'Any?', actual 'Unit'.
+> e: TwakeAudioDevicesModule.kt:92:64 Return type mismatch: expected 'Any?', actual 'Unit'.
+> e: TwakeAudioDevicesModule.kt:102:64 Return type mismatch: expected 'Any?', actual 'Unit'.
+> ```
+>
+> **La cause** : pour une lambda **sans argument**, Kotlin résout la surcharge non générique
+> `AsyncFunction(name, body: () -> Any?)` (`ObjectDefinitionBuilder.kt:220-227`, annotée
+> `@JvmName("AsyncFunctionWithoutArgs")`), et non `<reified R> AsyncFunction(name, () -> R)`. Le
+> type de retour attendu est donc `Any?`, pas `Unit` — et Kotlin **refuse un `return@label` sans
+> valeur** dès que le type attendu n'est pas `Unit`.
+>
+> Cela ne frappe que les trois fonctions qui ne rendent rien : `acquire`, `release` et
+> `clearDevice`. `listDevices`, `getCurrentDeviceId` et `selectDevice` rendent une valeur et
+> gardent leur retour anticipé tel quel.
+>
+> **La forme livrée exprime la garde en positif** — pas de retour anticipé du tout :
+
 ```kotlin
         AsyncFunction("acquire") {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@AsyncFunction
-            acquireRoute()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) acquireRoute()
         }
 
         AsyncFunction("release") {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@AsyncFunction
-            releaseRoute()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) releaseRoute()
         }
 
+        // Celle-ci rend un `Boolean` : son retour anticipé est légal, et il est
+        // conservé. Le corps, lui, part dans une privée `@RequiresApi`
+        // (`routeTo`), qui porte le commentaire sur le booléen rendu tel quel.
         AsyncFunction("selectDevice") { id: Int ->
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@AsyncFunction false
-            val target = audioManager.availableCommunicationDevices.firstOrNull { it.id == id }
-                ?: return@AsyncFunction false
-            // Le booléen est RENDU tel quel : un refus du système doit remonter
-            // jusqu'à l'écran, qui laisse alors la coche où elle était plutôt
-            // que d'annoncer une route qui n'a pas pris.
-            audioManager.setCommunicationDevice(target)
+            routeTo(id)
         }
 
+        // Même correction que pour `acquire` / `release` : garde en positif.
+        // Et l'appel d'API 31 passe par une privée `@RequiresApi`, comme
+        // partout ailleurs dans ce module.
         AsyncFunction("clearDevice") {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@AsyncFunction
-            audioManager.clearCommunicationDevice()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) clearRoute()
         }
 
         // Un démontage de l'application ne doit pas laisser le mode de
@@ -1025,7 +1114,7 @@ fonctions de lecture :
         }
 ```
 
-- [ ] **Étape 3 : Écrire les deux fonctions privées**
+- [x] **Étape 3 : Écrire les deux fonctions privées**
 
 Après `definition()` :
 
@@ -1089,7 +1178,7 @@ route, sinon le `clearCommunicationDevice()` déclenche un dernier `sendEvent` v
 peut déjà être en train de partir. Puis rendre le focus, puis restaurer le mode — dans l'ordre
 inverse de la prise.
 
-- [ ] **Étape 4 : Vérifier la barre**
+- [x] **Étape 4 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -1098,21 +1187,29 @@ npm test && npm run typecheck && npm run lint && npx prettier --check .
 Attendu : **63 suites / 949 tests**, `tsc` muet, **3 avertissements**, prettier propre. Rien ne
 bouge : cette tâche est entièrement en Kotlin.
 
-- [ ] **Étape 5 : Compiler, et le dire**
+- [x] **Étape 5 : Compiler, et le dire**
 
 ```bash
-npx expo prebuild --platform android --clean && npx expo run:android --device
+cd android && ./gradlew :twake-audio-devices:compileDebugKotlin
 ```
 
-- [ ] La compilation Kotlin passe.
-- [ ] Le lint Android ne signale **aucun `NewApi`**. S'il en signale un, c'est qu'un appel d'API 31
-      est sorti d'une fonction annotée : le corriger, ne **jamais** baisser `abortOnError`.
+- [x] **La compilation Kotlin passe** — après la correction de l'étape 2, sans laquelle elle
+      échouait sur trois `Return type mismatch`. **Exécuté** : `BUILD SUCCESSFUL`.
+- [x] `:twake-audio-devices:assembleDebug` passe aussi, et **`:app:assembleDebug` avec** (3 min 23,
+      sous JDK 21). Le module est bien **lié** : il apparaît comme `project :twake-audio-devices`
+      dans le `debugRuntimeClasspath` de `:app`, et la classe
+      `com/linagora/twakevisio/audiodevices/TwakeAudioDevicesModule` est présente dans le
+      `classes2.dex` de l'APK produit, avec les lambdas `AsyncFunctionWithoutArgs` de ce fichier.
+- [ ] Le lint Android ne signale **aucun `NewApi`** — **NON RENDU** : le lint ne peut pas tourner
+      sur cette machine, pour une raison qui n'est pas ce module (voir Tâche 3, étape 6). Ne
+      **jamais** baisser `abortOnError` pour autant : c'est la configuration qui est juste et
+      l'environnement qui est cassé.
 
 **Ce qui ne peut pas être vérifié ici**, et qui est reporté en Tâche 9 parce qu'il demande que le
 JavaScript appelle réellement `acquire()` : le routage, le focus, le mode, et l'absence de
 rebascule. Cette tâche livre du code natif **compilé et lié, jamais exercé**. C'est dit sans détour.
 
-- [ ] **Étape 6 : Committer**
+- [x] **Étape 6 : Committer**
 
 ```bash
 git add modules/
@@ -1168,7 +1265,7 @@ Cela ne marche **que** parce que `audioRoute.ts` lit la liaison **dans** ses fon
 en `_nativeAudioDevices.nativeAudioDevices`, donc en un accès de propriété. **Exécuté et vert.**
 Le préfixe `mock` de la variable est ce qui autorise la fabrique hoistée à fermer dessus.
 
-- [ ] **Étape 1 : Créer la liaison typée**
+- [x] **Étape 1 : Créer la liaison typée**
 
 `src/call/nativeAudioDevices.ts` :
 
@@ -1195,7 +1292,7 @@ n'est pas lié, et il n'est pas lié sous Jest, ni sur iOS, ni dans un binaire c
 la raison qui justifie `src/call/devices.ts` : **le pont natif ne porte aucun contrat**, et c'est
 `readAudioDevices` qui le regarde, sans assertion de type.
 
-- [ ] **Étape 2 : Écrire les tests qui échouent**
+- [x] **Étape 2 : Écrire les tests qui échouent**
 
 Remplacer entièrement `src/call/audioRoute.spec.ts` par le fichier ci-dessous. Il **reprend les
 sept tests existants sans les affaiblir** — `listAudioOutputs`, `selectAudioOutput`,
@@ -1455,7 +1552,7 @@ describe('openSystemRoutePicker', () => {
 });
 ```
 
-- [ ] **Étape 3 : Exécuter, et vérifier l'échec**
+- [x] **Étape 3 : Exécuter, et vérifier l'échec**
 
 ```bash
 npx jest src/call/audioRoute.spec.ts
@@ -1467,7 +1564,7 @@ imports absents (`startAudioRoute`, `stopAudioRoute`, `listAudioDevices`, `selec
 `clearAudioDevice`, `readCurrentAudioDeviceId`) font échouer `tsc` et les tests correspondants
 lèvent `TypeError: ... is not a function`. **Les sept tests d'origine, eux, doivent rester verts.**
 
-- [ ] **Étape 4 : Écrire l'implémentation**
+- [x] **Étape 4 : Écrire l'implémentation**
 
 Remplacer `src/call/audioRoute.ts` par :
 
@@ -1568,7 +1665,7 @@ délibéré et c'est la doctrine du dépôt : **muter la branche, jamais le pré
 Un `ownsRoute()` partagé ferait qu'une seule mutation en amont rougirait cinq tests à la fois, ce
 qui rassure sans localiser.
 
-- [ ] **Étape 5 : Exécuter, et vérifier que ça passe**
+- [x] **Étape 5 : Exécuter, et vérifier que ça passe**
 
 ```bash
 npx jest src/call/audioRoute.spec.ts
@@ -1576,7 +1673,7 @@ npx jest src/call/audioRoute.spec.ts
 
 **Exécuté** : `22 passed, 22 total`.
 
-- [ ] **Étape 6 : Muter, pour vérifier que les tests localisent**
+- [x] **Étape 6 : Muter, pour vérifier que les tests localisent**
 
 Deux mutations, **exécutées** :
 
@@ -1585,7 +1682,7 @@ Deux mutations, **exécutées** :
 | retirer le `return` après `await native.acquire()` | **1** — « prend le volant, et NE démarre PAS AudioSwitch » |
 | `ownsRoute()` → `return native !== null;` | **1** — « rend `'menu'` sous le plancher API 31 » |
 
-- [ ] **Étape 7 : Vérifier la barre**
+- [x] **Étape 7 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -1593,7 +1690,7 @@ npm test && npm run typecheck && npm run lint && npx prettier --check .
 
 Attendu : **63 suites / 964 tests**, `tsc` muet, **3 avertissements**, prettier propre.
 
-- [ ] **Étape 8 : Committer**
+- [x] **Étape 8 : Committer**
 
 ```bash
 git add src/call/nativeAudioDevices.ts src/call/audioRoute.ts src/call/audioRoute.spec.ts
@@ -1626,7 +1723,7 @@ pourquoi la spec **double `src/call/audioRoute`** : sans ce double, la mutation 
 
 **Mesuré** : avec le double, cette mutation donne **3 rouges** ; sans lui, **0**.
 
-- [ ] **Étape 1 : Modifier les tests, et vérifier qu'ils échouent**
+- [x] **Étape 1 : Modifier les tests, et vérifier qu'ils échouent**
 
 Dans `src/call/connection.spec.ts` :
 
@@ -1727,7 +1824,7 @@ Attendu : **3 échecs** — les trois premiers tests ci-dessus —, parce que `c
 encore `AudioSession`. Le quatrième passe déjà : son `mockRejectedValueOnce` porte sur un double qui
 n'est pas appelé, et `disconnect()` résout de toute façon.
 
-- [ ] **Étape 2 : Modifier `connection.ts`**
+- [x] **Étape 2 : Modifier `connection.ts`**
 
 Trois substitutions, plus l'import :
 
@@ -1760,7 +1857,7 @@ Les trois commentaires qui entourent ces lignes restent : ils décrivent toujour
 Seul le premier gagne une précision, « le propriétaire de la route » au lieu de
 « `@livekit/react-native` », puisque ce n'est plus toujours lui.
 
-- [ ] **Étape 3 : Exécuter et vérifier que ça passe**
+- [x] **Étape 3 : Exécuter et vérifier que ça passe**
 
 ```bash
 npx jest src/call/connection.spec.ts
@@ -1769,12 +1866,12 @@ npx jest src/call/connection.spec.ts
 **Exécuté** : `42 passed, 42 total` — le compte est **inchangé**, quatre tests ont été réécrits,
 aucun ajouté.
 
-- [ ] **Étape 4 : Muter**
+- [x] **Étape 4 : Muter**
 
 **Exécutée** : remettre les trois appels à `AudioSession` (et son import) → **3 rouges**, les trois
 premiers tests de la section. Remettre le code en état.
 
-- [ ] **Étape 5 : Vérifier la barre**
+- [x] **Étape 5 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -1782,7 +1879,7 @@ npm test && npm run typecheck && npm run lint && npx prettier --check .
 
 Attendu : **63 suites / 964 tests**, `tsc` muet, **3 avertissements**, prettier propre.
 
-- [ ] **Étape 6 : Committer**
+- [x] **Étape 6 : Committer**
 
 ```bash
 git add src/call/connection.ts src/call/connection.spec.ts
@@ -1838,7 +1935,7 @@ lecture seule n'avait pas :
 prop nommée comme l'événement d'un composant hôte rend le test **vert par accident**. Ce dépôt l'a
 mesuré.
 
-- [ ] **Étape 1 : Ajouter les deux clés dans les sept locales**
+- [x] **Étape 1 : Ajouter les deux clés dans les sept locales**
 
 Dans chaque `src/i18n/locales/*.json`, **immédiatement après** `"call.outputManualUntilEnd"` :
 
@@ -1861,7 +1958,7 @@ npx jest src/i18n/index.spec.ts
 
 **Exécuté** : `2 passed`. Cette suite échoue si une clé manque dans une seule locale.
 
-- [ ] **Étape 2 : Écrire les tests qui échouent**
+- [x] **Étape 2 : Écrire les tests qui échouent**
 
 Remplacer `src/screens/room/audioOutputControl.spec.tsx`. Les dix tests d'origine sont **conservés
 dans leur intention** — le mode système, l'ouverture qui relit, la borne du sélecteur, l'envoi de la
@@ -2275,7 +2372,7 @@ le rendu inchangé, **les tests du mode appareils échouent** — treize en tout
    couleur possible. L'`iconColor` d'un `IconButton` à icône-chaîne, lui, n'est **jamais**
    joignable — `IconButton.tsx:211` ne transmet pas de `testID` —, et aucun test de ce plan n'essaie.
 
-- [ ] **Étape 3 : Écrire le composant**
+- [x] **Étape 3 : Écrire le composant**
 
 Remplacer `src/screens/room/audioOutputControl.tsx`. Les imports gagnent
 `import type { AudioDeviceChoice } from 'src/call/audioDevices';` ; le type de props est celui du
@@ -2409,7 +2506,7 @@ Le `testID` d'une ligne d'appareil est `audio-output-device-${id}` et **non**
 `audio-output-option-${kind}` : les deux listes ne se confondent jamais, et c'est ce qui permet aux
 tests du mode catégories d'affirmer qu'aucune ligne d'appareil n'est rendue, et réciproquement.
 
-- [ ] **Étape 4 : Exécuter et vérifier que ça passe**
+- [x] **Étape 4 : Exécuter et vérifier que ça passe**
 
 ```bash
 npx jest src/screens/room/audioOutputControl.spec.tsx
@@ -2417,7 +2514,7 @@ npx jest src/screens/room/audioOutputControl.spec.tsx
 
 **Exécuté** : `18 passed, 18 total`.
 
-- [ ] **Étape 5 : Muter — sept mutations, sept résultats attendus**
+- [x] **Étape 5 : Muter — sept mutations, sept résultats attendus**
 
 Toutes **exécutées** sur une copie jetable :
 
@@ -2433,7 +2530,7 @@ Toutes **exécutées** sur une copie jetable :
 
 Remettre le code en état après chacune.
 
-- [ ] **Étape 6 : Vérifier la barre**
+- [x] **Étape 6 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -2457,7 +2554,7 @@ props avec des valeurs neutres —
 — que la Tâche 8 remplacera. C'est le seul endroit de ce plan où une tâche laisse un fil pendant ;
 il est court, il est nommé, et il est repris à l'étape suivante.
 
-- [ ] **Étape 7 : Committer**
+- [x] **Étape 7 : Committer**
 
 ```bash
 git add src/screens/room/audioOutputControl.tsx src/screens/room/audioOutputControl.spec.tsx \
@@ -2486,7 +2583,7 @@ une fixture qui laisserait `readCurrentAudioDeviceId` rendre `null` après une s
 ferait échouer le test de la coche. Ce n'est pas un défaut du code, c'est le code qui fait ce qu'il
 annonce. Le test le dit explicitement.
 
-- [ ] **Étape 1 : Écrire les tests qui échouent**
+- [x] **Étape 1 : Écrire les tests qui échouent**
 
 Insérer dans `src/screens/room/call.spec.tsx`, **immédiatement avant**
 `describe('CallScreen, indicateur d’enregistrement', …)` :
@@ -2653,7 +2750,7 @@ npx jest src/screens/room/call.spec.tsx
 
 Attendu : les six tests nouveaux échouent — la feuille rend `devices={[]}` depuis la Tâche 7.
 
-- [ ] **Étape 2 : Câbler le contrôle**
+- [x] **Étape 2 : Câbler le contrôle**
 
 Dans `src/screens/room/callControlBar.tsx` :
 
@@ -2746,7 +2843,7 @@ Dans `src/screens/room/callControlBar.tsx` :
    +        onAutomatic={handleAutomaticAudioOutput}
    ```
 
-- [ ] **Étape 3 : Exécuter et vérifier que ça passe**
+- [x] **Étape 3 : Exécuter et vérifier que ça passe**
 
 ```bash
 npx jest src/screens/room/call.spec.tsx
@@ -2754,19 +2851,45 @@ npx jest src/screens/room/call.spec.tsx
 
 **Exécuté** : `128 passed, 128 total`.
 
-- [ ] **Étape 4 : Muter**
+- [x] **Étape 4 : Muter**
 
-| Mutation | Rouges attendus |
-|---|---|
-| retirer la garde `if (routeControl === 'devices')` de `handleOpenAudioOutput` | ≥ 1 — « lit la liste ET l'état constaté » |
-| `if (!routed)` → `if (false)` | 1 — « signale un refus du système » |
-| retirer `setManualOutput(true)` de `handleSelectAudioDevice` | ≥ 1 — « coche ce que le système a réellement pris » |
-| dans `handleAutomaticAudioOutput`, ne pas relire `readCurrentAudioDeviceId()` | 1 — « rend la route au système, et relit l'état constaté APRÈS » |
+| Mutation | Rouges attendus | Rouges **obtenus** |
+|---|---|---|
+| retirer la garde `if (routeControl === 'devices')` de `handleOpenAudioOutput` | ≥ 1 — « lit la liste ET l'état constaté » | **5** |
+| `if (!routed)` → `if (false)` | 1 — « signale un refus du système » | **1** |
+| retirer `setManualOutput(true)` de `handleSelectAudioDevice` | ≥ 1 — « coche ce que le système a réellement pris » | **2** |
+| dans `handleAutomaticAudioOutput`, ne pas relire `readCurrentAudioDeviceId()` | 1 — « rend la route au système, et relit l'état constaté APRÈS » | **0**, puis **1** — voir ci-dessous |
 
 Les exécuter, une par une, et remettre le code en état après chacune. **Si l'une ne rougit rien,
 c'est un trou de couverture, pas une bonne nouvelle** : ajouter le test manquant avant de continuer.
 
-- [ ] **Étape 5 : Vérifier la barre**
+> **Correction : la quatrième mutation ne rougissait RIEN, et le test qui devait la localiser
+> était le seul à ne pas pouvoir le faire.** Mesuré à l'exécution : **0 rouge**.
+>
+> **La cause est un fait que ce plan énonce lui-même, deux paragraphes plus haut, sans en tirer la
+> conséquence** : « à chaque ouverture de la feuille, `readCurrentAudioDeviceId()` **écrase** ce
+> que la sélection avait posé ». Le test observait `audio-output-check-2` **après avoir rouvert la
+> feuille** — or c'est cette réouverture qui relit et pose la coche. Le `.then(() =>
+> readCurrentAudioDeviceId())` du gestionnaire pouvait donc disparaître sans que la coche change.
+> Et il ne pouvait pas en être autrement : l'appui sur « automatique » **referme** la feuille, donc
+> aucune coche n'est montée pour observer la relecture au moment où elle a lieu.
+>
+> **L'instruction n'est observable que par son APPEL.** Ajouter, dans le test « rend la route au
+> système, et relit l'état constaté APRÈS », immédiatement après l'assertion sur
+> `clearAudioDevice` et **avant** la réouverture :
+>
+> ```ts
+> await waitFor(() => expect(audioRoute.readCurrentAudioDeviceId).toHaveBeenCalledTimes(3));
+> ```
+>
+> Trois lectures : la première ouverture, la seconde, puis celle du gestionnaire. Avec cette ligne,
+> la mutation donne **1 rouge**. Sans elle, **0** — et le gestionnaire aurait pu perdre sa
+> deuxième instruction sans que rien ne le dise.
+>
+> C'est le motif qu'`AGENTS.md` nomme « recenser aussi les EFFETS » : le tableau des effets de ce
+> plan annonçait bien « 3 assertions » pour ce gestionnaire, et le test n'en portait que deux.
+
+- [x] **Étape 5 : Vérifier la barre**
 
 ```bash
 npm test && npm run typecheck && npm run lint && npx prettier --check .
@@ -2774,7 +2897,7 @@ npm test && npm run typecheck && npm run lint && npx prettier --check .
 
 Attendu : **63 suites / 978 tests**, `tsc` muet, **3 avertissements**, prettier propre.
 
-- [ ] **Étape 6 : Committer**
+- [x] **Étape 6 : Committer**
 
 ```bash
 git add src/screens/room/callControlBar.tsx src/screens/room/call.spec.tsx
@@ -2784,6 +2907,30 @@ git commit -m "feat(call): Wire the by-device output sheet to the native route o
 ---
 
 ## Tâche 9 : La passe de vérification sur appareil
+
+> ### ⚠️ NON FAITE. C'est la tâche qui manque le plus, et de loin.
+>
+> Elle demande un téléphone Android 12+, un casque Bluetooth et un second appareil Bluetooth.
+> L'agent qui a livré les Tâches 2 à 8 n'en disposait pas.
+>
+> **Ce qui est prouvé sans elle** : le Kotlin **compile** et l'application **se construit** avec
+> (`:app:assembleDebug`, classe présente dans le dex de l'APK) ; toute la logique JavaScript est
+> couverte par 978 tests ; les 13 mutations prescrites ont été exécutées et localisent.
+>
+> **Ce qui n'est prouvé PAR RIEN, et qu'il ne faut pas confondre avec « ça marche »** :
+>
+> - que `setCommunicationDevice()` **route** réellement le son, et vers le bon appareil ;
+> - que **deux Bluetooth donnent bien deux lignes** — l'unique raison d'être de tout ce lot ;
+> - que le **focus audio** et `MODE_IN_COMMUNICATION` sont correctement pris **et rendus** au
+>   raccrochage (sinon le haut-parleur reste détourné pour tout le système) ;
+> - que le **micro Bluetooth** fonctionne toujours, maintenant qu'AudioSwitch ne pose plus le mode ;
+> - que rien ne **rebascule tout seul** en séance — le risque nommé par la Q1 de la spécification ;
+> - que `getProductName()` rend un vrai nom **après un refus de `BLUETOOTH_CONNECT`** ;
+> - qu'aucun `NewApi` ne dort dans le module : **le lint Android n'a pas pu tourner** (Tâche 3,
+>   étape 6), donc le plancher API 31 n'est garanti que par relecture et par les `@RequiresApi`.
+>
+> **Le code natif de ce lot est donc COMPILÉ, LIÉ, et JAMAIS EXERCÉ.** Il ne doit pas partir en
+> production sans cette passe.
 
 **Ce que ce lot ne peut prouver autrement.** Il faut un téléphone Android 12 ou plus, un casque
 Bluetooth, et un second appareil Bluetooth — la voiture, ou n'importe quel kit mains-libres HFP.
@@ -2904,6 +3051,16 @@ git commit -m "docs(spec): Record what the reclaimed audio route does on device"
 
 ## Tâche 10 : La contribution amont
 
+> ### NON FAITE — hors dépôt, et sans effet sur ce lot.
+>
+> Elle consiste à ouvrir une issue puis une PR sur `livekit/client-sdk-react-native`, ce qui n'est
+> ni un changement de ce dépôt ni quelque chose qu'un agent doive pousser de sa propre initiative.
+> Elle ne bloque rien et rien ne la bloque : c'est ce que dit son propre préambule.
+>
+> **L'épingle a été revérifiée et n'a pas bougé** (étape 1) :
+> `com.github.davidliu:audioswitch:89582c47c9a04c62f90aa5e57251af4800a62c9a`, toujours le commit
+> du 2023-10-16, dans `@livekit/react-native` 2.12.0.
+
 **Hors de ce dépôt.** Elle ne bloque rien et rien ne la bloque : si elle aboutit, notre module
 devient partiellement redondant et se réduit d'autant, ce qui est l'issue souhaitable.
 
@@ -3015,8 +3172,22 @@ d'appareil est `audio-output-device-${id}` en Tâches 7 et 8, celui de la coche
 | prettier ignore `.kt`/`.gradle`, pas le `.json` | `getProductName()` rend le modèle du téléphone pour les sorties intégrées **[S]** |
 | la barre complète reste verte à chaque étape | |
 
-**Ce qui n'a été ni exécuté ni compilé : le Kotlin.** Aucune tâche Gradle n'a tourné pendant la
-rédaction de ce plan. Le module a été écrit contre les signatures relevées dans `android.jar` et
-contre le DSL d'`expo-modules-core` 57.0.7 lu à la source, et l'autolinking a bien été exercé — mais
-**personne n'a encore vu ce fichier compiler**. C'est l'étape 6 de la Tâche 3 et l'étape 5 de la
-Tâche 4, et elles ne sont pas des formalités.
+**Ce qui n'a été ni exécuté ni compilé au moment de la RÉDACTION : le Kotlin.** Aucune tâche Gradle
+n'a tourné pendant l'écriture de ce plan. Le module a été écrit contre les signatures relevées dans
+`android.jar` et contre le DSL d'`expo-modules-core` 57.0.7 lu à la source, et l'autolinking a bien
+été exercé — mais **personne n'avait vu ce fichier compiler**. C'était l'étape 6 de la Tâche 3 et
+l'étape 5 de la Tâche 4, et elles n'étaient pas des formalités.
+
+> **Fait à l'implémentation, et ça valait le détour.** Le Kotlin compile désormais
+> (`:twake-audio-devices:compileDebugKotlin`, puis `:app:assembleDebug`, classe présente dans le
+> dex de l'APK). Mais **il ne compilait pas tel que ce plan l'écrivait** : les trois
+> `return@AsyncFunction` nus de la Tâche 4 étaient une erreur de compilation, pas un détail de
+> style — corrigée dans la tâche, à l'endroit du code fautif. C'est la démonstration exacte de ce
+> que ce paragraphe annonçait.
+>
+> **Ce qui reste hors de portée ici, et qui n'est pas la même chose que « non fait » :** le lint
+> Android (`NewApi`) ne peut pas s'exécuter sur cette machine — un module tiers
+> (`react-native-worklets`) fait tomber l'analyseur de lint sur un bug interne, et un module que
+> personne n'a touché (`expo-constants`) échoue à l'identique. Aucun verdict `NewApi` n'a donc été
+> rendu ; c'est pourquoi tout appel d'API 31 du module est passé derrière une privée
+> `@RequiresApi`, y compris ceux que la Tâche 3 laissait en ligne.
