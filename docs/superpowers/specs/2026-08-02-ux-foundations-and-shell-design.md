@@ -565,6 +565,16 @@ ce que `call.tsx` fait n'a pas changé.
 
 - **L'écran d'appel et tous ses panneaux.** Quatorze branches y travaillent.
 - **L'accueil refondu**, ses deux cartes d'action, la liste « -2 h → +24 h » — Lot 2.
+
+  **Conséquence visible, constatée sur appareil le 2026-08-02 et assumée par le
+  propriétaire** : Historique et Réglages portent `AppHeader`, l'Accueil garde sa
+  ligne « adresse / instance / Se déconnecter ». **Les trois onglets ne se
+  ressemblent donc pas**, et c'est frappant dès qu'on navigue entre eux.
+
+  Décision : **ne pas poser `AppHeader` sur l'accueil au coup par coup.** Le Lot 2
+  refond cet écran en entier — en-tête, cartes d'action, liste — et un en-tête
+  posé seul serait à refaire. Si vous lisez ceci en trouvant l'incohérence
+  choquante : elle est connue, elle est datée, elle a un propriétaire.
 - **Les feuilles Créer et Rejoindre**, dont la saisie de code 3-4-3 — Lot 2.
 - **Le pré-join**, le flou et les huit arrière-plans — Lot 3, frotte avec
   `design/audio-devices`. Seules les deux lignes `useState` de `prejoin.tsx`
