@@ -43,6 +43,27 @@ const COMPOSER_HEIGHT = 56;
 // mesurer, ce que ni RNTL ni cette architecture ne permettent ici.
 export const CHAT_FOOTER_HEIGHT = COMPOSER_HEIGHT + tokens.spacing.md;
 
+// — Les deux fonds de bulle —
+//
+// Exportés pour que la spécification les assertisse sans recopier
+// d'hexadécimal ; ils vivent ici plutôt que dans `src/ui/tokens` pour la raison
+// écrite en tête de `bottomSheet.tsx`.
+//
+// Le vert sombre du mockup pour ce qu'on reçoit, de la même famille teintée que
+// la feuille (#151B18). `textDark` (#ECECEC) y donne 12,29:1.
+export const CHAT_BUBBLE_RECEIVED_COLOR = '#232B27';
+
+// CORRIGÉ POUR CONTRASTE. Le mockup pose la bulle envoyée sur le vert de marque
+// avec du texte blanc ; `tokens.color.brand` (#1FA45C) ne donne que **3,22:1**
+// avec du blanc, sous le seuil AA de 4,5:1 — c'est précisément le fait que
+// `src/ui/tokens` consigne (« `brand` ne porte JAMAIS de texte »), et
+// `makeTheme` avait déjà dû faire la même substitution pour sa couleur
+// primaire. `brandStrong` (#177E44) donne **5,12:1** avec le même blanc, à
+// teinte préservée.
+export const CHAT_BUBBLE_SENT_COLOR = tokens.color.brandStrong;
+
+const BUBBLE_RADIUS = tokens.radius.lg;
+
 const styles = StyleSheet.create({
   // Aucun fond propre : le panneau hérite du `backgroundDark` que `call.tsx`
   // force sur `styles.root` dans les deux schémas, comme `ParticipantsPanel`.
@@ -52,6 +73,39 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   log: { flex: 1 },
   row: { paddingVertical: tokens.spacing.xs },
+  // Le côté. C'est la SEULE chose que le fil sait de l'émetteur — `isLocal`,
+  // porté par le message lui-même — et les deux branches doivent donc être
+  // gardées séparément : une fixture qui ne contient que des messages reçus
+  // laisserait l'alignement et les deux couleurs libres d'être des constantes.
+  rowReceived: { alignItems: 'flex-start' },
+  rowSent: { alignItems: 'flex-end' },
+  bubble: {
+    borderRadius: BUBBLE_RADIUS,
+    maxWidth: '85%',
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
+  },
+  // Le coin rentrant du côté de l'émetteur : la seule chose qui distingue les
+  // deux bulles quand elles se suivent sans en-tête d'auteur.
+  bubbleReceived: {
+    backgroundColor: CHAT_BUBBLE_RECEIVED_COLOR,
+    borderBottomLeftRadius: tokens.radius.sm,
+  },
+  bubbleSent: {
+    backgroundColor: CHAT_BUBBLE_SENT_COLOR,
+    borderBottomRightRadius: tokens.radius.sm,
+  },
+  // Du blanc franc, pas `textDark` : c'est la paire mesurée à 5,12:1 avec
+  // `brandStrong`, et la seule du panneau qui ne soit pas posée sur du sombre.
+  textSent: { color: tokens.color.onBrand },
+  // Le même gabarit que le titre du panneau des participants et que celui
+  // d'une feuille : trois surfaces qui se nomment, un seul gabarit.
+  panelTitle: {
+    color: tokens.color.textDark,
+    fontFamily: tokens.font.extraBold,
+    fontSize: 20,
+    lineHeight: 26,
+  },
   composer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -79,13 +133,26 @@ type RowProps = {
 // Une ligne, un message. L'en-tête d'auteur n'apparaît qu'en tête de groupe :
 // c'est `startsGroup` qui le décide, à partir du fil dans son ordre réel — et
 // non de l'ordre inversé dans lequel la liste le rend.
+//
+// `isLocal` décide de trois choses à la fois — le côté, le fond, la couleur du
+// texte — et c'est délibérément UNE lecture pour trois emplois : trois
+// prédicats séparés pourraient diverger, et une bulle envoyée alignée à gauche
+// n'aurait aucun sens. Chacun des trois reste sa propre cible de mutation.
+//
+// L'en-tête d'auteur reste HORS de la bulle : c'est ce qui coiffe un groupe, et
+// le mettre dedans le répéterait à l'intérieur d'une forme qui dit déjà de quel
+// côté vient le message.
 function ChatRow({ row }: RowProps): React.ReactElement {
   const { t } = useTranslation();
   const key = messageKey(row.message);
   const name = row.message.name.trim();
+  const mine = row.message.isLocal;
 
   return (
-    <View testID={`chat-message-${key}`} style={styles.row}>
+    <View
+      testID={`chat-message-${key}`}
+      style={[styles.row, mine ? styles.rowSent : styles.rowReceived]}
+    >
       {row.header ? (
         // Secondaire par la TAILLE, jamais par un gris : `tokens.color.muted`
         // donne 4,07:1 sur ce fond, sous le seuil AA de 4,5:1.
@@ -93,9 +160,14 @@ function ChatRow({ row }: RowProps): React.ReactElement {
           {name.length > 0 ? name : t('call.unnamedParticipant')}
         </Text>
       ) : null}
-      <Text testID={`chat-body-${key}`} style={styles.text}>
-        {row.message.body}
-      </Text>
+      <View
+        testID={`chat-bubble-${key}`}
+        style={[styles.bubble, mine ? styles.bubbleSent : styles.bubbleReceived]}
+      >
+        <Text testID={`chat-body-${key}`} style={[styles.text, mine ? styles.textSent : null]}>
+          {row.message.body}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -151,7 +223,7 @@ export function ChatPanel({ chat, onSend, onClose }: ChatPanelProps): React.Reac
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text testID="chat-title" variant="titleMedium" style={styles.text}>
+        <Text testID="chat-title" style={styles.panelTitle}>
           {t('chat.title')}
         </Text>
         {/* Le point d'entrée est une ligne de feuille, pas une bascule de

@@ -4,7 +4,7 @@ import { PaperProvider, Text } from 'react-native-paper';
 
 import { sheetStyles } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
-import { SheetRow } from './sheetRow';
+import { ROW_REST_COLOR, ROW_SELECTED_COLOR, SheetRow } from './sheetRow';
 
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
@@ -104,5 +104,58 @@ describe('SheetRow', () => {
     await render(withPaper(<SheetRow testID="row" title="Un titre" onPress={jest.fn()} />));
 
     expect(screen.getByTestId('row')).toHaveProp('accessibilityRole', 'button');
+  });
+
+  // K5, côté au repos. Les trois propriétés vivent sur l'élément PRESSABLE :
+  // `TouchableRipple` étale `style` sur son `Pressable`
+  // (`TouchableRipple.native.tsx:94`), donc c'est bien le nœud que rend
+  // `getByTestId('row')` qui les porte, celui-là même que `fireEvent.press`
+  // atteint. Sur le conteneur interne, elles ne seraient joignables par rien —
+  // il n'a pas de `testID`.
+  it('pose le fond de repos, la forme et la cible minimale', async () => {
+    await render(withPaper(<SheetRow testID="row" title="Un titre" onPress={jest.fn()} />));
+
+    expect(screen.getByTestId('row')).toHaveStyle({
+      backgroundColor: ROW_REST_COLOR,
+      borderRadius: 12,
+      minHeight: 48,
+      // Sans elle, l'ondulation d'Android déborde des coins arrondis :
+      // `TouchableRipple` ne pose `overflow: 'hidden'` que pour un rendu
+      // `borderless` (`TouchableRipple.native.tsx:94`), que celui-ci n'est pas.
+      // Le rendu ne s'observe pas sous Jest — le préréglage fixe
+      // `Platform.OS` à `'ios'` — mais la PROPRIÉTÉ, elle, s'observe.
+      overflow: 'hidden',
+    });
+  });
+
+  // K5, côté sélectionné. LA MÊME prop, l'autre valeur : c'est la paire qui
+  // prouve, pas l'un des deux. Sans ce test, `selected ? … : …` pourrait être
+  // la constante `rowRest` et le précédent resterait vert ; sans le précédent,
+  // elle pourrait être la constante `rowSelected`.
+  it('bascule sur le lavis de sélection quand la ligne est choisie', async () => {
+    await render(
+      withPaper(<SheetRow testID="row" title="Un titre" selected onPress={jest.fn()} />),
+    );
+
+    expect(screen.getByTestId('row')).toHaveStyle({ backgroundColor: ROW_SELECTED_COLOR });
+  });
+
+  // Le défaut de la prop, qui est le cas de la plupart des appelants — les
+  // trois actions de modération, le partage, le chat, la main levée, le retour
+  // à l'automatique. Une valeur par défaut inversée les laverait toutes en
+  // vert, et le test ci-dessus ne le verrait pas.
+  it('ne lave rien quand l’appelant ne dit pas si la ligne est choisie', async () => {
+    await render(withPaper(<SheetRow testID="row" title="Un titre" onPress={jest.fn()} />));
+
+    expect(screen.getByTestId('row')).not.toHaveStyle({ backgroundColor: ROW_SELECTED_COLOR });
+  });
+
+  it('pose la graisse et la taille du titre', async () => {
+    await render(withPaper(<SheetRow testID="row" title="Un titre" onPress={jest.fn()} />));
+
+    expect(screen.getByTestId('row-title')).toHaveStyle({
+      fontFamily: tokens.font.semiBold,
+      fontSize: tokens.typography.rowTitle.fontSize,
+    });
   });
 });

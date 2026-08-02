@@ -4,6 +4,9 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { AudioDeviceChoice } from 'src/call/audioDevices';
+import { SHEET_SURFACE_COLOR } from 'src/screens/room/bottomSheet';
+import { SHEET_CHECK_COLOR } from 'src/screens/room/sheetCheck';
+import { ROW_REST_COLOR, ROW_SELECTED_COLOR } from 'src/screens/room/sheetRow';
 import { tokens } from 'src/ui/tokens';
 import { AudioOutputControl, type AudioOutputControlProps } from './audioOutputControl';
 
@@ -348,7 +351,7 @@ describe('AudioOutputControl, mode appareils', () => {
     // La feuille elle-même : `Modal` expose sa `Surface` sous
     // `` `${testID}-surface` `` (`Modal.tsx:219-220`).
     expect(screen.getByTestId('audio-output-sheet-surface')).toHaveStyle({
-      backgroundColor: tokens.color.surfaceDark,
+      backgroundColor: SHEET_SURFACE_COLOR,
     });
   });
 
@@ -380,6 +383,57 @@ describe('AudioOutputControl, mode appareils', () => {
     const check = await waitFor(() => screen.getByTestId('audio-output-check-7'));
 
     expect(check.props.children[0]).toBe(CHECK_GLYPH);
-    expect(check).toHaveStyle({ color: tokens.color.textDark });
+    expect(check).toHaveStyle({ color: SHEET_CHECK_COLOR });
+  });
+
+  // Le lavis sur le chemin 'devices'. Trois lignes visées d'un coup : celle qui
+  // est constatée courante, une autre qui ne l'est pas, et le retour à
+  // l'automatique — qui ne passe aucun `selected` et doit donc rester au repos.
+  // Sans cette troisième, un `selected` figé à vrai passerait les deux autres.
+  it('lave la ligne de l’appareil courant, et elle seule', async () => {
+    await render(
+      withPaper(<AudioOutputControl {...props({ currentDeviceId: 7, manual: true })} />),
+    );
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
+    expect(screen.getByTestId('audio-output-device-7')).toHaveStyle({
+      backgroundColor: ROW_SELECTED_COLOR,
+    });
+    expect(screen.getByTestId('audio-output-device-2')).toHaveStyle({
+      backgroundColor: ROW_REST_COLOR,
+    });
+    expect(screen.getByTestId('audio-output-automatic')).toHaveStyle({
+      backgroundColor: ROW_REST_COLOR,
+    });
+  });
+
+  // Le MÊME motif sur l'autre chemin, et c'est un second site d'appel : les
+  // deux branches de `mode === 'devices' ? … : …` sont structurellement
+  // identiques et mutent indépendamment. La leçon d'`AGENTS.md` — écrire les
+  // tableaux de mutations par motif, puis les multiplier par les fichiers (ici
+  // par les branches) qui l'instancient — vaut aussi à l'intérieur d'un fichier.
+  it('lave la catégorie choisie sur le chemin des catégories', async () => {
+    await render(
+      withPaper(
+        <AudioOutputControl
+          {...props({
+            mode: 'menu',
+            outputs: ['speaker', 'bluetooth'],
+            chosen: 'bluetooth',
+            devices: [],
+          })}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-option-bluetooth')).toBeTruthy());
+    expect(screen.getByTestId('audio-output-option-bluetooth')).toHaveStyle({
+      backgroundColor: ROW_SELECTED_COLOR,
+    });
+    expect(screen.getByTestId('audio-output-option-speaker')).toHaveStyle({
+      backgroundColor: ROW_REST_COLOR,
+    });
   });
 });
