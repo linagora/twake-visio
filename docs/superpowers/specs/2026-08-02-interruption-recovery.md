@@ -130,10 +130,78 @@ faire taire celui-ci. Il avalerait aussi les nôtres.
 `Event` dont la cible est le socket `/rtc/v1` vient de là et n'indique aucun défaut de
 l'application.
 
+## La seconde moitié : le service de premier plan
+
+Le crochet répare le *retour*. Il ne réparait pas l'*absence* : pendant tout le temps passé
+hors de l'application, les autres ne voyaient ni n'entendaient la personne.
+
+`modules/twake-call-service/` déclare un service typé `camera|microphone`, démarré une fois
+le transport ouvert et arrêté au raccrochage comme au démontage. Vérifié sur appareil :
+
+```
+isForeground=true  foregroundId=1  types=0x000000C0
+                                         └ 0x40 CAMERA | 0x80 MICROPHONE
+foregroundNoti=Notification(channel=twakevisio.call category=call
+                            ONGOING_EVENT|FOREGROUND_SERVICE)
+```
+
+Trois cycles d'arrière-plan : `Recording active` reste `true` et **plus aucun
+`DISCONNECT … (PID 0)`** n'apparaît. Le système ne retire plus rien.
+
+### Le `PID` du journal caméra distingue trois choses, et il faut les distinguer
+
+| ce qu'on lit | ce que c'est |
+| --- | --- |
+| `DISCONNECT … (PID 0)` | le **système** retire la caméra — l'arrière-plan sans service |
+| `DISCONNECT … (PID <le nôtre>)` | **nous** relâchons — départ de séance, ou `restartTrack()` |
+| `DISCONNECT … (PID <le nôtre>)` suivi d'un `CONNECT` d'une autre application | une autre application **évince** notre client |
+
+Confondre les deux premiers a failli faire conclure que le service ne servait à rien : les
+paires `DISCONNECT`/`CONNECT` qui subsistaient après son installation portaient notre pid,
+et c'était le crochet de reprise, pas le système.
+
+## Une optimisation écrite, mesurée, et retirée
+
+Le service rendant la reprise inutile dans le cas courant, une garde a été ajoutée pour ne
+redémarrer que si la capture était réellement morte — en reprenant le prédicat de LiveKit
+lui-même, `LocalTrack.needsReAcquisition` (`protected`) :
+
+```ts
+capture.readyState === 'live' && !capture.muted && capture.enabled;
+```
+
+**Elle est aveugle en React Native.** Protocole : ouvrir l'appareil photo du système pendant
+une séance — une autre application au premier plan évince le client caméra même à travers le
+service —, puis revenir.
+
+| | avec la garde | sans la garde |
+| --- | --- | --- |
+| `dumpsys` pendant le vol | `DISCONNECT com.linagora.twakevisio` | idem |
+| au retour | **aucun `CONNECT`**, tuile figée, et un second cycle n'y change rien | `CONNECT` en ~1 s, tuile vivante |
+
+`mediaStreamTrack.readyState` reste donc `'live'`, `muted` faux et `enabled` vrai **après**
+l'éviction. La garde a été retirée, et un test garde désormais la décision — il rougit dès
+qu'on la réintroduit.
+
+Le compromis n'est pas symétrique : une reprise inutile coûte une seconde de coupure, une
+reprise manquée coûte la caméra pour le reste de la séance.
+
 ## Ce qui reste ouvert
 
-**Aucun service de premier plan n'est déclaré** (`app.json` n'en porte pas). Le crochet
-répare le *retour* ; il ne répare pas l'*absence*. Pendant tout le temps passé hors de
-l'application, les autres ne voient ni n'entendent la personne. C'est la moitié du problème
-qui reste, et elle demande un plugin de configuration, un service natif typé
-`camera|microphone` et une notification permanente.
+**La sortie audio ne suit pas le casque.** Mesuré trois fois, dans trois états : casque
+Bluetooth connecté et `Active communication device: type:earpiece`. Le son sort de l'écouteur
+du téléphone alors qu'un casque est sur la tête, jusqu'à ce que la personne le choisisse à la
+main. La première ligne de la feuille annonce pourtant « Le son suit l'appareil que vous
+branchez ».
+
+La cause est structurelle : sur le chemin `'devices'`, AudioSwitch n'est plus démarré — c'est
+lui qui appelait `startBluetoothSco()` — et rien ne l'a remplacé. `AUDIO_OUTPUT_ORDER`
+(`src/call/devices.ts`) porte déjà la priorité voulue (`bluetooth`, `headset`, `speaker`,
+`earpiece`) et `manualOutput` (`callControlBar.tsx`) sait déjà si un choix humain a été fait.
+Il manque l'appel qui les relie.
+
+**Personne n'écoute `onDevicesChanged`.** Le module natif émet l'événement à chaque
+changement de route ; aucun abonné n'existe côté JavaScript. C'est ce qui servirait à suivre
+un casque branché en cours de séance.
+
+Ces deux points touchent au routage audio, donc à ce que les gens entendent. Non tranché.

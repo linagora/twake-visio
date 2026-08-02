@@ -6,12 +6,26 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { restartLocalCapture, useInterruptionRecovery } from 'src/call/interruption';
 
 // Un double de publication réduit à ce que `restartLocalCapture` lit : l'état
-// coupé, et la piste qui porte `restartTrack`. Le reste de l'API de LiveKit
-// n'est pas touché, donc pas simulé.
+// coupé, la piste qui porte `restartTrack`, et l'état de la capture sous-jacente.
+// Le reste de l'API de LiveKit n'est pas touché, donc pas simulé.
+type FakeTrack = { restartTrack: jest.Mock; mediaStreamTrack: unknown };
+
+// Par défaut la capture est PERDUE (`readyState: 'ended'`) : c'est le cas qui
+// demande une reprise, et celui que la plupart des tests veulent.
+function fakeTrack(
+  capture: { readyState?: string; muted?: boolean; enabled?: boolean } = {},
+): FakeTrack {
+  const { readyState = 'ended', muted = false, enabled = true } = capture;
+  return {
+    restartTrack: jest.fn(async () => undefined),
+    mediaStreamTrack: { readyState, muted, enabled },
+  };
+}
+
 function fakePublication(
-  overrides: { isMuted?: boolean; track?: { restartTrack: jest.Mock } | undefined } = {},
+  overrides: { isMuted?: boolean; track?: FakeTrack | undefined } = {},
 ): LocalTrackPublication {
-  const { isMuted = false, track = { restartTrack: jest.fn(async () => undefined) } } = overrides;
+  const { isMuted = false, track = fakeTrack() } = overrides;
   return { isMuted, track } as unknown as LocalTrackPublication;
 }
 
@@ -85,11 +99,33 @@ describe('restartLocalCapture', () => {
     expect(trackOf(mic)).toHaveBeenCalledTimes(1);
   });
 
+  it('redémarre même quand la capture se DIT encore vivante', async () => {
+    // Ce test garde une DÉCISION, pas un détail : ne pas conditionner la
+    // reprise à l'état apparent de la capture.
+    //
+    // La garde a été écrite puis retirée le 2026-08-02, mesurée aveugle. Dans
+    // `react-native-webrtc`, `readyState` reste `'live'`, `muted` reste faux et
+    // `enabled` reste vrai APRÈS qu'une autre application a évincé le client
+    // caméra — `dumpsys media.camera` journalisait pourtant le `DISCONNECT`.
+    // Deux cycles de retour n'ont alors rien repris.
+    //
+    // Voir le bloc encadré de `src/call/interruption.ts`.
+    const camera = fakePublication({
+      track: fakeTrack({ readyState: 'live', muted: false, enabled: true }),
+    });
+    await restartLocalCapture(fakeRoom({ [Track.Source.Camera]: camera }));
+
+    expect(trackOf(camera)).toHaveBeenCalledTimes(1);
+  });
+
   it("un échec sur une source n'empêche pas la reprise de l'autre", async () => {
     // La caméra est traitée avant le micro : sans isolation, une permission
     // retirée sur l'une laisserait l'autre définitivement muette.
     const camera = fakePublication({
-      track: { restartTrack: jest.fn(async () => Promise.reject(new Error('caméra refusée'))) },
+      track: {
+        restartTrack: jest.fn(async () => Promise.reject(new Error('caméra refusée'))),
+        mediaStreamTrack: { readyState: 'ended', muted: false, enabled: true },
+      },
     });
     const mic = fakePublication();
 

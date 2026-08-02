@@ -18,6 +18,33 @@ import { AppState, type AppStateStatus } from 'react-native';
 // Le micro est donc là par prudence et non par nécessité constatée : une
 // reprise dont on ne tient pas le fil est une reprise sur laquelle on ne peut
 // pas compter.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// N'AJOUTE PAS DE GARDE « la capture est-elle encore vivante ? » ICI.
+//
+// La tentation est réelle et le raisonnement paraît juste : depuis que le
+// service de premier plan existe (`src/call/callService.ts`), le système ne
+// retire plus la capture, donc redémarrer sans condition la coupe une seconde
+// à chaque retour à l'avant-plan — mesuré, trois paires
+// `DISCONNECT`/`CONNECT` portant NOTRE pid dans `dumpsys media.camera`.
+//
+// La garde a été écrite, testée, et MESURÉE AVEUGLE le 2026-08-02. Elle
+// reprenait le prédicat de LiveKit lui-même
+// (`LocalTrack.needsReAcquisition`, `protected`) :
+// `readyState === 'live' && !muted && enabled`.
+//
+// Protocole : ouvrir l'appareil photo du système pendant une séance — une
+// autre application au premier plan évince notre client caméra même avec le
+// service —, puis revenir. `dumpsys media.camera` journalise bien
+// `DISCONNECT com.linagora.twakevisio`, et pourtant la garde laissait passer :
+// dans `react-native-webrtc`, `mediaStreamTrack.readyState` reste `'live'`,
+// `muted` reste faux et `enabled` reste vrai APRÈS l'éviction. Deux cycles de
+// retour n'ont rien repris et la tuile locale est restée figée pour de bon.
+//
+// Le coût d'une reprise inutile est une coupure d'une seconde. Le coût d'une
+// reprise manquée est une caméra morte pour le reste de la séance. Le compromis
+// n'est pas symétrique.
+// ─────────────────────────────────────────────────────────────────────────────
 const INTERRUPTED_SOURCES = [Track.Source.Camera, Track.Source.Microphone] as const;
 
 /**
@@ -34,24 +61,30 @@ const INTERRUPTED_SOURCES = [Track.Source.Camera, Track.Source.Microphone] as co
  */
 export async function restartLocalCapture(room: Room): Promise<void> {
   for (const source of INTERRUPTED_SOURCES) {
-    const publication = room.localParticipant.getTrackPublication(source);
-    if (publication === undefined) continue;
-
-    // La reprise rejoue l'état DÉSIRÉ, pas l'état constaté : une caméra que la
-    // personne a coupée exprès doit le rester. `LocalTrack.restart()` recapture
-    // sans regarder l'état coupé — la garde ne peut donc être qu'ici. C'est
-    // aussi celle que LiveKit s'applique à lui-même (`!this.isMuted`).
-    if (publication.isMuted) continue;
-
-    const track = publication.track;
-    if (track === undefined) continue;
-
+    // Le corps entier est dans le `try`, et pas seulement l'appel : isolé par
+    // source, à dessein. Une permission retirée sur la caméra ne doit pas
+    // laisser le micro muet pour le reste de la séance, et il n'y a rien à
+    // dire à l'appelant — la seule action utile est déjà tentée.
     try {
+      const publication = room.localParticipant.getTrackPublication(source);
+      if (publication === undefined) continue;
+
+      // La reprise rejoue l'état DÉSIRÉ, pas l'état constaté : une caméra que
+      // la personne a coupée exprès doit le rester. `LocalTrack.restart()`
+      // recapture sans regarder l'état coupé — la garde ne peut donc être
+      // qu'ici. C'est aussi celle que LiveKit s'applique à lui-même
+      // (`!this.isMuted`).
+      if (publication.isMuted) continue;
+
+      const track = publication.track;
+      if (track === undefined) continue;
+
+      // SANS CONDITION, et ce n'est pas un oubli — voir le bloc au-dessus de
+      // `INTERRUPTED_SOURCES`. Toute garde « la capture est-elle encore
+      // vivante ? » a été mesurée AVEUGLE sur cet appareil.
       await track.restartTrack();
     } catch {
-      // Isolé par source, à dessein : une permission retirée sur la caméra ne
-      // doit pas laisser le micro muet pour le reste de la séance. Il n'y a
-      // rien à dire à l'appelant — la seule action utile est déjà tentée.
+      // Voir le commentaire au-dessus du `try`.
     }
   }
 }
