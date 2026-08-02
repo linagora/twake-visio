@@ -1,5 +1,5 @@
 import type { Room } from 'livekit-client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { IconButton } from 'react-native-paper';
@@ -12,6 +12,8 @@ import {
   listAudioOutputs,
   openSystemRoutePicker,
   readCurrentAudioDeviceId,
+  routeToPreferredDevice,
+  watchPreferredDevice,
   selectAudioDevice,
   selectAudioOutput,
 } from 'src/call/audioRoute';
@@ -178,6 +180,16 @@ export function CallControlBar({
   // plateforme.
   const routeControl = audioRouteControl();
 
+  // Un casque allumé EN SÉANCE doit prendre le son, comme un casque déjà
+  // connecté le prend à l'entrée (`startAudioRoute`). Sans cette écoute, la
+  // première ligne de la feuille — « Le son suit l'appareil que vous branchez »
+  // — ne vaudrait que pour l'entrée.
+  //
+  // Réabonné à chaque bascule de `manualOutput`, ce qui évite une `ref` : le
+  // coût est un désabonnement par choix manuel, et le contrat de
+  // `watchPreferredDevice` reste de relire à chaque notification.
+  useEffect(() => watchPreferredDevice(() => manualOutput), [manualOutput]);
+
   const handleToggleMic = (): void => {
     const next = !micOn;
     setMicOn(next);
@@ -286,6 +298,11 @@ export function CallControlBar({
   // nôtre effacé.
   const handleAutomaticAudioOutput = (): void => {
     clearAudioDevice()
+      // Rendre la main au système la rendait à l'ÉCOUTEUR : mesuré, Android ne
+      // choisit pas le casque tout seul sur ce chemin. « Automatique » veut
+      // donc dire NOTRE automatique — la préférence, réappliquée — sans quoi
+      // la ligne qui l'annonce serait fausse en un seul geste.
+      .then(() => routeToPreferredDevice())
       .then(() => readCurrentAudioDeviceId())
       .then((current) => {
         setManualOutput(false);

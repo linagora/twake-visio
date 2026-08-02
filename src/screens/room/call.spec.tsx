@@ -1859,6 +1859,45 @@ describe('CallScreen, sortie audio par appareil', () => {
     expect(screen.queryByTestId('audio-output-automatic')).toBeNull();
   });
 
+  it("réapplique la préférence quand on rend la main à l'automatique", async () => {
+    // Rendre la main au système la rendait à l'ÉCOUTEUR : mesuré trois fois sur
+    // Pixel 10 Pro Fold, Android ne choisit pas le casque tout seul sur ce
+    // chemin. Sans cette réapplication, « Le son suit l'appareil que vous
+    // branchez » — la ligne qui porte ce geste — devient fausse en un seul
+    // appui.
+    const prefer = jest.spyOn(audioRoute, 'routeToPreferredDevice').mockResolvedValue(true);
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-device-7'));
+
+    await settleMenus();
+    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-automatic'));
+
+    await waitFor(() => expect(prefer).toHaveBeenCalledTimes(1));
+  });
+
+  it('écoute les changements de route en séance, et se désabonne en partant', async () => {
+    // Un casque allumé PENDANT la séance doit prendre le son, comme celui déjà
+    // connecté le prend à l'entrée. Et l'abonnement ne doit pas survivre à
+    // l'écran : il rappellerait la préférence sur une séance finie.
+    const unsubscribe = jest.fn();
+    const watch = jest.spyOn(audioRoute, 'watchPreferredDevice').mockReturnValue(unsubscribe);
+
+    const view = await renderCall();
+    await waitFor(() => expect(watch).toHaveBeenCalled());
+    expect(unsubscribe).not.toHaveBeenCalled();
+
+    await view.unmount();
+
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+
   it("n'affiche rien quand l'énumération échoue, et ouvre une feuille vide", async () => {
     jest.spyOn(audioRoute, 'listAudioDevices').mockRejectedValue(new Error('énumération refusée'));
 

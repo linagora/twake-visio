@@ -1,4 +1,4 @@
-import { readAudioDevices } from 'src/call/audioDevices';
+import { preferredAudioDevice, readAudioDevices } from 'src/call/audioDevices';
 
 // Les constantes `AudioDeviceInfo.TYPE_*`, relevées par `javap -constants` sur
 // `android-36/android.jar` — jamais recopiées de mémoire.
@@ -146,5 +146,71 @@ describe('readAudioDevices', () => {
     ]);
 
     expect(list.map((d) => d.ordinal)).toEqual([1, 2]);
+  });
+});
+
+describe('preferredAudioDevice', () => {
+  it('rend le casque Bluetooth quand il y en a un', () => {
+    // Le besoin d'origine : casque sur la tête, son dans l'écouteur du
+    // téléphone. Mesuré trois fois sur Pixel 10 Pro Fold — `dumpsys audio` lit
+    // `Active communication device: type:earpiece` avec le Jabra connecté et le
+    // mode de communication accordé. Sur le chemin 'devices', AudioSwitch n'est
+    // plus démarré et c'est lui qui appelait `startBluetoothSco()` : plus
+    // personne ne choisit.
+    const devices = readAudioDevices([
+      { id: 1, type: TYPE_BUILTIN_EARPIECE, name: 'Pixel 10 Pro Fold' },
+      { id: 2, type: TYPE_BUILTIN_SPEAKER, name: 'Pixel 10 Pro Fold' },
+      { id: 3, type: TYPE_BLUETOOTH_SCO, name: 'Jabra Evolve3 85' },
+    ]);
+
+    expect(preferredAudioDevice(devices)?.id).toBe(3);
+  });
+
+  it('préfère le Bluetooth au casque filaire quand les deux sont branchés', () => {
+    const devices = readAudioDevices([
+      { id: 1, type: TYPE_WIRED_HEADSET, name: 'Casque' },
+      { id: 2, type: TYPE_BLUETOOTH_SCO, name: 'Jabra Evolve3 85' },
+    ]);
+
+    expect(preferredAudioDevice(devices)?.id).toBe(2);
+  });
+
+  it("rend le casque filaire quand il n'y a pas de Bluetooth", () => {
+    // La seconde polarité de la préférence ci-dessus : sans elle, le test
+    // précédent passerait aussi contre « rends toujours le premier ».
+    const devices = readAudioDevices([
+      { id: 1, type: TYPE_BUILTIN_EARPIECE, name: 'Pixel 10 Pro Fold' },
+      { id: 2, type: TYPE_WIRED_HEADSET, name: 'Casque' },
+    ]);
+
+    expect(preferredAudioDevice(devices)?.id).toBe(2);
+  });
+
+  it("rend null quand aucun casque n'est disponible", () => {
+    // Et surtout PAS le haut-parleur. Choisir entre écouteur et haut-parleur
+    // n'est pas la question posée : sans casque, on laisse le système décider,
+    // ce qu'il fait déjà. Poser une route ici serait un changement de
+    // comportement que personne n'a demandé.
+    const devices = readAudioDevices([
+      { id: 1, type: TYPE_BUILTIN_EARPIECE, name: 'Pixel 10 Pro Fold' },
+      { id: 2, type: TYPE_BUILTIN_SPEAKER, name: 'Pixel 10 Pro Fold' },
+    ]);
+
+    expect(preferredAudioDevice(devices)).toBeNull();
+  });
+
+  it('rend null sur une liste vide', () => {
+    expect(preferredAudioDevice([])).toBeNull();
+  });
+
+  it('rend le PREMIER Bluetooth quand deux sont connectés', () => {
+    // Le cas du propriétaire : casque et voiture en même temps. L'ordre de la
+    // liste décide, et cette liste est celle que `readAudioDevices` a triée.
+    const devices = readAudioDevices([
+      { id: 7, type: TYPE_BLUETOOTH_SCO, name: 'Jabra Evolve3 85' },
+      { id: 9, type: TYPE_BLE_HEADSET, name: 'Tesla Model Y' },
+    ]);
+
+    expect(preferredAudioDevice(devices)?.id).toBe(7);
   });
 });

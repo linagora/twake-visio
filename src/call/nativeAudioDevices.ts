@@ -8,6 +8,10 @@ export type NativeAudioDevicesModule = {
   release(): Promise<void>;
   selectDevice(id: number): Promise<boolean>;
   clearDevice(): Promise<void>;
+  // Fourni par la classe de base des modules Expo, pas par notre Kotlin : le
+  // module y déclare seulement `Events("onDevicesChanged")`. Déclaré ici parce
+  // que ce type est écrit à la main — le pont ne porte aucun contrat.
+  addListener(eventName: 'onDevicesChanged', listener: () => void): { remove(): void };
 };
 
 // `requireOptionalNativeModule` et non `requireNativeModule` : le second LÈVE
