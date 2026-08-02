@@ -3,6 +3,7 @@ import React from 'react';
 
 import type { RecordingState } from 'src/call/recording';
 import { tokens } from 'src/ui/tokens';
+import { CALL_SURFACE_HAIRLINE, CALL_SURFACE_TINT } from './callHeader';
 import { RecordingIndicator } from './recordingIndicator';
 
 // Aucune des 14 clés que ce composant affiche n'interpole (contrairement à
@@ -68,12 +69,12 @@ describe('RecordingIndicator', () => {
   });
 
   // C1, même famille que waitingBanner.spec.tsx et cameraMenu.spec.tsx :
-  // `call.tsx` force un fond sombre dans les deux schémas alors que le thème
-  // Paper suit le schéma système. Sans cette couleur explicite, le texte
-  // retomberait sur `theme.colors.onSurface` (#1A1A1A en clair, quasi invisible
-  // sur ce fond). RNTL ne rend pas les couleurs : ce test ne peut garder que le
-  // style est bien posé, pas qu'il rend lisible.
-  it('pose la couleur claire du texte sur le fond sombre hérité', async () => {
+  // `call.tsx` force un fond sombre alors que `makeTheme` rend désormais le
+  // thème TOUJOURS clair. Sans cette couleur explicite, le texte retomberait
+  // sur `theme.colors.onSurface` (#141815, quasi invisible sur ce fond). RNTL
+  // ne rend pas les couleurs : ce test ne peut garder que le style est bien
+  // posé, pas qu'il rend lisible. 13,62:1 sur le lavis de la puce.
+  it('pose la couleur claire du texte sur le lavis de sa puce', async () => {
     const state: RecordingState = { phase: 'recording', mode: 'screen_recording' };
 
     await render(<RecordingIndicator state={state} />);
@@ -81,5 +82,29 @@ describe('RecordingIndicator', () => {
     expect(screen.getByTestId('recording-indicator')).toHaveStyle({
       color: tokens.color.textDark,
     });
+  });
+
+  // On force la SURFACE et le TEXTE, ou ni l'un ni l'autre. Un lavis NEUTRE et
+  // non l'ambre du signal de main levée : cet indicateur annonce aussi bien un
+  // enregistrement en cours qu'une transcription, une sauvegarde ou une
+  // interruption, et une couleur d'alerte mentirait sur trois de ces quatre.
+  it('pose le lavis neutre de la puce et son filet', async () => {
+    const state: RecordingState = { phase: 'recording', mode: 'screen_recording' };
+
+    await render(<RecordingIndicator state={state} />);
+
+    expect(screen.getByTestId('recording-indicator-chip')).toHaveStyle({
+      backgroundColor: CALL_SURFACE_TINT,
+      borderColor: CALL_SURFACE_HAIRLINE,
+      borderRadius: 13,
+    });
+  });
+
+  it('ne pose aucune puce au repos', async () => {
+    // L'autre borne de la même conditionnelle : sans elle, une puce rendue
+    // inconditionnellement laisserait un cadre vide au-dessus de la scène.
+    await render(<RecordingIndicator state={{ phase: 'idle', mode: null }} />);
+
+    expect(screen.queryByTestId('recording-indicator-chip')).toBe(null);
   });
 });

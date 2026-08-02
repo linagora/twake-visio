@@ -3,6 +3,7 @@ import React from 'react';
 
 import type { Reaction } from 'src/call/reactions';
 import { tokens } from 'src/ui/tokens';
+import { CALL_SURFACE_HAIRLINE } from './callHeader';
 import { ReactionOverlay } from './reactionOverlay';
 
 jest.mock('react-i18next', () => ({
@@ -75,6 +76,12 @@ describe('ReactionOverlay', () => {
     });
     expect(screen.getByTestId('reaction-bubble-r-1')).toHaveStyle({
       backgroundColor: tokens.color.surfaceDark,
+      // Le même filet que les puces et la carte du bandeau d'admission : la
+      // bulle se pose sur de la VIDÉO, dont on ne connaît ni la couleur ni la
+      // luminance, et c'est le seul endroit de cet écran où un fond opaque
+      // reste obligatoire. Le filet lui donne son bord quand la vidéo derrière
+      // est sombre.
+      borderColor: CALL_SURFACE_HAIRLINE,
     });
   });
 
