@@ -1,6 +1,7 @@
-import { AudioSession, registerGlobals } from '@livekit/react-native';
+import { registerGlobals } from '@livekit/react-native';
 import { Room, RoomEvent } from 'livekit-client';
 
+import { startAudioRoute, stopAudioRoute } from 'src/call/audioRoute';
 import type { CallState, RoomAccess } from 'src/call/types';
 
 // `livekit-client` s'appuie sur les objets WebRTC globaux — RTCPeerConnection,
@@ -178,12 +179,12 @@ export function createCallSession(): CallSession {
 
     let outcome: CallState;
     try {
-      // `@livekit/react-native` exige une session audio ouverte avant de
-      // rejoindre : sur natif, c'est elle qui configure le moteur audio de la
-      // plateforme. Sans elle, le transport s'établit mais la publication ne
-      // suit pas, et la négociation expire sur un « negotiation timed out »
-      // qui ne nomme pas sa cause. Constaté sur appareil.
-      await AudioSession.startAudioSession();
+      // Le propriétaire de la route exige d'être ouvert avant de rejoindre :
+      // sur natif, c'est lui qui configure le moteur audio de la plateforme.
+      // Sans lui, le transport s'établit mais la publication ne suit pas, et la
+      // négociation expire sur un « negotiation timed out » qui ne nomme pas sa
+      // cause. Constaté sur appareil.
+      await startAudioRoute();
       await room.connect(access.livekitUrl, access.token);
       outcome = { status: 'connected' };
     } catch (err: unknown) {
@@ -247,7 +248,7 @@ export function createCallSession(): CallSession {
     room.off(RoomEvent.Disconnected, onDisconnected);
     listeners.clear();
 
-    void AudioSession.stopAudioSession().catch(() => undefined);
+    void stopAudioRoute().catch(() => undefined);
 
     // Le nettoyage d'un `useEffect` est synchrone : il ne peut pas attendre.
     // La coupure part donc sans être attendue. Sans elle, la Room reste
@@ -278,10 +279,10 @@ export function createCallSession(): CallSession {
       // dont plus rien ne sort, sans aucun recours pour l'utilisateur.
     }
 
-    // La session audio ne survit pas au raccrochage : la laisser ouverte garde
+    // La route audio ne survit pas au raccrochage : la laisser ouverte garde
     // le mode de routage audio de la plateforme, et le haut-parleur reste
     // détourné pour le reste de l'application.
-    await AudioSession.stopAudioSession().catch(() => undefined);
+    await stopAudioRoute().catch(() => undefined);
 
     // Une coupure lente peut se terminer après qu'une nouvelle tentative a
     // repris la main. Publier `idle` raturerait alors le `connecting` de cette

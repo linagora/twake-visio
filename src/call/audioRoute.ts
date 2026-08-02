@@ -1,18 +1,53 @@
 import { AudioSession } from '@livekit/react-native';
 import { Platform } from 'react-native';
 
+import { readAudioDevices, type AudioDeviceChoice } from 'src/call/audioDevices';
 import { readAudioOutputs, type AudioOutputKind } from 'src/call/devices';
+import { nativeAudioDevices } from 'src/call/nativeAudioDevices';
 
 // 'system' : le sélecteur est celui d'iOS, on ne contrôle ni son apparence ni
-// ses libellés. 'menu' : le nôtre, alimenté par `getAudioOutputs()`.
+// ses libellés. 'menu' : le nôtre, alimenté par `getAudioOutputs()`, par
+// CATÉGORIE. 'devices' : le nôtre, alimenté par notre module natif, par
+// APPAREIL NOMMÉ.
 //
 // Rendu comme une valeur plutôt que lu depuis `Platform` par le composant :
-// c'est ce qui permet à une spec de rendre les deux branches sans bouchonner
+// c'est ce qui permet à une spec de rendre les trois branches sans bouchonner
 // `Platform`.
-export type AudioRouteControl = 'menu' | 'system';
+export type AudioRouteControl = 'devices' | 'menu' | 'system';
+
+// Le module natif rend `null` partout où il n'est pas lié — sous Jest, sur iOS,
+// et dans un binaire construit sans lui. `isSupported()` ajoute le plancher
+// API 31 : `getAvailableCommunicationDevices()` n'existe pas en dessous.
+function ownsRoute(): boolean {
+  const native = nativeAudioDevices;
+  return native !== null && native.isSupported();
+}
 
 export function audioRouteControl(): AudioRouteControl {
-  return Platform.OS === 'ios' ? 'system' : 'menu';
+  if (Platform.OS === 'ios') return 'system';
+  return ownsRoute() ? 'devices' : 'menu';
+}
+
+// Un seul arbitre par séance. Sur le chemin 'devices' notre module prend le
+// focus audio, le mode et la route ; AudioSwitch n'est JAMAIS démarré, sans
+// quoi son prochain `onDeviceConnected` rappellerait `startBluetoothSco()` et
+// écraserait notre `setCommunicationDevice()`.
+export async function startAudioRoute(): Promise<void> {
+  const native = nativeAudioDevices;
+  if (native !== null && native.isSupported()) {
+    await native.acquire();
+    return;
+  }
+  await AudioSession.startAudioSession();
+}
+
+export async function stopAudioRoute(): Promise<void> {
+  const native = nativeAudioDevices;
+  if (native !== null && native.isSupported()) {
+    await native.release();
+    return;
+  }
+  await AudioSession.stopAudioSession();
 }
 
 // Rend `[]` tant que `startAudioSession()` n'a pas tourné — c'est-à-dire au
@@ -41,4 +76,37 @@ export async function selectAudioOutput(kind: AudioOutputKind): Promise<void> {
 // apparu. Sur Android l'appel résout sans rien faire.
 export async function openSystemRoutePicker(): Promise<void> {
   await AudioSession.showAudioRoutePicker();
+}
+
+// Le chemin 'devices'. `[]` quand le module n'est pas là : l'écran retombe
+// alors sur le mode 'menu', qui ne lit pas cette liste.
+export async function listAudioDevices(): Promise<readonly AudioDeviceChoice[]> {
+  const native = nativeAudioDevices;
+  if (native === null) return [];
+  return readAudioDevices(await native.listDevices());
+}
+
+// Rend ce que `setCommunicationDevice()` a rendu : `false` dit que le système a
+// refusé la route, et l'écran doit alors laisser la coche où elle était.
+export async function selectAudioDevice(id: number): Promise<boolean> {
+  const native = nativeAudioDevices;
+  if (native === null) return false;
+  return native.selectDevice(id);
+}
+
+// `clearCommunicationDevice()` — le retour à l'automatique qu'AudioSwitch ne
+// sait pas faire : `setUserSelectedAudioDevice` y est `protected`, donc aucun
+// appelant extérieur ne peut remettre le champ à `null`.
+export async function clearAudioDevice(): Promise<void> {
+  const native = nativeAudioDevices;
+  if (native === null) return;
+  await native.clearDevice();
+}
+
+// L'état CONSTATÉ, pas celui qu'on a demandé : `getCommunicationDevice()` dit
+// où le son part vraiment. C'est ce qu'aucune API n'offrait au périmètre A.
+export async function readCurrentAudioDeviceId(): Promise<number | null> {
+  const native = nativeAudioDevices;
+  if (native === null) return null;
+  return native.getCurrentDeviceId();
 }

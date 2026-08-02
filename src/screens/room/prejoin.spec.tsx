@@ -89,6 +89,28 @@ describe('PrejoinScreen', () => {
     });
   });
 
+  it("dit pourquoi et laisse une sortie quand l'accès est refusé", async () => {
+    // Mesuré sur appareil : une session expirée renvoyait `unauthorized`, la
+    // seule branche traitée étant `lobby`. `access` restait `null`, l'écran
+    // affichait un sablier NU — sans message, sans sortie, sans retour — et le
+    // `.catch(() => setAccess(null))` posait `null` sur `null`, ce qui avait
+    // l'apparence d'un traitement d'erreur sans en être un.
+    //
+    // C'est le premier écran qu'on traverse en ouvrant une réunion, et le même
+    // cul-de-sac que `call.tsx` a déjà payé deux fois.
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
+
+    await render(<PrejoinScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
+    expect(screen.getByTestId('prejoin-error')).toHaveTextContent('error.unauthorized');
+    expect(screen.queryByTestId('prejoin-loading')).toBeNull();
+    await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+
   it("porte l'état des périphériques dans l'URL de l'appel", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 

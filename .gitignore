@@ -3,6 +3,13 @@
 
 /android
 /ios
+
+# La sortie de Gradle du module natif local. `/android` est ANCRÉ — c'est ce qui
+# fait que `modules/*/android/**` est bien suivi, et c'est voulu : le module y
+# vit. Mais son `build/` est produit par `expo prebuild` + Gradle, au même titre
+# que `/android` lui-même, et n'a rien à faire dans le dépôt.
+modules/*/android/build/
+
 .expo/
 node_modules
 *.log

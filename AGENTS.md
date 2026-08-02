@@ -302,6 +302,32 @@ Et un errata placé en tête de document **n'atteint personne** : `scripts/task-
 n'extrait que le texte d'une seule tâche. La correction qui compte est celle qu'on pose
 **dans la tâche**, à l'endroit du code fautif.
 
+### Une règle écrite dans un commentaire crée une dette à CHAQUE endroit qui la cite
+
+Quatre fois en deux jours, sur la même règle — celle qui dit ce qui survit au plein écran.
+Chaque fois, le commentaire était faux le lendemain, et chaque fois la cause était la même.
+
+| #   | Ce qui était écrit                                                                                | Pourquoi c'était faux                                                             |
+| --- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 1   | « survit ce qui n'offre aucune COMMANDE »                                                         | `RecordingIndicator` n'en offre aucune et il est masqué                           |
+| 2   | « survit ce dont l'absence rendrait l'écran TROMPEUR »                                            | une main levée est _manquée_, pas trompeuse, et elle survit                       |
+| 3   | « à l'inverse des trois bandeaux » (commentaire de la reconnexion)                                | le garde-fou n'en contient plus que deux                                          |
+| 4   | « pour la même raison que les trois bandeaux : une tuile et rien d'autre » (calque des réactions) | cite **verbatim la règle abrogée**, vingt lignes sous le commentaire qui l'abroge |
+
+Les deux premières viennent d'un critère **déduit d'un seul cas** au lieu d'être vérifié
+contre l'ensemble. Un critère est une affirmation universelle : il ne s'écrit qu'après avoir
+été confronté à **toutes** les surfaces, y compris celles qu'on ne touche pas.
+
+Les deux suivantes viennent d'ailleurs, et c'est la vraie leçon :
+
+> **Un site qui CITE la règle en dépend autant qu'un site qui l'applique.** Le calque des
+> réactions ne bougeait pas — c'est précisément pour ça que personne ne l'a relu.
+
+Le réflexe qui les aurait toutes attrapées est mécanique, et il ne demande aucun jugement :
+**avant de livrer un changement de règle, `grep` la formulation abrogée dans tout `src/`**, et
+traiter chaque occurrence comme un site à corriger. Ici, chercher « une tuile et rien
+d'autre » ou « trois bandeaux » suffisait.
+
 ## Tests
 
 `*.spec.ts` / `*.spec.tsx`, colocated. No snapshots. Bar: `npm test`,

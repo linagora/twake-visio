@@ -1,0 +1,16 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'com.linagora.twakevisio.audiodevices'
+version = '0.1.0'
+
+android {
+  namespace 'com.linagora.twakevisio.audiodevices'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+  lint {
+    abortOnError true
+  }
+}
