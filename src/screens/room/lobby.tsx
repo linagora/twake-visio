@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Text } from 'react-native-paper';
+import { ActivityIndicator, Button, Text } from 'react-native-paper';
 
 import { requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
@@ -115,50 +115,61 @@ export function LobbyScreen(): React.ReactElement {
     };
   }, [awaitingAdmission, slug, router]);
 
-  if (state.kind === 'requesting') {
-    return (
-      <View style={styles.root}>
-        <ActivityIndicator testID="lobby-loading" />
-      </View>
-    );
-  }
+  // Les cinq états rendent leur CONTENU seul, jamais le cadre. Le bouton de
+  // sortie est posé une fois, après — sinon chaque état est une occasion de
+  // l'oublier, et les cinq l'avaient oublié : `refusé`, `aucun modérateur` et
+  // `échec` sont terminaux, donc on y restait jusqu'à tuer l'application.
+  const renderBody = (): React.ReactElement => {
+    if (state.kind === 'requesting') return <ActivityIndicator testID="lobby-loading" />;
 
-  if (state.kind === 'no-moderator') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'no-moderator') {
+      return (
         <Text testID="lobby-no-moderator" variant="titleMedium" style={styles.message}>
           {t('lobby.noModerator')}
         </Text>
-      </View>
-    );
-  }
+      );
+    }
 
-  if (state.kind === 'denied') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'denied') {
+      return (
         <Text testID="lobby-denied" variant="titleMedium" style={styles.message}>
           {t('lobby.denied')}
         </Text>
-      </View>
-    );
-  }
+      );
+    }
 
-  if (state.kind === 'failed') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'failed') {
+      return (
         <Text testID="lobby-error" variant="titleMedium" style={styles.message}>
           {t(state.message)}
         </Text>
-      </View>
+      );
+    }
+
+    return (
+      <>
+        <ActivityIndicator />
+        <Text testID="lobby-waiting" variant="titleMedium" style={styles.message}>
+          {t('lobby.waiting')}
+        </Text>
+      </>
     );
-  }
+  };
 
   return (
     <View style={styles.root}>
-      <ActivityIndicator />
-      <Text testID="lobby-waiting" variant="titleMedium" style={styles.message}>
-        {t('lobby.waiting')}
-      </Text>
+      {renderBody()}
+      {/* `replace` et non `back` : on arrive ici par un `replace` depuis le
+          pré-join, donc la pile est vide et `back` ne mènerait nulle part. */}
+      <Button
+        buttonColor={tokens.color.brandStrong}
+        mode="contained"
+        onPress={() => router.replace('/home')}
+        testID="lobby-leave-btn"
+        textColor={tokens.color.onBrand}
+      >
+        {t('call.leave')}
+      </Button>
     </View>
   );
 }

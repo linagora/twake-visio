@@ -11,6 +11,7 @@ import { getActiveAccount } from 'src/auth/accounts';
 import { rememberRoomTitle } from 'src/rooms/titles';
 import { readPreferences } from 'src/settings/preferences';
 import type { AccessLevel } from 'src/call/types';
+import { ScreenHeader } from 'src/ui/screenHeader';
 import { SectionLabel } from 'src/ui/sectionLabel';
 import { SurfaceCard } from 'src/ui/surfaceCard';
 import { tokens } from 'src/ui/tokens';
@@ -60,6 +61,7 @@ const styles = StyleSheet.create({
     gap: 18,
     padding: 18,
   },
+  screen: { backgroundColor: tokens.color.appBackground, flex: 1 },
   selected: {
     color: tokens.color.textPrimary,
     fontFamily: tokens.font.semiBold,
@@ -197,115 +199,127 @@ export function CreateRoomScreen(): React.ReactElement {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.root}>
-      <View style={styles.group}>
-        <SectionLabel label={t('room.name')} testID="create-name-label" />
-        <TextInput
-          label={t('room.name')}
-          onChangeText={setName}
-          testID="room-name-input"
-          value={name}
-        />
-      </View>
+    <View style={styles.screen}>
+      {/* `app/_layout.tsx` masque l'en-tête du Stack : sans cette flèche,
+          l'écran est un cul-de-sac. Le retour est un `replace` vers l'accueil
+          plutôt qu'un `back`, comme dans `prejoin.tsx` — il vaut quelle que
+          soit la pile, y compris vide. */}
+      <ScreenHeader
+        backLabel={t('common.back')}
+        onBackPress={() => router.replace('/home')}
+        testID="create-header"
+        title={t('home.create')}
+      />
+      <ScrollView contentContainerStyle={styles.root}>
+        <View style={styles.group}>
+          <SectionLabel label={t('room.name')} testID="create-name-label" />
+          <TextInput
+            label={t('room.name')}
+            onChangeText={setName}
+            testID="room-name-input"
+            value={name}
+          />
+        </View>
 
-      <View style={styles.group}>
-        <SectionLabel label={t('settings.rows.defaultAccess')} testID="create-access-label" />
-        {/* `Pressable` plutôt qu'un `RadioButton.Item`, mais avec sa SÉMANTIQUE :
+        <View style={styles.group}>
+          <SectionLabel label={t('settings.rows.defaultAccess')} testID="create-access-label" />
+          {/* `Pressable` plutôt qu'un `RadioButton.Item`, mais avec sa SÉMANTIQUE :
             `accessibilityRole="radio"` et `accessibilityState.checked`. C'est ce
             que `toBeChecked()` observe, et c'est aussi ce qu'un lecteur d'écran
             annonce — un `Pressable` nu perdrait les deux. */}
-        {ACCESS_LEVELS.map((level) => {
-          const selected = accessLevel === level;
-          return (
-            <Pressable
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selected }}
-              key={level}
-              onPress={() => handleAccessLevelChange(level)}
-              style={[styles.option, selected ? styles.optionSelected : null]}
-              testID={`access-${level}`}
-            >
-              <View style={[styles.dot, selected ? styles.dotSelected : null]}>
-                {selected ? (
-                  <View style={[styles.dotFill, { backgroundColor: tokens.color.brand }]} />
-                ) : null}
-              </View>
-              <View style={styles.optionText}>
-                <Text style={styles.optionTitle} testID={`access-${level}-title`}>
-                  {t(ACCESS_NAME[level])}
-                </Text>
-                {/* La CONSÉQUENCE, jamais le seul nom : « trusted » ne dit pas à
+          {ACCESS_LEVELS.map((level) => {
+            const selected = accessLevel === level;
+            return (
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                key={level}
+                onPress={() => handleAccessLevelChange(level)}
+                style={[styles.option, selected ? styles.optionSelected : null]}
+                testID={`access-${level}`}
+              >
+                <View style={[styles.dot, selected ? styles.dotSelected : null]}>
+                  {selected ? (
+                    <View style={[styles.dotFill, { backgroundColor: tokens.color.brand }]} />
+                  ) : null}
+                </View>
+                <View style={styles.optionText}>
+                  <Text style={styles.optionTitle} testID={`access-${level}-title`}>
+                    {t(ACCESS_NAME[level])}
+                  </Text>
+                  {/* La CONSÉQUENCE, jamais le seul nom : « trusted » ne dit pas à
                     l'organisateur que ses invités externes resteront à la porte. */}
-                <Text style={styles.optionDesc} testID={`access-${level}-desc`}>
-                  {t(ACCESS_COPY[level])}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
+                  <Text style={styles.optionDesc} testID={`access-${level}-desc`}>
+                    {t(ACCESS_COPY[level])}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
 
-        {accessLevel !== 'public' ? (
-          <HelperText type="info" testID="moderator-warning" visible>
-            {t('lobby.noModerator')}
-          </HelperText>
-        ) : null}
-      </View>
+          {accessLevel !== 'public' ? (
+            <HelperText type="info" testID="moderator-warning" visible>
+              {t('lobby.noModerator')}
+            </HelperText>
+          ) : null}
+        </View>
 
-      {/* Les co-organisateurs restent ICI, et c'est la raison pour laquelle cet
+        {/* Les co-organisateurs restent ICI, et c'est la raison pour laquelle cet
           écran n'est pas devenu une feuille : le mockup n'avait prévu que deux
           champs, et transposer sa feuille telle quelle aurait supprimé une
           exigence produit — `perform_create` n'attribue `owner` qu'au créateur. */}
-      <View style={styles.group}>
-        <SectionLabel label={t('room.coOwners')} testID="create-coowners-label" />
-        <TextInput
-          autoCapitalize="none"
-          keyboardType="email-address"
-          label={t('room.coOwnerSearch')}
-          onChangeText={setCoOwnerQuery}
-          onSubmitEditing={handleSearch}
-          testID="co-owner-input"
-          value={coOwnerQuery}
-        />
+        <View style={styles.group}>
+          <SectionLabel label={t('room.coOwners')} testID="create-coowners-label" />
+          <TextInput
+            autoCapitalize="none"
+            keyboardType="email-address"
+            label={t('room.coOwnerSearch')}
+            onChangeText={setCoOwnerQuery}
+            onSubmitEditing={handleSearch}
+            testID="co-owner-input"
+            value={coOwnerQuery}
+          />
 
-        {candidates.length === 0 && coOwners.length === 0 ? null : (
-          <SurfaceCard testID="create-coowners-card">
-            {candidates.map((user) => (
-              <Button
-                key={user.id}
-                mode="text"
-                onPress={() => handleAddCoOwner(user)}
-                style={styles.candidate}
-                testID="co-owner-candidate"
-                textColor={tokens.color.brandStrong}
-              >
-                {user.email}
-              </Button>
-            ))}
-            {coOwners.map((user) => (
-              <Text key={user.id} style={styles.selected} testID="co-owner-selected">
-                {user.email}
-              </Text>
-            ))}
-          </SurfaceCard>
-        )}
-      </View>
+          {candidates.length === 0 && coOwners.length === 0 ? null : (
+            <SurfaceCard testID="create-coowners-card">
+              {candidates.map((user) => (
+                <Button
+                  key={user.id}
+                  mode="text"
+                  onPress={() => handleAddCoOwner(user)}
+                  style={styles.candidate}
+                  testID="co-owner-candidate"
+                  textColor={tokens.color.brandStrong}
+                >
+                  {user.email}
+                </Button>
+              ))}
+              {coOwners.map((user) => (
+                <Text key={user.id} style={styles.selected} testID="co-owner-selected">
+                  {user.email}
+                </Text>
+              ))}
+            </SurfaceCard>
+          )}
+        </View>
 
-      <HelperText type="error" visible={failure !== null} testID="create-error">
-        {failure === null ? '' : t(failure)}
-      </HelperText>
+        <HelperText type="error" visible={failure !== null} testID="create-error">
+          {failure === null ? '' : t(failure)}
+        </HelperText>
 
-      <Button
-        buttonColor={tokens.color.brandStrong}
-        disabled={busy}
-        loading={busy}
-        mode="contained"
-        onPress={handleSubmit}
-        style={styles.submit}
-        testID="submit-btn"
-        textColor={tokens.color.onBrand}
-      >
-        {t('home.create')}
-      </Button>
-    </ScrollView>
+        <Button
+          buttonColor={tokens.color.brandStrong}
+          disabled={busy}
+          loading={busy}
+          mode="contained"
+          onPress={handleSubmit}
+          style={styles.submit}
+          testID="submit-btn"
+          textColor={tokens.color.onBrand}
+        >
+          {t('home.create')}
+        </Button>
+      </ScrollView>
+    </View>
   );
 }

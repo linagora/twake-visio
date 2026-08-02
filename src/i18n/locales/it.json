@@ -167,5 +167,6 @@
   "prejoin.title": "Pronto a partecipare?",
   "prejoin.yourName": "Il tuo nome",
   "prejoin.back": "Indietro",
-  "prejoin.cameraPreview": "Anteprima fotocamera"
+  "prejoin.cameraPreview": "Anteprima fotocamera",
+  "common.back": "Indietro"
 }

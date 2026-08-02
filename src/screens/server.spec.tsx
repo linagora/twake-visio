@@ -198,4 +198,15 @@ describe('ServerScreen', () => {
     });
     expect(screen.queryByTestId('server-input')).toBe(null);
   });
+
+  // Le retour va à `welcome`, et non à `home` : on n'est pas encore connecté
+  // ici. Sans cette flèche, changer d'avis après avoir choisi « se connecter »
+  // demandait de tuer l'application.
+  it('offre une sortie vers l’écran d’accueil non connecté', async () => {
+    await render(<ServerScreen />);
+
+    await fireEvent.press(screen.getByTestId('server-header-back'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+  });
 });

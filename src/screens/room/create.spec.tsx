@@ -230,4 +230,14 @@ describe('CreateRoomScreen, intitulé lisible', () => {
     // que rien ne viendrait jamais nettoyer.
     expect(findRoomTitle('abc-defg-hij')).toBe(null);
   });
+
+  // `app/_layout.tsx` masque l'en-tête du Stack : sans cette flèche, l'écran
+  // est un cul-de-sac. Signalé sur appareil, et vrai depuis l'origine.
+  it("offre une sortie vers l'accueil", async () => {
+    await render(<CreateRoomScreen />);
+
+    await fireEvent.press(screen.getByTestId('create-header-back'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
 });

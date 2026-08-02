@@ -6,11 +6,13 @@ import { Button, HelperText, TextInput } from 'react-native-paper';
 
 import { signIn, type LoginError } from 'src/auth/login';
 import { fetchServerUrlForEmail } from 'src/instance/emailResolution';
+import { ScreenHeader } from 'src/ui/screenHeader';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: 'center', padding: tokens.spacing.lg },
   manualServer: { marginTop: tokens.spacing.sm },
+  screen: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
 function normalizeServerUrl(input: string): string | null {
@@ -98,41 +100,51 @@ export function ServerScreen(): React.ReactElement {
   };
 
   return (
-    <View style={styles.root}>
-      <TextInput
-        testID="email-input"
-        label={t('server.emailPrompt')}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        textContentType="emailAddress"
+    <View style={styles.screen}>
+      {/* Le retour va à `welcome`, pas à `home` : on n'est pas encore connecté
+          ici, et `home` renverrait aussitôt vers l'accueil non authentifié. */}
+      <ScreenHeader
+        backLabel={t('common.back')}
+        onBackPress={() => router.replace('/welcome')}
+        testID="server-header"
+        title={t('welcome.signIn')}
       />
-      {manualVisible ? (
+      <View style={styles.root}>
         <TextInput
-          testID="server-input"
-          style={styles.manualServer}
-          label={t('server.prompt')}
-          value={manualServer}
-          onChangeText={setManualServer}
+          testID="email-input"
+          label={t('server.emailPrompt')}
+          value={email}
+          onChangeText={setEmail}
           autoCapitalize="none"
           autoCorrect={false}
-          keyboardType="url"
+          keyboardType="email-address"
+          textContentType="emailAddress"
         />
-      ) : null}
-      <HelperText type="error" visible={error !== null}>
-        {error ?? ''}
-      </HelperText>
-      <Button
-        mode="contained"
-        testID="server-continue-btn"
-        onPress={handleContinue}
-        loading={busy}
-        disabled={busy}
-      >
-        {t('welcome.signIn')}
-      </Button>
+        {manualVisible ? (
+          <TextInput
+            testID="server-input"
+            style={styles.manualServer}
+            label={t('server.prompt')}
+            value={manualServer}
+            onChangeText={setManualServer}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+        ) : null}
+        <HelperText type="error" visible={error !== null}>
+          {error ?? ''}
+        </HelperText>
+        <Button
+          mode="contained"
+          testID="server-continue-btn"
+          onPress={handleContinue}
+          loading={busy}
+          disabled={busy}
+        >
+          {t('welcome.signIn')}
+        </Button>
+      </View>
     </View>
   );
 }

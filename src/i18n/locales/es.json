@@ -167,5 +167,6 @@
   "prejoin.title": "¿Listo para unirse?",
   "prejoin.yourName": "Su nombre",
   "prejoin.back": "Volver",
-  "prejoin.cameraPreview": "Vista previa de la cámara"
+  "prejoin.cameraPreview": "Vista previa de la cámara",
+  "common.back": "Volver"
 }
