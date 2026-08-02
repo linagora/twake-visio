@@ -60,6 +60,8 @@
   "call.handPosition": "Vị trí {{position}}",
   "call.handQueue": "Những người giơ tay",
   "call.handQueueEntry": "{{position}}. {{name}}",
+  "call.handRaisedBy": "{{name}} đã giơ tay",
+  "call.handRaisedOthers": "còn {{count}} người muốn phát biểu",
   "call.handFailed": "Không thể thay đổi trạng thái tay của bạn",
   "call.reactions": "Biểu cảm",
   "call.you": "Bạn",
