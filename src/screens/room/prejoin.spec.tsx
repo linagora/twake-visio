@@ -1,9 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
+import { mediaDevices } from '@livekit/react-native-webrtc';
+
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
+import { tokens } from 'src/ui/tokens';
 import { PrejoinScreen } from './prejoin';
+
+const getUserMedia = mediaDevices.getUserMedia as unknown as jest.Mock;
 
 // babel-plugin-jest-hoist lève l'appel jest.mock au-dessus des const du module :
 // seul un nom préfixé par `mock` peut être référencé depuis la factory.
@@ -61,6 +66,10 @@ beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockReset();
   journal.rememberVisit.mockClear();
+  // Le double vit à côté de `node_modules` et n'est pas remis à zéro par
+  // `restoreAllMocks` : sans cela, les appels s'accumulent d'un test à l'autre
+  // et « n'a rien demandé » compte ceux du test précédent.
+  getUserMedia.mockClear();
   preferences.readPreferences.mockReturnValue(DEFAULT_PREFS);
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 });
@@ -119,9 +128,15 @@ describe('PrejoinScreen', () => {
       expect(screen.getByTestId('camera-switch')).toBeTruthy();
     });
 
-    // L'interrupteur porte l'état « caméra désactivée » : le passer à true coupe
-    // la caméra, et l'URL de l'appel doit donc annoncer camera=0.
-    await fireEvent(screen.getByTestId('camera-switch'), 'valueChange', true);
+    // La commande est une PASTILLE PRESSABLE depuis le Lot 3, plus un
+    // `Switch` : le mockup emploie le motif attendu sur mobile pour micro et
+    // caméra. Le comportement n'a pas bougé — la presser coupe la caméra, et
+    // l'URL de l'appel annonce camera=0 — seul le geste a changé, d'où
+    // `press` au lieu de `valueChange`.
+    //
+    // La sémantique d'accessibilité est préservée : `accessibilityRole="switch"`
+    // et `accessibilityState.checked`, ce qu'un lecteur d'écran annonce.
+    await fireEvent.press(screen.getByTestId('camera-switch'));
     await fireEvent.press(screen.getByTestId('join-call-btn'));
 
     // `mic=0` parce que le défaut des Réglages est « micro coupé à l'entrée »,
@@ -129,6 +144,126 @@ describe('PrejoinScreen', () => {
     // auparavant un `useState(false)` codé en dur, et c'est lui qui a signalé
     // le changement de comportement quand la préférence l'a remplacé.
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call?camera=0&mic=0');
+  });
+
+  describe('l’aperçu caméra', () => {
+    async function ready(): Promise<void> {
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+    }
+
+    // Les deux états de la conditionnelle, chacun avec sa fixture.
+    it('demande la caméra quand elle est active', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin: false });
+      await ready();
+
+      await waitFor(() => {
+        expect(getUserMedia).toHaveBeenCalled();
+      });
+    });
+
+    it('ne demande rien quand la caméra part coupée', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin: true });
+      await ready();
+
+      expect(getUserMedia).not.toHaveBeenCalled();
+    });
+
+    // Trois raisons de n'avoir pas d'image, une seule chose à montrer : qui
+    // l'on est. Un rectangle noir se lirait comme une panne.
+    it('montre l’avatar tant qu’il n’y a pas d’image', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin: true });
+      await ready();
+
+      expect(screen.getByTestId('prejoin-avatar')).toBeTruthy();
+    });
+  });
+
+  describe('les deux commandes', () => {
+    async function ready(): Promise<void> {
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+    }
+
+    // La coupure doit se VOIR : sans le fond rouge, rien ne distingue un micro
+    // coupé d'un micro actif, le glyphe étant de la même couleur.
+    it('marque le micro coupé par le fond de danger', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, micOffOnJoin: true });
+      await ready();
+
+      expect(screen.getByTestId('mic-switch')).toHaveStyle({
+        backgroundColor: tokens.color.danger,
+      });
+    });
+
+    it('ne marque pas un micro actif', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, micOffOnJoin: false });
+      await ready();
+
+      expect(screen.getByTestId('mic-switch')).not.toHaveStyle({
+        backgroundColor: tokens.color.danger,
+      });
+    });
+
+    it('bascule le micro à l’appui', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, micOffOnJoin: true });
+      await ready();
+      await fireEvent.press(screen.getByTestId('mic-switch'));
+
+      expect(screen.getByTestId('mic-switch')).not.toHaveStyle({
+        backgroundColor: tokens.color.danger,
+      });
+    });
+
+    it('bascule la caméra à l’appui', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin: false });
+      await ready();
+      await fireEvent.press(screen.getByTestId('camera-switch'));
+
+      expect(screen.getByTestId('camera-switch')).toHaveStyle({
+        backgroundColor: tokens.color.danger,
+      });
+    });
+  });
+
+  // L'écran est SOMBRE et le thème est CLAIR : sans couleur explicite, Paper
+  // rend ces textes en quasi-noir sur du quasi-noir.
+  describe('les couleurs explicites', () => {
+    async function ready(): Promise<void> {
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+      await render(<PrejoinScreen />);
+      await waitFor(() => {
+        expect(screen.getByTestId('join-call-btn')).toBeTruthy();
+      });
+    }
+
+    it('pose la couleur du nom de la réunion', async () => {
+      await ready();
+      expect(screen.getByTestId('prejoin-room-name')).toHaveStyle({
+        color: tokens.color.textDark,
+      });
+    });
+
+    it('pose la couleur du nom de la personne', async () => {
+      await ready();
+      expect(screen.getByTestId('prejoin-name')).toHaveStyle({ color: tokens.color.textDark });
+    });
+
+    // Le libellé n'existe QUE sans image : caméra active, c'est `RTCView` qui
+    // occupe la place.
+    it('pose la couleur du libellé de l’aperçu', async () => {
+      preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin: true });
+      await ready();
+      expect(screen.getByTestId('prejoin-camera-label')).toHaveStyle({
+        color: tokens.color.muted,
+      });
+    });
   });
 
   describe('les Réglages gouvernent l’état de départ', () => {

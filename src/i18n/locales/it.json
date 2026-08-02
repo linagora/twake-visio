@@ -161,5 +161,9 @@
   "home.createSubtitle": "Inizia subito e condividi il link",
   "home.joinTitle": "Partecipa a una riunione",
   "home.joinSubtitle": "Con un codice stanza o un link",
-  "settings.instance": "Server"
+  "settings.instance": "Server",
+  "prejoin.title": "Pronto a partecipare?",
+  "prejoin.yourName": "Il tuo nome",
+  "prejoin.back": "Indietro",
+  "prejoin.cameraPreview": "Anteprima fotocamera"
 }

@@ -161,5 +161,9 @@
   "home.createSubtitle": "Start now and share the link",
   "home.joinTitle": "Join a meeting",
   "home.joinSubtitle": "With a room code or a link",
-  "settings.instance": "Server"
+  "settings.instance": "Server",
+  "prejoin.title": "Ready to join?",
+  "prejoin.yourName": "Your name",
+  "prejoin.back": "Back",
+  "prejoin.cameraPreview": "Camera preview"
 }
