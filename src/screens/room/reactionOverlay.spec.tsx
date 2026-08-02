@@ -3,6 +3,7 @@ import React from 'react';
 
 import type { Reaction } from 'src/call/reactions';
 import { tokens } from 'src/ui/tokens';
+import { CALL_SURFACE_HAIRLINE } from './callHeader';
 import { ReactionOverlay } from './reactionOverlay';
 
 jest.mock('react-i18next', () => ({
@@ -75,6 +76,12 @@ describe('ReactionOverlay', () => {
     });
     expect(screen.getByTestId('reaction-bubble-r-1')).toHaveStyle({
       backgroundColor: tokens.color.surfaceDark,
+      // Le même filet que les puces et la carte du bandeau d'admission : la
+      // bulle se pose sur de la VIDÉO, dont on ne connaît ni la couleur ni la
+      // luminance, et c'est le seul endroit de cet écran où un fond opaque
+      // reste obligatoire. Le filet lui donne son bord quand la vidéo derrière
+      // est sombre.
+      borderColor: CALL_SURFACE_HAIRLINE,
     });
   });
 
@@ -88,19 +95,19 @@ describe('ReactionOverlay', () => {
   it('dégage la hauteur réelle de la barre de contrôle sous la plus basse bulle', async () => {
     await render(<ReactionOverlay chatOpen={false} reactions={[reaction()]} />);
 
-    // 44 (le côté d'un bouton de barre) + 2 × 4 (le rembourrage de la rangée)
-    // + 8 (un pas d'écart, pour que la bulle ne colle pas à la barre) = 60.
+    // 52 (le côté d'un bouton de barre) + 2 × 4 (le rembourrage de la rangée)
+    // + 8 (un pas d'écart, pour que la bulle ne colle pas à la barre) = 68.
     // La valeur d'avant était `tokens.spacing.xl`, soit 32 : la plus basse des
-    // bulles se posait 20 dp À L'INTÉRIEUR de la barre, donc sur « raccrocher ».
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 60 });
+    // bulles se posait 28 dp À L'INTÉRIEUR de la barre, donc sur « raccrocher ».
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 68 });
   });
 
   it('dégage aussi la zone de saisie quand le panneau de discussion est ouvert', async () => {
     await render(<ReactionOverlay chatOpen reactions={[reaction()]} />);
 
-    // Les 60 ci-dessus, plus le bas du panneau de discussion : 56 (la rangée de
-    // saisie) + 16 (le rembourrage bas de sa racine) = 132. Sans cette
+    // Les 68 ci-dessus, plus le bas du panneau de discussion : 56 (la rangée de
+    // saisie) + 16 (le rembourrage bas de sa racine) = 140. Sans cette
     // seconde valeur, les bulles se posaient sur `chat-send` dès la deuxième.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 132 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 140 });
   });
 });

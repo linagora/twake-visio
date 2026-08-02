@@ -9,7 +9,7 @@ const FOUND: InstanceResult = {
     issuer: 'https://sso.example.org',
     clientId: 'twake-visio',
     livekitUrl: 'wss://livekit.example.org',
-    features: { recording: false, subtitle: false, telephony: false },
+    features: { recording: false, subtitle: false, telephony: false, calendar: false },
   },
 };
 

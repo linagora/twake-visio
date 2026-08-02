@@ -1,6 +1,7 @@
 import type { Room } from 'livekit-client';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyleSheet, View } from 'react-native';
 import { IconButton } from 'react-native-paper';
 
@@ -44,10 +45,19 @@ import { tokens } from 'src/ui/tokens';
 const styles = StyleSheet.create({
   controls: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    // `space-evenly` et non `center` : la rangée mesure 353 dp au MINIMUM, et
+    // un téléphone en fait rarement 360 tout juste — 402 sur un iPhone 17 Pro.
+    // Groupée au centre, elle laissait donc 49 dp inutilisés aux deux bouts et
+    // les commandes se touchaient presque. Répartie, l'écart effectif suit la
+    // largeur : ~9 dp sur un écran de 360, ~17 sur 402.
+    //
+    // Le `gap` ci-dessous reste le PLANCHER — `justifyContent` ne distribue que
+    // l'espace libre, il ne peut pas en retirer. Un écran étroit dégrade donc
+    // vers la rangée serrée d'avant plutôt que de déborder.
+    justifyContent: 'space-evenly',
     alignItems: 'center',
     // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
-    // sept cibles de 44 dp sur 357 dp, donc sur un écran de 360.
+    // six cibles de 52 dp sur 353 dp, donc sur un écran de 360.
     //
     // `BAR_PADDING` et non le token directement : `BAR_HEIGHT` en dépend, et
     // `ReactionOverlay` en tire la garde qui empêche une bulle de se poser sur
@@ -67,7 +77,7 @@ export type CallControlBarProps = {
   // directement (`onExitFullscreen`, câblé par `stage.tsx`) — la sortie est
   // donc totale par construction, prouvée par un test dans `call.spec.tsx`
   // plutôt qu'affirmée ici. Revient dès le premier appui sur cette même tuile :
-  // sept boutons, `leave-btn` compris, qui reste un moyen de quitter la séance
+  // six boutons, `leave-btn` compris, qui reste un moyen de quitter la séance
   // entière.
   //
   // Une PROP, et non une ternaire chez l'appelant : la barre reste alors MONTÉE
@@ -115,11 +125,10 @@ export type CallControlBarProps = {
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
 
-  readonly onToggleParticipants: () => void;
   readonly onLeave: () => void;
 };
 
-// La rangée de sept commandes, et les quatre états de périphérique qu'elle est
+// La rangée de six commandes, et les quatre états de périphérique qu'elle est
 // seule à lire — la liste des caméras, celle en service, la liste des sorties
 // audio et celle qu'on a demandée. Aucun de ces quatre n'intéresse le reste de
 // l'écran, et les garder ici évite d'en faire descendre huit props de plus.
@@ -146,10 +155,14 @@ export function CallControlBar({
   onToggleHand,
   onSendReaction,
   onOpenChat,
-  onToggleParticipants,
   onLeave,
 }: CallControlBarProps): React.ReactElement | null {
   const { t } = useTranslation();
+
+  // La rangée BORDE le bas de l'écran, donc elle porte l'écart de l'indicateur
+  // d'accueil. La racine de `call.tsx` ne peut pas le faire : sa
+  // `KeyboardAvoidingView` écrase `paddingBottom`.
+  const insets = useSafeAreaInsets();
 
   const [micOn, setMicOn] = useState(defaultMicOn);
   const [cameraOn, setCameraOn] = useState(defaultCameraOn);
@@ -337,13 +350,22 @@ export function CallControlBar({
   if (hidden) return null;
 
   return (
-    <View style={styles.controls}>
+    <View
+      style={[styles.controls, { paddingBottom: BAR_PADDING + insets.bottom }]}
+      testID="call-controls"
+    >
+      {/* Le rouge plein du mockup dit « coupé » une seconde fois, à côté du
+          glyphe barré : c'est la seule information de cette rangée qu'on
+          cherche du coin de l'œil pendant qu'on parle. Un TABLEAU de styles,
+          jamais une couleur en ligne — `IconButton` aplatit son `style` pour
+          en relire `borderRadius` (`IconButton.tsx:158-161`), et le rayon
+          reste donc celui de `barStyles.button`. */}
       <IconButton
         testID="mic-toggle"
         icon={micOn ? 'microphone' : 'microphone-off'}
         iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        style={[barStyles.button, micOn ? null : barStyles.danger]}
         hitSlop={BAR_HIT_SLOP}
         onPress={handleToggleMic}
         accessibilityLabel={t('call.muted')}
@@ -355,7 +377,7 @@ export function CallControlBar({
           icon={cameraOn ? 'video' : 'video-off'}
           iconColor={BAR_ICON_COLOR}
           rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
+          style={[barStyles.button, cameraOn ? null : barStyles.danger]}
           hitSlop={BAR_HIT_SLOP}
           onPress={handleToggleCamera}
           accessibilityLabel={t('prejoin.cameraOff')}
@@ -380,12 +402,13 @@ export function CallControlBar({
         onAutomatic={handleAutomaticAudioOutput}
         onSystemPicker={handleOpenSystemRoutePicker}
       />
-      {/* La rangée est pleine à 357 dp sur 360 : une huitième cible en
-          demanderait 409. Le partage, seule commande de la barre qu'on
-          n'utilise qu'une fois par réunion, passe donc derrière ce menu, qui
-          porte aussi l'enregistrement et la main levée. Sept cibles avant,
-          sept après — et la commande d'enregistrement n'est jamais adjacente
-          au bouton quitter. */}
+      {/* Le partage, seule commande de la barre qu'on n'utilise qu'une fois
+          par réunion, passe derrière ce menu, qui porte aussi l'enregistrement
+          et la main levée. La raison d'origine était la LARGEUR — la rangée
+          était pleine à 357 dp sur 360 —, et le départ du compteur de
+          participants l'a détendue à 305. Le menu reste : la commande
+          d'enregistrement n'y est jamais adjacente au bouton quitter, et
+          c'est cette raison-là qui survit. */}
       <MoreMenu
         recording={recording}
         canRecord={canRecord}
@@ -402,23 +425,16 @@ export function CallControlBar({
         onOpenChat={onOpenChat}
       />
       <IconButton
-        testID="participants-toggle"
-        icon="account-multiple"
-        iconColor={BAR_ICON_COLOR}
-        rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
-        hitSlop={BAR_HIT_SLOP}
-        onPress={onToggleParticipants}
-        accessibilityLabel={t('participants.title')}
-      />
-      <IconButton
         testID="leave-btn"
         icon="phone-hangup"
-        // La variante sombre : #C62828 sur #0B0B0C tombe à 3,4:1, sous le
-        // seuil WCAG AA, et la scène est sombre dans les deux schémas.
-        iconColor={tokens.color.dangerDark}
+        // Le rouge a changé de place : il REMPLIT la pastille, il ne colore
+        // plus le glyphe. C'est ce que demande le mockup, et le glyphe doit
+        // suivre — #FF8A80 (`dangerDark`, la couleur d'avant) sur ce rouge ne
+        // donne que 2,13:1, sous les 3:1 d'un objet graphique. `BAR_ICON_COLOR`
+        // en donne 4,11:1, comme sur les six autres boutons de la rangée.
+        iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        style={[barStyles.button, barStyles.danger]}
         hitSlop={BAR_HIT_SLOP}
         onPress={onLeave}
         accessibilityLabel={t('call.leave')}

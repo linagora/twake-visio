@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore 
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toggleHand } from 'src/api/hand';
 import {
@@ -42,11 +43,13 @@ import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
 import { firstWaiting } from 'src/rooms/waitingQueue';
 import { CallControlBar } from 'src/screens/room/callControlBar';
 import { CallPanels, type Panel } from 'src/screens/room/callPanels';
+import { CallHeader } from 'src/screens/room/callHeader';
 import { HandBanner } from 'src/screens/room/handBanner';
 import { RaisedHandsBanner } from 'src/screens/room/raisedHandsBanner';
 import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
+import { rememberVisitEnd } from 'src/rooms/journal';
 import { keyboardMode } from 'src/ui/keyboard';
 import { tokens } from 'src/ui/tokens';
 
@@ -140,7 +143,7 @@ const NO_ACCOUNT: Account = {
     issuer: '',
     clientId: '',
     livekitUrl: '',
-    features: { recording: false, subtitle: false, telephony: false },
+    features: { recording: false, subtitle: false, telephony: false, calendar: false },
   },
   email: '',
   displayName: '',
@@ -166,6 +169,28 @@ const styles = StyleSheet.create({
 export function CallScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  //
+  // Déclaré AVEC les autres crochets, jamais près du `return` : cet écran a des
+  // retours anticipés — connexion, échec — et un crochet posé après eux n'est
+  // plus appelé dans le même ordre à chaque rendu. `react-hooks/rules-of-hooks`
+  // l'a refusé, à raison.
+  //
+  // Le HAUT seulement. Le bas est hors d'atteinte ici : la racine est une
+  // `KeyboardAvoidingView`, qui écrase `paddingBottom` avec la hauteur du
+  // clavier — zéro sans clavier. Un test l'a montré, pas une relecture. Le fond
+  // noir, lui, atteint bien le bord bas puisque plus rien ne l'en écarte ; ce
+  // qui manquait était l'écart pour l'INDICATEUR D'ACCUEIL, et il est posé par
+  // la barre de commandes et par le calque des réactions, qui le bordent.
+  const insets = useSafeAreaInsets();
   const { slug, camera, mic } = useLocalSearchParams<{
     slug: string;
     camera?: string;
@@ -183,6 +208,13 @@ export function CallScreen(): React.ReactElement {
   // le jour où une session déjà ouverte lui sera passée. Un écran qui attend
   // une poussée à l'abonnement reste sur le voyant de connexion pour toujours.
   const [callState, setCallState] = useState<CallState>(() => session.getState());
+  // Les secondes écoulées depuis l'entrée en séance, pour l'en-tête.
+  //
+  // Comptées ICI et passées en nombre : `CallHeader` ne lit pas l'horloge, ce
+  // qui le rend testable sans faire avancer le temps réel. Le compteur ne part
+  // qu'une fois connecté — le démarrer à l'ouverture ferait afficher un
+  // minuteur pendant la négociation, alors que la réunion n'a pas commencé.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Sans compte actif, il n'y a pas de jeton à demander. L'état de départ le
   // dit dès le premier rendu : le poser depuis l'effet appellerait setState de
@@ -541,6 +573,34 @@ export function CallScreen(): React.ReactElement {
   // gestionnaire de flux avant de jeter la Room est la même précaution que le
   // désabonnement ci-dessous.
   useEffect(() => () => chatStore.dispose(), [chatStore]);
+
+  // Clôt la visite dans le journal de l'onglet Historique, au DÉMONTAGE.
+  //
+  // Pas dans `handleLeave` : on quitte aussi une réunion en perdant le réseau,
+  // par le retour arrière d'Android, ou parce que le système tue l'écran. Seul
+  // le nettoyage couvre les quatre sorties.
+  //
+  // `rememberVisitEnd` refuse une visite déjà close et un salon absent du
+  // journal : un montage qui échoue avant l'entrée ne laisse donc aucune trace,
+  // et un remontage ne récrit pas la durée.
+  useEffect(
+    () => () => {
+      if (slug !== undefined) rememberVisitEnd(slug, Date.now());
+    },
+    [slug],
+  );
+
+  const connected = callState.status === 'connected';
+
+  useEffect(() => {
+    if (!connected) return;
+    const timer = setInterval(() => {
+      setElapsedSeconds((previous) => previous + 1);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [connected]);
 
   // Déclaré avant l'effet de connexion : les nettoyages s'exécutent dans
   // l'ordre de déclaration des effets, le désabonnement précède donc la
@@ -940,7 +1000,7 @@ export function CallScreen(): React.ReactElement {
     // une spec de rendre les deux branches sans bouchonner `Platform`.
     <KeyboardAvoidingView
       testID="call-root"
-      style={styles.root}
+      style={[styles.root, { paddingTop: insets.top }]}
       behavior={keyboardMode() === 'padding' ? 'padding' : undefined}
     >
       {/* **En plein écran : la barre et les commandes disparaissent, jamais
@@ -986,6 +1046,18 @@ export function CallScreen(): React.ReactElement {
 
       {fullscreenTile === null ? (
         <>
+          {/* DANS la garde, et c'est le critère qui le décide : l'en-tête
+              DÉCRIT L'ÉTAT DU MONDE — quelle réunion, depuis combien de temps,
+              combien de personnes — et n'attend aucune réponse. Il disparaît
+              donc en plein écran, comme l'indicateur d'enregistrement, là où le
+              bandeau d'admission survit. */}
+          <CallHeader
+            elapsedSeconds={elapsedSeconds}
+            onParticipantsPress={handleToggleParticipants}
+            participantCount={participants.length}
+            title={access?.room.name ?? ''}
+          />
+
           {/* Vu de tout le monde, y compris de qui n'a aucun bouton : ne rend
               rien au repos. */}
           <RecordingIndicator state={recordingState} />
@@ -1084,7 +1156,6 @@ export function CallScreen(): React.ReactElement {
         onToggleHand={handleToggleHand}
         onSendReaction={handleSendReaction}
         onOpenChat={handleOpenChat}
-        onToggleParticipants={handleToggleParticipants}
         onLeave={handleLeave}
       />
 

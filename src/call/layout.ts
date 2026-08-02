@@ -265,7 +265,7 @@ export function selectLayout(
   view: RoomView,
   facing: FacingMode,
   // La boîte réellement offerte à la scène, en dp, telle que `onLayout` l'a
-  // mesurée — jamais les dimensions de la fenêtre. Celles-ci ignorent les 52 dp
+  // mesurée — jamais les dimensions de la fenêtre. Celles-ci ignorent les 60 dp
   // de la barre de contrôle, les encoches de `SafeAreaView`, et les trois
   // bandeaux qui peuvent apparaître à tout instant.
   box: Box,

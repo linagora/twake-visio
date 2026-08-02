@@ -3,14 +3,17 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { Button, HelperText, TextInput } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { signIn, type LoginError } from 'src/auth/login';
 import { fetchServerUrlForEmail } from 'src/instance/emailResolution';
+import { ScreenHeader } from 'src/ui/screenHeader';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: 'center', padding: tokens.spacing.lg },
   manualServer: { marginTop: tokens.spacing.sm },
+  screen: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
 function normalizeServerUrl(input: string): string | null {
@@ -97,42 +100,66 @@ export function ServerScreen(): React.ReactElement {
     }
   };
 
+  // L'encart HAUT n'est pas ici : il appartient à `ScreenHeader`, seule surface
+  // qui borde ce bord et qui porte sa propre couleur. Le BAS, lui, est bien
+  // ici — rien d'autre ne le borde.
+  //
+  // Les encoches sont appliquées sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.root}>
-      <TextInput
-        testID="email-input"
-        label={t('server.emailPrompt')}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        textContentType="emailAddress"
+    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+      {/* Le retour va à `welcome`, pas à `home` : on n'est pas encore connecté
+          ici, et `home` renverrait aussitôt vers l'accueil non authentifié. */}
+      <ScreenHeader
+        backLabel={t('common.back')}
+        onBackPress={() => router.replace('/welcome')}
+        testID="server-header"
+        title={t('welcome.signIn')}
       />
-      {manualVisible ? (
+      <View style={styles.root}>
         <TextInput
-          testID="server-input"
-          style={styles.manualServer}
-          label={t('server.prompt')}
-          value={manualServer}
-          onChangeText={setManualServer}
+          testID="email-input"
+          label={t('server.emailPrompt')}
+          value={email}
+          onChangeText={setEmail}
           autoCapitalize="none"
           autoCorrect={false}
-          keyboardType="url"
+          keyboardType="email-address"
+          textContentType="emailAddress"
         />
-      ) : null}
-      <HelperText type="error" visible={error !== null}>
-        {error ?? ''}
-      </HelperText>
-      <Button
-        mode="contained"
-        testID="server-continue-btn"
-        onPress={handleContinue}
-        loading={busy}
-        disabled={busy}
-      >
-        {t('welcome.signIn')}
-      </Button>
+        {manualVisible ? (
+          <TextInput
+            testID="server-input"
+            style={styles.manualServer}
+            label={t('server.prompt')}
+            value={manualServer}
+            onChangeText={setManualServer}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+        ) : null}
+        <HelperText type="error" visible={error !== null}>
+          {error ?? ''}
+        </HelperText>
+        <Button
+          mode="contained"
+          testID="server-continue-btn"
+          onPress={handleContinue}
+          loading={busy}
+          disabled={busy}
+        >
+          {t('welcome.signIn')}
+        </Button>
+      </View>
     </View>
   );
 }

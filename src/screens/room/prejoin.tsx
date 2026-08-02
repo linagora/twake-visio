@@ -1,18 +1,90 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Button, Switch, Text } from 'react-native-paper';
+import { RTCView } from '@livekit/react-native-webrtc';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Button } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
+import { useCameraPreview } from 'src/call/cameraPreview';
+import { rememberVisit } from 'src/rooms/journal';
+import { InitialsAvatar } from 'src/ui/initialsAvatar';
+import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
 
+// L'écran est SOMBRE, comme l'appel — pas clair comme la coque. `makeTheme`
+// rendant toujours le thème clair depuis le Lot 1, tout `Text` posé ici DOIT
+// porter une couleur explicite, faute de quoi Paper le rend en quasi-noir sur
+// du quasi-noir. C'est la règle d'`AGENTS.md`, et elle est certaine ici, plus
+// seulement probable.
+const BACK_SURFACE = 'rgba(255, 255, 255, 0.08)';
+const CONTROL_SURFACE = 'rgba(255, 255, 255, 0.1)';
+const NAME_SURFACE = 'rgba(255, 255, 255, 0.07)';
+
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: tokens.spacing.md, gap: tokens.spacing.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  back: {
+    alignItems: 'center',
+    backgroundColor: BACK_SURFACE,
+    borderRadius: 12,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  bar: {
+    bottom: 16,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  control: {
+    alignItems: 'center',
+    backgroundColor: CONTROL_SURFACE,
+    borderRadius: 27,
+    height: 54,
+    justifyContent: 'center',
+    width: 54,
+  },
+  controlOff: { backgroundColor: tokens.color.danger },
+  errorRoot: {
+    backgroundColor: tokens.color.backgroundDark,
+    flex: 1,
+    gap: tokens.spacing.md,
+    justifyContent: 'center',
+    padding: tokens.spacing.md,
+  },
+  errorText: { color: tokens.color.textDark, fontFamily: tokens.font.bold, fontSize: 16 },
+  footer: { gap: 12, padding: 18 },
+  header: { alignItems: 'center', flexDirection: 'row', gap: 12, padding: 18 },
+  join: { borderRadius: 16 },
+  nameCard: { backgroundColor: NAME_SURFACE, borderRadius: 14, gap: 4, padding: 14 },
+  nameLabel: {
+    color: tokens.color.muted,
+    fontFamily: tokens.font.bold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  nameValue: { color: tokens.color.textDark, fontFamily: tokens.font.bold, fontSize: 15 },
+  preview: {
+    backgroundColor: tokens.color.surfaceDark,
+    borderRadius: 22,
+    flex: 1,
+    marginHorizontal: 18,
+    overflow: 'hidden',
+  },
+  previewIdle: { alignItems: 'center', flex: 1, gap: 12, justifyContent: 'center' },
+  previewLabel: { color: tokens.color.muted, fontFamily: tokens.font.semiBold, fontSize: 13 },
+  root: { backgroundColor: tokens.color.backgroundDark, flex: 1 },
+  roomName: { color: tokens.color.textDark, fontFamily: tokens.font.extraBold, fontSize: 16 },
+  video: { flex: 1 },
 });
 
 // Les seules raisons que cet écran sait dire. `lobby` n'y figure pas : il n'est
@@ -44,6 +116,8 @@ export function PrejoinScreen(): React.ReactElement {
   const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const [access, setAccess] = useState<RoomAccess | null>(null);
+  // Lu une fois : le compte ne change pas pendant qu'on regarde cet écran.
+  const [account] = useState(() => getActiveAccount());
   // La raison du refus, quand il y en a une. `null` tant qu'on attend : les
   // deux ensemble donnent les trois états de cet écran — on attend, on est
   // entré, on est refusé — là où `access` seul n'en distinguait que deux et
@@ -52,8 +126,15 @@ export function PrejoinScreen(): React.ReactElement {
   // Les deux interrupteurs portent l'état *coupé* et non l'état actif : leurs
   // libellés sont « Caméra désactivée » et « Micro coupé ». Un interrupteur
   // dont la position haute contredit son libellé se lit à l'envers.
-  const [cameraOff, setCameraOff] = useState(false);
-  const [micOff, setMicOff] = useState(false);
+  //
+  // La valeur de départ vient des Réglages, lue une seule fois au montage : la
+  // relire à chaque rendu écraserait ce que la personne vient de basculer ici.
+  const [cameraOff, setCameraOff] = useState(() => readPreferences().cameraOffOnJoin);
+  const [micOff, setMicOff] = useState(() => readPreferences().micOffOnJoin);
+  // L'aperçu suit la bascule caméra : la couper relâche la caméra, la rallumer
+  // la réacquiert. Le module possède ce cycle, y compris le flux qui arrive
+  // après le démontage.
+  const previewUrl = useCameraPreview(!cameraOff);
 
   useEffect(() => {
     const account = getActiveAccount();
@@ -85,16 +166,35 @@ export function PrejoinScreen(): React.ReactElement {
   const handleJoin = (): void => {
     const camera = cameraOff ? 0 : 1;
     const mic = micOff ? 0 : 1;
+    // Le journal de l'onglet Historique s'écrit ICI et non à l'entrée en
+    // séance : `call.tsx` est disputé par quatorze branches, et rejoindre est
+    // le dernier geste dont ce lot est certain. On enregistre l'entrée seule —
+    // la durée exigerait un point d'accroche à la FIN de l'appel.
+    // Le nom que CET écran affiche, pas un autre : c'est celui que la personne
+    // vient de lire, donc celui qu'elle reconnaîtra dans l'historique.
+    if (slug !== undefined && access !== null) {
+      rememberVisit(slug, access.room.name, Date.now());
+    }
     router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
   };
 
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   // L'échec passe AVANT l'attente : les deux ont `access === null`, et tester
   // l'attente d'abord rendrait le sablier pour toujours, ce qui est exactement
   // le défaut corrigé ici.
   if (failure !== null) {
     return (
-      <View style={styles.root}>
-        <Text testID="prejoin-error" variant="titleMedium">
+      <View style={[styles.errorRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <Text style={styles.errorText} testID="prejoin-error">
           {t(failure)}
         </Text>
         {/* Même raison que `error-leave-btn` et `connecting-leave-btn` de
@@ -111,19 +211,95 @@ export function PrejoinScreen(): React.ReactElement {
   if (access === null) return <ActivityIndicator testID="prejoin-loading" />;
 
   return (
-    <View style={styles.root}>
-      <Text variant="titleLarge">{access.room.name}</Text>
-      <View style={styles.row}>
-        <Text>{t('prejoin.cameraOff')}</Text>
-        <Switch testID="camera-switch" value={cameraOff} onValueChange={setCameraOff} />
+    <View
+      style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      testID="prejoin-root"
+    >
+      <View style={styles.header}>
+        <Pressable
+          accessibilityLabel={t('prejoin.back')}
+          onPress={() => router.replace('/home')}
+          style={styles.back}
+          testID="prejoin-back-btn"
+        >
+          <MaterialCommunityIcons color={tokens.color.textDark} name="chevron-left" size={20} />
+        </Pressable>
+        <Text numberOfLines={1} style={styles.roomName} testID="prejoin-room-name">
+          {access.room.name}
+        </Text>
       </View>
-      <View style={styles.row}>
-        <Text>{t('call.muted')}</Text>
-        <Switch testID="mic-switch" value={micOff} onValueChange={setMicOff} />
+
+      <View style={styles.preview} testID="prejoin-preview">
+        {previewUrl === null ? (
+          // Trois raisons de n'avoir pas d'image — caméra coupée, acquisition en
+          // cours, permission refusée — et une seule chose à montrer : qui l'on
+          // est. L'avatar vaut mieux qu'un rectangle noir, qui se lit comme une
+          // panne.
+          <View style={styles.previewIdle}>
+            <InitialsAvatar name={account?.displayName ?? ''} size="lg" testID="prejoin-avatar" />
+            <Text style={styles.previewLabel} testID="prejoin-camera-label">
+              {cameraOff ? t('prejoin.cameraOff') : t('prejoin.cameraPreview')}
+            </Text>
+          </View>
+        ) : (
+          // `mirror` n'est pas décoratif : la caméra frontale rend une image
+          // inversée, et sans miroir on se voit comme les autres nous voient —
+          // déroutant au moment de vérifier son cadrage.
+          <RTCView mirror objectFit="cover" streamURL={previewUrl} style={styles.video} />
+        )}
+
+        <View style={styles.bar}>
+          <Pressable
+            accessibilityLabel={t('call.muted')}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: micOff }}
+            onPress={() => setMicOff((previous) => !previous)}
+            style={[styles.control, micOff ? styles.controlOff : null]}
+            testID="mic-switch"
+          >
+            <MaterialCommunityIcons
+              color={tokens.color.textDark}
+              name={micOff ? 'microphone-off' : 'microphone'}
+              size={24}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel={t('prejoin.cameraOff')}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: cameraOff }}
+            onPress={() => setCameraOff((previous) => !previous)}
+            style={[styles.control, cameraOff ? styles.controlOff : null]}
+            testID="camera-switch"
+          >
+            <MaterialCommunityIcons
+              color={tokens.color.textDark}
+              name={cameraOff ? 'video-off' : 'video'}
+              size={24}
+            />
+          </Pressable>
+        </View>
       </View>
-      <Button mode="contained" testID="join-call-btn" onPress={handleJoin}>
-        {t('prejoin.join')}
-      </Button>
+
+      <View style={styles.footer}>
+        <View style={styles.nameCard}>
+          <Text style={styles.nameLabel} testID="prejoin-name-label">
+            {t('prejoin.yourName')}
+          </Text>
+          <Text numberOfLines={1} style={styles.nameValue} testID="prejoin-name">
+            {account?.displayName ?? ''}
+          </Text>
+        </View>
+        <Button
+          buttonColor={tokens.color.brandStrong}
+          mode="contained"
+          onPress={handleJoin}
+          style={styles.join}
+          testID="join-call-btn"
+          textColor={tokens.color.onBrand}
+        >
+          {t('prejoin.join')}
+        </Button>
+      </View>
     </View>
   );
 }

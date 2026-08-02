@@ -4,7 +4,8 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
-import { tokens } from 'src/ui/tokens';
+import { SHEET_CHECK_COLOR } from 'src/screens/room/sheetCheck';
+import { ROW_REST_COLOR, ROW_SELECTED_COLOR } from 'src/screens/room/sheetRow';
 import { CameraMenu } from './cameraMenu';
 
 // I2 : `t: (key) => key` ignore son second argument. Il ne peut donc pas
@@ -199,7 +200,36 @@ describe('CameraMenu', () => {
     const check = await waitFor(() => screen.getByTestId('camera-check-cam-back'));
 
     expect(check.props.children[0]).toBe(CHECK_GLYPH);
-    expect(check).toHaveStyle({ color: tokens.color.textDark });
+    expect(check).toHaveStyle({ color: SHEET_CHECK_COLOR });
+  });
+
+  // Le lavis, l'autre moitié de ce qui dit « celle-ci ». Deux caméras et UNE
+  // seule active : la ligne active porte le lavis, l'autre le fond de repos.
+  // Avec une seule caméra, un `selected` figé à vrai passerait.
+  //
+  // Ce test-ci garde le CÂBLAGE — que le lavis suive bien `activeDeviceId` —,
+  // là où `sheetRow.spec.tsx` garde la bascule elle-même. Une mutation de
+  // `selected={…}` vers `selected={false}` ne rougirait que là.
+  it('lave la ligne de la caméra active, et elle seule', async () => {
+    await render(
+      withPaper(
+        <CameraMenu
+          cameras={[FRONT, BACK]}
+          activeDeviceId="cam-back"
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+    expect(screen.getByTestId('camera-option-cam-back')).toHaveStyle({
+      backgroundColor: ROW_SELECTED_COLOR,
+    });
+    expect(screen.getByTestId('camera-option-cam-front')).toHaveStyle({
+      backgroundColor: ROW_REST_COLOR,
+    });
   });
 
   it("ne coche rien quand aucune caméra n'est connue", async () => {

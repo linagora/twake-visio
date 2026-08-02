@@ -2,7 +2,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Text } from 'react-native-paper';
+import { ActivityIndicator, Button, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
@@ -29,6 +30,10 @@ const ADMISSION_POLL_MS = 5000;
 
 const styles = StyleSheet.create({
   root: {
+    // Un fond EXPLICITE, et non l'absence de fond qui laissait voir la vue
+    // système. Sans lui, le rembourrage d'encoche posé sur cette racine ne
+    // peindrait rien : une bande blanche, exactement le défaut corrigé.
+    backgroundColor: tokens.color.appBackground,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -115,50 +120,71 @@ export function LobbyScreen(): React.ReactElement {
     };
   }, [awaitingAdmission, slug, router]);
 
-  if (state.kind === 'requesting') {
-    return (
-      <View style={styles.root}>
-        <ActivityIndicator testID="lobby-loading" />
-      </View>
-    );
-  }
+  // Les cinq états rendent leur CONTENU seul, jamais le cadre. Le bouton de
+  // sortie est posé une fois, après — sinon chaque état est une occasion de
+  // l'oublier, et les cinq l'avaient oublié : `refusé`, `aucun modérateur` et
+  // `échec` sont terminaux, donc on y restait jusqu'à tuer l'application.
+  const renderBody = (): React.ReactElement => {
+    if (state.kind === 'requesting') return <ActivityIndicator testID="lobby-loading" />;
 
-  if (state.kind === 'no-moderator') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'no-moderator') {
+      return (
         <Text testID="lobby-no-moderator" variant="titleMedium" style={styles.message}>
           {t('lobby.noModerator')}
         </Text>
-      </View>
-    );
-  }
+      );
+    }
 
-  if (state.kind === 'denied') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'denied') {
+      return (
         <Text testID="lobby-denied" variant="titleMedium" style={styles.message}>
           {t('lobby.denied')}
         </Text>
-      </View>
-    );
-  }
+      );
+    }
 
-  if (state.kind === 'failed') {
-    return (
-      <View style={styles.root}>
+    if (state.kind === 'failed') {
+      return (
         <Text testID="lobby-error" variant="titleMedium" style={styles.message}>
           {t(state.message)}
         </Text>
-      </View>
-    );
-  }
+      );
+    }
 
+    return (
+      <>
+        <ActivityIndicator />
+        <Text testID="lobby-waiting" variant="titleMedium" style={styles.message}>
+          {t('lobby.waiting')}
+        </Text>
+      </>
+    );
+  };
+
+  // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
+  // rembourrage est peint par la vue qui le porte, donc les deux bandes
+  // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
+  // le défaut de la coque, qui les appliquait sans fond. Voir `app/_layout.tsx`.
+  //
+  // Un littéral de style est INÉVITABLE ici, à l'inverse de la règle du dépôt :
+  // `StyleSheet.create` fige ses valeurs au chargement du module, et une
+  // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
+  // feuille.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.root}>
-      <ActivityIndicator />
-      <Text testID="lobby-waiting" variant="titleMedium" style={styles.message}>
-        {t('lobby.waiting')}
-      </Text>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      {renderBody()}
+      {/* `replace` et non `back` : on arrive ici par un `replace` depuis le
+          pré-join, donc la pile est vide et `back` ne mènerait nulle part. */}
+      <Button
+        buttonColor={tokens.color.brandStrong}
+        mode="contained"
+        onPress={() => router.replace('/home')}
+        testID="lobby-leave-btn"
+        textColor={tokens.color.onBrand}
+      >
+        {t('call.leave')}
+      </Button>
     </View>
   );
 }

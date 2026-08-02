@@ -17,7 +17,7 @@ const CONFIG = {
   issuer: 'https://sso.linagora.com',
   clientId: 'twake-visio',
   livekitUrl: 'https://livekit.linagora.com',
-  features: { recording: true, subtitle: true, telephony: false },
+  features: { recording: true, subtitle: true, telephony: false, calendar: false },
 };
 
 beforeEach(() => {

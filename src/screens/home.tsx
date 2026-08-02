@@ -1,36 +1,48 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { Button, List, Text, TextInput } from 'react-native-paper';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { TextInput } from 'react-native-paper';
 
 import { fetchMyRooms } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
-import { signOut } from 'src/auth/login';
+import { JoinSheet } from 'src/screens/joinSheet';
 import { findRoomTitle } from 'src/rooms/titles';
 import type { Room } from 'src/call/types';
+import { ActionCard } from 'src/ui/actionCard';
+import { AppHeader } from 'src/ui/appHeader';
+import { InitialsAvatar } from 'src/ui/initialsAvatar';
+import { SectionLabel } from 'src/ui/sectionLabel';
+import { SurfaceCard } from 'src/ui/surfaceCard';
 import { tokens } from 'src/ui/tokens';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: tokens.spacing.md, gap: tokens.spacing.md },
-  joinRow: { flexDirection: 'row', gap: tokens.spacing.sm, alignItems: 'center' },
-  joinInput: { flex: 1 },
+  // Un code se lit chiffre à chiffre : la chasse fixe empêche les colonnes de
+  // danser d'une ligne à l'autre.
   code: { fontVariant: ['tabular-nums'] },
-  accountRow: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
-  accountIdentity: { flex: 1 },
+  content: { gap: 10, padding: 18 },
+  header: { gap: 12, paddingBottom: 6 },
+  noneMatching: {
+    color: tokens.color.textSectionLabel,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 14,
+    paddingVertical: tokens.spacing.lg,
+    textAlign: 'center',
+  },
+  root: { backgroundColor: tokens.color.appBackground, flex: 1 },
+  row: { alignItems: 'center', flexDirection: 'row', gap: 13, padding: 14 },
+  rowMeta: {
+    color: tokens.color.textMeta,
+    fontFamily: tokens.font.medium,
+    fontSize: 12.5,
+  },
+  rowText: { flex: 1, gap: 4 },
+  rowTitle: {
+    color: tokens.color.textPrimary,
+    fontFamily: tokens.font.bold,
+    fontSize: tokens.typography.rowTitle.fontSize,
+  },
 });
-
-// L'hôte, pas l'URL entière : c'est lui qui distingue deux instances, et une
-// même personne porte souvent la MÊME adresse sur les deux — mesuré, un compte
-// de développement dont le `mail` de l'annuaire est celui de production. Afficher
-// l'adresse seule ne dirait donc pas où l'on est.
-export function instanceLabel(serverUrl: string): string {
-  try {
-    return new URL(serverUrl).host;
-  } catch {
-    return serverUrl;
-  }
-}
 
 // Un salon sans nom se voit attribuer son slug comme nom par `toRoom` : la seule
 // façon de les distinguer est l'égalité des deux. Un salon réellement nommé
@@ -78,15 +90,14 @@ export function HomeScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
   const [rooms, setRooms] = useState<readonly Room[]>([]);
-  const [code, setCode] = useState('');
   const [query, setQuery] = useState('');
-  // Lu une fois : la déconnexion quitte l'écran, elle ne le rafraîchit pas.
+  const [joinOpen, setJoinOpen] = useState(false);
   const [account] = useState(() => getActiveAccount());
 
   useEffect(() => {
-    const account = getActiveAccount();
-    if (account === null) return;
-    fetchMyRooms(account)
+    const active = getActiveAccount();
+    if (active === null) return;
+    fetchMyRooms(active)
       .then((result) => {
         if (result.ok) setRooms(result.value);
       })
@@ -95,91 +106,111 @@ export function HomeScreen(): React.ReactElement {
 
   const visible = useMemo(() => filterRooms(rooms, query), [rooms, query]);
 
-  const handleJoin = (): void => {
-    if (code.trim().length > 0) router.push(`/room/${code.trim()}/prejoin`);
-  };
-
-  const handleCreate = (): void => {
-    router.push('/room/create');
-  };
-
-  // `replace` et non `push` : l'accueil d'un compte qui n'existe plus ne doit
-  // pas rester dans la pile, où un retour arrière le rendrait avec un compte
-  // actif nul et une liste de salons appartenant à personne.
-  const handleSignOut = (): void => {
-    void signOut().then(() => router.replace('/welcome'));
-  };
-
+  // L'encart HAUT n'est PAS ici : il appartient à l'en-tête, seule surface qui
+  // borde ce bord et qui porte sa propre couleur. Posé sur cette racine, la
+  // bande d'état prenait le gris de la page sous un en-tête blanc.
   return (
-    <View style={styles.root}>
-      {account === null ? null : (
-        <View style={styles.accountRow}>
-          <View style={styles.accountIdentity}>
-            <Text testID="account-email" numberOfLines={1}>
-              {account.email}
-            </Text>
-            <Text testID="account-instance" variant="bodySmall" numberOfLines={1}>
-              {instanceLabel(account.instance.serverUrl)}
-            </Text>
-          </View>
-          <Button mode="text" testID="sign-out-btn" onPress={handleSignOut}>
-            {t('home.signOut')}
-          </Button>
-        </View>
-      )}
-
-      <View style={styles.joinRow}>
-        <TextInput
-          testID="join-code-input"
-          style={styles.joinInput}
-          value={code}
-          onChangeText={setCode}
-          autoCapitalize="none"
-          placeholder={t('home.join')}
-        />
-        <Button mode="contained" testID="join-btn" onPress={handleJoin}>
-          {t('home.join')}
-        </Button>
-      </View>
-
-      <Button mode="outlined" testID="create-room-btn" onPress={handleCreate}>
-        {t('home.create')}
-      </Button>
-
-      <Text variant="titleMedium">{t('home.myRooms')}</Text>
-
-      {/* Le filtre n'apparaît que s'il sert : sur trois réunions il ne ferait
-          qu'occuper l'écran. */}
-      {rooms.length > 5 ? (
-        <TextInput
-          testID="room-filter-input"
-          value={query}
-          onChangeText={setQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder={t('home.filter')}
-        />
-      ) : null}
+    <View style={styles.root} testID="home-screen">
+      <AppHeader
+        onAvatarPress={() => router.push('/reglages')}
+        testID="home-header"
+        title={t('home.title')}
+        userName={account?.displayName ?? ''}
+      />
 
       <FlatList
+        contentContainerStyle={styles.content}
         data={[...visible]}
         keyExtractor={(room) => room.slug}
         ListEmptyComponent={
           rooms.length === 0 ? null : (
-            <Text testID="room-none-matching">{t('home.noneMatching')}</Text>
+            <Text style={styles.noneMatching} testID="room-none-matching">
+              {t('home.noneMatching')}
+            </Text>
           )
         }
-        renderItem={({ item }) => (
-          <List.Item
-            testID="room-item"
-            title={displayName(item)}
-            titleStyle={findRoomTitle(item.slug) === null ? styles.code : undefined}
-            // Un code n'est pas un nom : le dire évite de faire passer une
-            // référence technique pour l'intitulé d'une réunion.
-            description={findRoomTitle(item.slug) === null ? t('home.unnamed') : undefined}
-            onPress={() => router.push(`/room/${item.slug}/prejoin`)}
-          />
-        )}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            {/* Les deux cartes du mockup. « Créer » pousse un écran, « Rejoindre »
+                ouvre une feuille : le premier porte quatre champs dont les
+                co-organisateurs, le second tient en une demi-hauteur. */}
+            <ActionCard
+              filled
+              glyph="video-outline"
+              onCardPress={() => router.push('/room/create')}
+              subtitle={t('home.createSubtitle')}
+              testID="home-create"
+              title={t('home.createTitle')}
+            />
+            <ActionCard
+              filled={false}
+              glyph="login-variant"
+              onCardPress={() => setJoinOpen(true)}
+              subtitle={t('home.joinSubtitle')}
+              testID="home-join"
+              title={t('home.joinTitle')}
+            />
+
+            <SectionLabel label={t('home.myRooms')} testID="home-section" />
+
+            {/* Le filtre n'apparaît que s'il sert : sur trois réunions il ne
+                ferait qu'occuper l'écran. */}
+            {rooms.length > 5 ? (
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setQuery}
+                placeholder={t('home.filter')}
+                testID="room-filter-input"
+                value={query}
+              />
+            ) : null}
+          </View>
+        }
+        renderItem={({ item }) => {
+          const named = findRoomTitle(item.slug) !== null;
+          return (
+            <SurfaceCard>
+              <Pressable
+                onPress={() => router.push(`/room/${item.slug}/prejoin`)}
+                style={styles.row}
+                testID="room-item"
+              >
+                <InitialsAvatar
+                  name={displayName(item)}
+                  size="md"
+                  testID={`room-avatar-${item.slug}`}
+                />
+                <View style={styles.rowText}>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.rowTitle, named ? null : styles.code]}
+                    testID={`room-title-${item.slug}`}
+                  >
+                    {displayName(item)}
+                  </Text>
+                  {/* Un code n'est pas un nom : le dire évite de faire passer
+                      une référence technique pour l'intitulé d'une réunion. */}
+                  {named ? null : (
+                    <Text style={styles.rowMeta} testID={`room-unnamed-${item.slug}`}>
+                      {t('home.unnamed')}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+            </SurfaceCard>
+          );
+        }}
+      />
+
+      <JoinSheet
+        onJoinRoom={(slug) => {
+          setJoinOpen(false);
+          router.push(`/room/${slug}/prejoin`);
+        }}
+        onSheetDismiss={() => setJoinOpen(false)}
+        testID="home-join-sheet"
+        visible={joinOpen}
       />
     </View>
   );

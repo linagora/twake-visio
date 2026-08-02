@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import * as rooms from 'src/api/rooms';
 import type { Room } from 'src/call/types';
 import { forgetRoomTitle, rememberRoomTitle } from 'src/rooms/titles';
 import * as accounts from 'src/auth/accounts';
-import * as login from 'src/auth/login';
+import { tokens } from 'src/ui/tokens';
 import { filterRooms, HomeScreen } from './home';
 
 const mockPush = jest.fn();
@@ -21,6 +23,45 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// L'accueil héberge désormais la feuille « Rejoindre », donc un `Portal` :
+// sans `PaperProvider` ancêtre le rendu jette un `AggregateError` peu bavard.
+// Même préambule que `bottomSheet.spec.tsx` et `joinSheet.spec.tsx`.
+jest.mock(
+  'react-native-safe-area-context',
+  () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
+);
+
+jest.mock('expo-clipboard', () => ({ getStringAsync: jest.fn(async () => '') }));
+
+function renderHome(): Promise<unknown> {
+  return render(
+    <PaperProvider theme={{ animation: { scale: 0 } }}>
+      <HomeScreen />
+    </PaperProvider>,
+  );
+}
+
+// Des encoches NON NULLES, injectées : le double de `jest.setup.ts` rend zéro
+// par défaut, et un rembourrage de zéro passerait aussi bien avec le crochet
+// qu'avec une constante. Le fournisseur du double lit `initialMetrics`
+// (`jest/mock.tsx:45-58`), donc ces valeurs atteignent bien l'écran.
+const IPHONE_INSETS = { bottom: 34, left: 0, right: 0, top: 59 };
+
+function renderHomeWithInsets(): Promise<unknown> {
+  return render(
+    <SafeAreaProvider
+      initialMetrics={{
+        frame: { height: 874, width: 402, x: 0, y: 0 },
+        insets: IPHONE_INSETS,
+      }}
+    >
+      <PaperProvider theme={{ animation: { scale: 0 } }}>
+        <HomeScreen />
+      </PaperProvider>
+    </SafeAreaProvider>,
+  );
+}
+
 const ACCOUNT = {
   id: 'https://sso.linagora.com|u-1',
   instance: {
@@ -28,11 +69,20 @@ const ACCOUNT = {
     issuer: 'https://sso.linagora.com',
     clientId: 'twake-visio',
     livekitUrl: 'https://livekit.linagora.com',
-    features: { recording: true, subtitle: true, telephony: false },
+    features: { recording: true, subtitle: true, telephony: false, calendar: false },
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
 };
+
+function manyRooms(count: number): readonly Room[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `r-${index}`,
+    slug: `salon-${index}`,
+    name: `Salon ${index}`,
+    accessLevel: 'public' as const,
+  }));
+}
 
 describe('HomeScreen', () => {
   it("affiche les réunions renvoyées par l'API", async () => {
@@ -42,7 +92,7 @@ describe('HomeScreen', () => {
       value: [{ id: 'r-1', slug: 'point-hebdo', name: 'Point hebdo', accessLevel: 'trusted' }],
     });
 
-    await render(<HomeScreen />);
+    await renderHome();
 
     await waitFor(() => {
       expect(screen.getByText('Point hebdo')).toBeTruthy();
@@ -53,33 +103,104 @@ describe('HomeScreen', () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: false, error: { kind: 'network' } });
 
-    await render(<HomeScreen />);
+    await renderHome();
 
     await waitFor(() => {
       expect(screen.queryByTestId('room-item')).toBe(null);
     });
   });
 
-  it('rejoint le code saisi, espaces retirés', async () => {
+  // Les deux tests du champ de code ont été RETIRÉS, pas contournés : ce champ
+  // n'existe plus. Rejoindre par code passe désormais par la feuille, et
+  // `src/screens/joinSheet.spec.tsx` couvre ce parcours en entier — y compris
+  // le refus d'un lien d'hôte inconnu, que l'ancien champ ne vérifiait pas.
+  it('ouvre la feuille Rejoindre depuis la carte', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
-    await render(<HomeScreen />);
-    await fireEvent.changeText(screen.getByTestId('join-code-input'), '  point-hebdo  ');
-    await fireEvent.press(screen.getByTestId('join-btn'));
+    await renderHome();
+    await fireEvent.press(screen.getByTestId('home-join'));
 
-    expect(mockPush).toHaveBeenCalledWith('/room/point-hebdo/prejoin');
+    expect(screen.getByTestId('home-join-sheet-input')).toBeTruthy();
   });
 
-  it('ne navigue pas sur un code vide ou blanc', async () => {
+  // La conditionnelle prend ses deux valeurs : fermée au départ.
+  it('ne monte pas la feuille tant qu’on ne l’ouvre pas', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
     jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
 
-    await render(<HomeScreen />);
-    await fireEvent.changeText(screen.getByTestId('join-code-input'), '   ');
-    await fireEvent.press(screen.getByTestId('join-btn'));
+    await renderHome();
 
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('home-join-sheet-input')).toBe(null);
+  });
+
+  // Le filtre n'apparaît que s'il sert. La conditionnelle `rooms.length > 5`
+  // n'était gardée par RIEN — trouvé par mutation en refondant l'écran : la
+  // figer à `true` ne rougissait aucun test. Les deux états, chacun avec sa
+  // fixture, et la borne franchie des deux côtés.
+  it('ne rend pas le filtre sur une liste courte', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: manyRooms(5) });
+
+    await renderHome();
+    await waitFor(() => expect(screen.getAllByTestId('room-item')).toHaveLength(5));
+
+    expect(screen.queryByTestId('room-filter-input')).toBe(null);
+  });
+
+  it('rend le filtre dès que la liste dépasse cinq réunions', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: manyRooms(6) });
+
+    await renderHome();
+
+    await waitFor(() => expect(screen.getByTestId('room-filter-input')).toBeTruthy());
+  });
+
+  it('pousse l’écran de création depuis la carte', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+    await renderHome();
+    await fireEvent.press(screen.getByTestId('home-create'));
+
+    expect(mockPush).toHaveBeenCalledWith('/room/create');
+  });
+
+  // La coque n'applique plus les encoches — sa `SafeAreaView` les transformait
+  // en rembourrage SANS fond, d'où une bande blanche que l'écran d'appel ne
+  // pouvait pas peindre. Chaque racine les porte donc elle-même, ET la peint :
+  // les deux assertions vont ensemble, un rembourrage sans fond ne peint rien.
+  describe('les encoches', () => {
+    // Sur l'EN-TÊTE et non sur la racine : les deux peignent, mais pas la même
+    // couleur. Posé sur la racine, le bandeau d'état prenait `appBackground`
+    // sous un en-tête `cardSurface` — une couture visible, constatée sur
+    // appareil. `+ 8` est le rembourrage propre de l'en-tête.
+    it('applique l’encart HAUT sur l’en-tête, qui borde ce bord', async () => {
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+      jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+      await renderHomeWithInsets();
+
+      expect(screen.getByTestId('home-header')).toHaveStyle({
+        backgroundColor: tokens.color.cardSurface,
+        paddingTop: 67,
+      });
+      expect(screen.getByTestId('home-screen')).not.toHaveStyle({ paddingTop: 59 });
+    });
+
+    // LA garde de cet écran, et elle vaut plus que la précédente : l'encart bas
+    // appartient à la barre d'onglets, qui applique le sien et le peint de son
+    // fond. Les deux ensemble empilaient ~34 pt de vide sous les libellés —
+    // signalé sur appareil, corrigé une fois, et rien n'empêchait le retour.
+    it('laisse l’encart BAS à la barre d’onglets', async () => {
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+      jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+      await renderHomeWithInsets();
+
+      expect(screen.getByTestId('home-screen')).not.toHaveStyle({ paddingBottom: 34 });
+    });
   });
 });
 
@@ -162,50 +283,10 @@ describe('filterRooms', () => {
   });
 });
 
-describe('compte actif et déconnexion', () => {
-  // L'hôte, et pas seulement l'adresse : sur deux instances d'une même
-  // organisation la personne porte souvent la MÊME adresse — mesuré, un annuaire
-  // de développement dont le `mail` est celui de production. Un écran qui
-  // n'afficherait que l'adresse ne dirait pas où l'on est.
-  //
-  // Les deux valeurs sont volontairement distinctes du fixture par défaut : une
-  // implémentation qui figerait l'une ou l'autre passerait un test qui les
-  // reprendrait telles quelles.
-  it("nomme l'instance, pas seulement l'adresse", async () => {
-    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue({
-      ...ACCOUNT,
-      email: 'grace@exemple.org',
-      instance: { ...ACCOUNT.instance, serverUrl: 'https://meet.autre-instance.test' },
-    });
-    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
-
-    await render(<HomeScreen />);
-
-    expect(screen.getByTestId('account-email')).toHaveTextContent('grace@exemple.org');
-    expect(screen.getByTestId('account-instance')).toHaveTextContent('meet.autre-instance.test');
-  });
-
-  it('déconnecte et ramène à l’accueil sans laisser l’écran dans la pile', async () => {
-    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT);
-    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
-    const out = jest.spyOn(login, 'signOut').mockResolvedValue();
-
-    await render(<HomeScreen />);
-    await fireEvent.press(screen.getByTestId('sign-out-btn'));
-
-    await waitFor(() => expect(out).toHaveBeenCalled());
-    // `replace`, jamais `push` : un retour arrière rendrait l'accueil d'un
-    // compte qui n'existe plus.
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/welcome'));
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it('ne montre rien plutôt qu’un bandeau vide quand aucun compte n’est actif', async () => {
-    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
-
-    await render(<HomeScreen />);
-
-    expect(screen.queryByTestId('sign-out-btn')).toBeNull();
-    expect(screen.queryByTestId('account-instance')).toBeNull();
-  });
-});
+// Le bloc « compte actif et déconnexion » a été RETIRÉ, pas contourné.
+//
+// L'accueil ne porte plus ni bandeau de compte ni bouton de déconnexion : le
+// Lot 2 les a déplacés vers Réglages, où le mockup met l'identité. Les trois
+// tests ont suivi l'information — `reglages.spec.tsx` garde la déconnexion et
+// l'affichage de l'instance, et `src/instance/label.spec.ts` garde
+// `instanceLabel`, qui vivait ici.
