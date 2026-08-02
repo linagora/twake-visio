@@ -53,7 +53,7 @@
   "call.audioOutput": "Sortie audio",
   "call.outputFollowsDevice": "Le son suit l'appareil que vous branchez",
   "call.outputManualUntilEnd": "Le son ne suivra plus l'appareil branché pour le reste de la réunion",
-  "call.outputAutomatic": "Automatique",
+  "call.outputAutomatic": "Revenir au choix automatique",
   "call.outputNumbered": "{{name}} {{index}}",
   "call.unnamedParticipant": "Participant sans nom",
   "call.raiseHand": "Lever la main",

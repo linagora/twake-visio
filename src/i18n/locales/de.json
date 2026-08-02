@@ -53,7 +53,7 @@
   "call.audioOutput": "Audioausgabe",
   "call.outputFollowsDevice": "Der Ton folgt dem angeschlossenen Gerät",
   "call.outputManualUntilEnd": "Der Ton folgt für den Rest dieser Besprechung keinem angeschlossenen Gerät mehr",
-  "call.outputAutomatic": "Automatisch",
+  "call.outputAutomatic": "Zurück zur automatischen Wahl",
   "call.outputNumbered": "{{name}} {{index}}",
   "call.unnamedParticipant": "Teilnehmer ohne Namen",
   "call.raiseHand": "Hand heben",

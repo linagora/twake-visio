@@ -53,7 +53,7 @@
   "call.audioOutput": "Đầu ra âm thanh",
   "call.outputFollowsDevice": "Âm thanh đi theo thiết bị bạn cắm vào",
   "call.outputManualUntilEnd": "Âm thanh sẽ không còn đi theo thiết bị được cắm vào trong phần còn lại của cuộc họp",
-  "call.outputAutomatic": "Tự động",
+  "call.outputAutomatic": "Trở lại chế độ tự động",
   "call.outputNumbered": "{{name}} {{index}}",
   "call.unnamedParticipant": "Người tham gia không tên",
   "call.raiseHand": "Giơ tay",

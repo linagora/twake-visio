@@ -142,7 +142,14 @@ export function AudioOutputControl({
             donne pas — `setUserSelectedAudioDevice` y est `protected`, donc
             aucun appelant extérieur ne peut remettre le champ à `null`. Rendu
             seulement quand il y a quelque chose à défaire : masquer une
-            commande indisponible, jamais la griser. */}
+            commande indisponible, jamais la griser.
+
+            Son libellé dit un RETOUR, pas une destination. « Automatique »
+            seul se lisait comme une quatrième sortie posée à côté de trois
+            appareils — alors que l'automatique n'est pas un endroit où envoyer
+            le son, c'est l'état par défaut de la séance, et cette ligne ne sert
+            qu'à y revenir après l'avoir rompu. Relevé par le propriétaire sur
+            appareil, qui a lu la ligne comme un réglage modifiable. */}
         {mode === 'devices' && manual ? (
           <SheetRow
             testID="audio-output-automatic"
