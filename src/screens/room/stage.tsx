@@ -15,7 +15,58 @@ import { Text } from 'react-native-paper';
 
 import { GRID_GAP, type Box } from 'src/call/grid';
 import type { CallLayout, Tile } from 'src/call/layout';
+import { initialsOf } from 'src/ui/initialsAvatar';
 import { tokens } from 'src/ui/tokens';
+
+// — Les trois voiles du mockup, et pourquoi aucun n'est un jeton —
+//
+// Ce sont des voiles, pas des teintes : leur valeur rendue dépend de ce qu'il y
+// a DESSOUS, donc aucun ne peut vivre dans `src/ui/tokens`, dont les jetons
+// sont opaques et absolus. Ils vivent ici comme `BAR_RIPPLE_COLOR` vit dans
+// `controlBar.ts`, chacun avec le ratio MESURÉ qui le justifie. Les deux
+// dimensions qui les suivent, elles, sont ici pour une autre raison, dite à
+// leur endroit.
+
+// La bordure d'une tuile ordinaire. Décorative au sens de WCAG 1.4.11 : elle ne
+// porte aucune information qu'on ne lise ailleurs — une tuile se voit à son
+// image ou à son cercle d'initiales, la personne à son nom — donc aucun seuil
+// ne s'y applique et la valeur du mockup est reprise telle quelle. Composée sur
+// `surfaceDark` elle donne #232323, soit 1,19:1 : un liseré, rien de plus.
+const TILE_BORDER_COLOR = 'rgba(255, 255, 255, 0.07)';
+
+// Le fond du cercle d'initiales. Il ne se pose JAMAIS sur une vidéo — il ne
+// paraît qu'en son absence — donc son composite est le seul possible et il est
+// connu : 16 % de blanc sur `surfaceDark` (#121212) donnent #383838, sur lequel
+// `textDark` mesure 9,93:1.
+const AVATAR_BACKGROUND_COLOR = 'rgba(255, 255, 255, 0.16)';
+
+// Le voile du badge de nom, et la SEULE valeur du mockup corrigée ici.
+//
+// Le mockup pose 45 % de noir. Ce badge-là, contrairement au cercle ci-dessus,
+// se pose sur une vidéo dont la couleur n'est connue de personne ici — le même
+// motif qui a rendu `overflowBadge` et `pinBadge` opaques. Le pire cas est une
+// image blanche : le voile y compose #8C8C8C, sur lequel `textDark` ne mesure
+// que 2,85:1, sous les 4,5:1 exigés d'un texte de 11,5 px.
+//
+// Et ces 45 % n'étaient pas seuls à porter le contraste : le mockup les
+// accompagne d'un `backdrop-filter: blur(6px)`, qui n'a aucun équivalent en
+// React Native — `expo-blur` n'est pas une dépendance de ce dépôt. Le voile
+// reste donc seul, et doit tenir seul.
+//
+// Opacifier le badge coûterait le caractère du mockup ; l'épaissir suffit. Le
+// plancher exact est 0,58 (4,51:1) ; 0,60 est la première valeur ronde
+// au-dessus et mesure 4,86:1 sur une vidéo blanche, 17,05:1 sans vidéo.
+const NAME_SCRIM_COLOR = 'rgba(0, 0, 0, 0.6)';
+
+// L'écart entre le badge de nom et les deux bords qu'il longe, relevé du mockup
+// (`left:10px;bottom:10px`). Hors des pas de `tokens.spacing`, comme les 5 et 9
+// dp de `nameBadge` : ce badge se dimensionne et se place sur son texte de
+// 11,5 px, jamais sur la grille d'espacement de la coque.
+const NAME_INSET = 10;
+
+// Le diamètre du cercle d'initiales, relevé du mockup. Hors de `tokens.spacing`
+// à dessein : ce n'est pas un pas d'espacement, c'est la taille d'un objet.
+const AVATAR_DIAMETER = 62;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -51,9 +102,23 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.xs,
     padding: tokens.spacing.xs,
   },
-  // La bordure est toujours là, seule sa couleur change : une bordure qui
-  // apparaît quand quelqu'un parle rognerait l'image de deux pixels à chaque
-  // mot.
+  // La bordure est toujours là, et sa LARGEUR ne change jamais : seule sa
+  // couleur change. Le bord est intérieur à la boîte — `size` en fixe les
+  // dimensions — donc l'épaissir rognerait l'image, et l'épaissir quand
+  // quelqu'un parle la rognerait à chaque mot.
+  //
+  // Le mockup pose 1 px sur une tuile ordinaire et 2 px sur la tuile locale. Ce
+  // sont les 2 px qui sont retenus pour TOUTES, et c'est la seule dimension du
+  // mockup qui bouge ici : `localTile` et `speaking` plus bas ne posent alors
+  // qu'une couleur, et `isSpeaking` — la seule des deux conditions qui BASCULE
+  // en séance — ne peut plus déplacer un pixel. La distinction que le mockup
+  // fait par l'épaisseur, la couleur la fait déjà : 4,88:1 entre le vert de
+  // marque et la bordure ordinaire.
+  //
+  // `radius.card` vaut 18, exactement le rayon relevé sur les tuiles du
+  // mockup : le même nombre parce que c'est le même système visuel, celui du
+  // Lot 1. Il est posé ICI plutôt que sur les styles de taille pour que les
+  // trois surfaces — grille, bande, scène — le portent sans avoir à le répéter.
   tile: {
     // `flex: 1` pour REMPLIR le `Pressable` qui l'enveloppe, et non pour
     // participer à une disposition. Sans lui, une vignette s'effondre à une
@@ -66,8 +131,9 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: tokens.color.surfaceDark,
+    borderRadius: tokens.radius.card,
     borderWidth: 2,
-    borderColor: tokens.color.surfaceDark,
+    borderColor: TILE_BORDER_COLOR,
   },
   stageTile: { flex: 1 },
   // La page de la grille. `padding` et `gap` valent la MÊME constante, et
@@ -91,16 +157,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: GRID_GAP,
   },
-  // Aucune dimension ici : elles descendent de `Packing` et ne peuvent pas
-  // être statiques. Elles arrivent par un tableau `[styles.gridTile, { width,
-  // height }]` — un objet de style CALCULÉ, jamais un littéral figé, la seule
-  // forme possible pour une taille qui dépend de la boîte mesurée.
-  gridTile: { borderRadius: tokens.radius.md },
-  // Le compteur de débordement. Posé en bas à droite de la page — coin opposé
-  // au badge d'épinglage (en haut à gauche de sa tuile) : les deux ne peuvent
-  // pas se recouvrir. Un fond OPAQUE, jamais translucide : la grille est pleine
-  // dès qu'il apparaît, donc il se pose forcément sur une vidéo dont la couleur
-  // n'est connue de personne ici.
+  // Le compteur de débordement. Posé en bas à droite de la PAGE — le badge
+  // d'épinglage est en haut à gauche de sa tuile et le badge de nom en bas à
+  // gauche de la sienne : aucun des trois ne peut en recouvrir un autre. Un
+  // fond OPAQUE, jamais translucide : la grille est pleine dès qu'il apparaît,
+  // donc il se pose forcément sur une vidéo dont la couleur n'est connue de
+  // personne ici. `nameBadge` plus bas répond au même risque autrement, et le
+  // commentaire de `NAME_SCRIM_COLOR` dit à quelles conditions.
   overflowBadge: {
     position: 'absolute',
     right: tokens.spacing.sm,
@@ -119,27 +182,93 @@ const styles = StyleSheet.create({
   // suivait le schéma système. Depuis le Lot 1 de la refonte, `makeTheme` rend
   // toujours le thème clair : le piège n'est plus fréquent, il est certain.
   overflowText: { color: tokens.color.textDark },
-  thumbnailTile: { width: tokens.spacing.xl * 4, borderRadius: tokens.radius.md },
+  // Plus de rayon ici ni dans les deux styles voisins : il appartient à
+  // `styles.tile`, que toute tuile porte quelle que soit sa surface.
+  thumbnailTile: { width: tokens.spacing.xl * 4 },
   // Le pendant de `thumbnailTile` en paysage : la dimension fixe passe de la
   // largeur à la hauteur, pour tenir dans la colonne plutôt que dans la
   // rangée.
-  thumbnailTileColumn: { height: tokens.spacing.xl * 3, borderRadius: tokens.radius.md },
+  thumbnailTileColumn: { height: tokens.spacing.xl * 3 },
+  // « C'est moi ». 5,82:1 sur `surfaceDark` : la spécification du lot demandait
+  // de mesurer le vert de marque par sous-lot avant emploi plutôt que de le
+  // supposer — sur la coque claire il tombait à 2,99, sous le seuil non textuel
+  // de 3:1 lui-même.
+  localTile: { borderColor: tokens.color.brand },
+  // Le locuteur passe DEVANT « c'est moi », et pas l'inverse : c'est le seul
+  // des deux états qui bascule, donc le seul qu'on regarde changer. Posé après
+  // `localTile` dans le tableau de styles, il gagne. 6,59:1 sur `surfaceDark`.
   speaking: { borderColor: tokens.color.primaryDark },
   video: { flex: 1 },
-  placeholder: {
-    flex: 1,
+  // Le cercle d'initiales : ce que la tuile montre à la place d'une image. Une
+  // COUCHE en position absolue plutôt qu'une vue en flux, comme celle du nom
+  // juste en dessous — les deux se superposent au cadre sans se connaître, et
+  // aucune ne prend sa place à l'autre.
+  //
+  // `absoluteFill` et non `absoluteFillObject` : ce dernier n'existe plus en RN
+  // 0.86, ni dans les types ni à l'exécution. `absoluteFill` EST l'objet
+  // (`StyleSheetExports.js:21-27`), donc il se répand.
+  avatarLayer: {
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: tokens.spacing.xs,
   },
-  placeholderText: { color: tokens.color.textDark, textAlign: 'center' },
+  avatar: {
+    width: AVATAR_DIAMETER,
+    height: AVATAR_DIAMETER,
+    borderRadius: AVATAR_DIAMETER / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: AVATAR_BACKGROUND_COLOR,
+  },
+  // Même doctrine qu'`overflowText` : ce `Text` vient de Paper, donc sans
+  // couleur explicite il retomberait sur `onSurface`, que `makeTheme` rend
+  // TOUJOURS clair depuis le Lot 1. 9,93:1 sur le composite du cercle
+  // (#383838), calculé et non recopié d'un autre fond de ce fichier.
+  avatarText: {
+    color: tokens.color.textDark,
+    fontFamily: tokens.font.extraBold,
+    fontSize: 20,
+  },
+  // La couche qui POSITIONNE le badge de nom, en bas à gauche. Elle couvre
+  // toute la tuile et ne doit donc rien intercepter : c'est le `pointerEvents`
+  // posé sur elle en JSX qui laisse l'appui atteindre le `Pressable` qui
+  // l'englobe. Le badge d'épinglage, lui, ne lui doit rien : il est rendu APRÈS
+  // elle, donc au-dessus, et reçoit l'appui avant qu'elle ne soit consultée.
+  nameLayer: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
+    padding: NAME_INSET,
+  },
+  // `maxWidth` à 100 % : sans lui, un nom long élargit le badge au-delà de la
+  // tuile, que l'`overflow: 'hidden'` de `styles.tile` coupe net. Le
+  // `numberOfLines` du texte ne borne QUE le nombre de lignes, jamais la
+  // largeur de son parent.
+  //
+  // 5 et 9 dp ne sont sur aucun pas de `tokens.spacing` (4, 8, 16, 24, 32) : ce
+  // sont les valeurs relevées du mockup, gardées telles quelles parce que ce
+  // badge se dimensionne sur son texte de 11,5 px et non sur la grille
+  // d'espacement de la coque.
+  nameBadge: {
+    maxWidth: '100%',
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 9,
+    backgroundColor: NAME_SCRIM_COLOR,
+  },
+  nameText: {
+    color: tokens.color.textDark,
+    fontFamily: tokens.font.bold,
+    fontSize: 11.5,
+  },
   // Le badge d'épinglage — désormais PRESSABLE : c'est lui, et lui seul, qui
   // désépingle (voir `onTileUnpin`). Une petite punaise dans un coin passait
   // inaperçue ; un partenaire testant sur appareil ne l'a jamais vue. Un fond
   // opaque, jamais translucide — sans lui, le badge se pose directement sur
-  // une vidéo dont la couleur n'est connue de personne ici. Coin opposé au
-  // nom (`placeholder`, centré) et à la bordure de locuteur (`speaking`, sur
-  // tout le pourtour) : rien ne se recouvre.
+  // une vidéo dont la couleur n'est connue de personne ici. Coin opposé au nom
+  // (`nameBadge`, en bas à gauche depuis le restylage — il était centré) et à
+  // la bordure de locuteur (`speaking`, sur tout le pourtour) : rien ne se
+  // recouvre.
   //
   // `minWidth`/`minHeight` à 44, la recommandation Apple déjà retenue par
   // `controlBar.ts` pour la barre de contrôle : un PLANCHER, jamais une
@@ -238,16 +367,30 @@ function VideoTile({
         // Le nom est la seule chose qu'un lecteur d'écran puisse dire d'une piste
         // vidéo. Il le porte donc dans les deux cas, image ou non.
         accessibilityLabel={label}
-        style={[styles.tile, size, tile.isSpeaking ? styles.speaking : null]}
+        // `localTile` avant `speaking` : le dernier gagne, et c'est voulu — voir
+        // les deux styles.
+        style={[
+          styles.tile,
+          size,
+          tile.isLocal ? styles.localTile : null,
+          tile.isSpeaking ? styles.speaking : null,
+        ]}
       >
         {tile.track === null ? (
-          // Sans image, un nom sur fond uni. Un rectangle noir ne se distingue pas
-          // d'une panne, et faire disparaître la vignette sortirait la personne de
-          // la liste des présents alors qu'elle est bien là.
-          <View testID={`tile-placeholder-${tile.key}`} style={styles.placeholder}>
-            <Text style={styles.placeholderText} numberOfLines={2}>
-              {label}
-            </Text>
+          // Sans image, un cercle d'initiales sur fond uni. Un rectangle noir ne
+          // se distingue pas d'une panne, et faire disparaître la vignette
+          // sortirait la personne de la liste des présents alors qu'elle est
+          // bien là.
+          //
+          // Les initiales viennent du nom BRUT, jamais de `label` : un nom vide
+          // n'en donne aucune (`initialsOf`), et c'est bien un cercle nu qu'on
+          // veut alors, pas la première lettre d'une chaîne traduite.
+          <View style={styles.avatarLayer}>
+            <View testID={`tile-avatar-${tile.key}`} style={styles.avatar}>
+              <Text testID={`tile-avatar-${tile.key}-text`} style={styles.avatarText}>
+                {initialsOf(tile.name)}
+              </Text>
+            </View>
           </View>
         ) : (
           <VideoTrack
@@ -260,6 +403,52 @@ function VideoTile({
             mirror={tile.mirror}
           />
         )}
+
+        {/* Le nom, en bas à gauche, sur toute tuile — avec image ou sans. Rendu
+            AVANT le badge d'épinglage pour que celui-ci reste au-dessus, et
+            `pointerEvents="none"` parce que cette couche recouvre la tuile
+            entière : sans lui, elle s'interposerait entre le doigt et le
+            `Pressable` qui l'englobe.
+
+            Le `testID` du carton nommé d'avant SUIT LE NOM, la seule chose que
+            ce carton portait — et il reste, comme avant, réservé aux tuiles
+            SANS image : `call.spec.tsx:544` s'en sert pour prouver qu'aucune
+            vidéo n'est posée, et l'étendre à toutes les tuiles viderait cette
+            preuve au lieu de la garder.
+
+            Posé sur la COUCHE et non sur le badge, pour que `tile-name-…`
+            désigne le même élément dans les deux cas. Et les initiales, elles,
+            sont hors de cette couche : `toHaveTextContent` de RNTL 14 compare
+            la chaîne ENTIÈRE (`matches()`, `exact = true` par défaut), pas une
+            sous-chaîne comme le ferait `jest-native` — mesuré, un « A » glissé
+            à côté du nom fait lire « Aada:camera » là où deux tests attendent
+            « ada:camera ».
+
+            Pas de glyphe de micro coupé devant le nom, et ce n'est pas un
+            oubli : RIEN dans l'application ne sait qu'un micro est coupé.
+            `Tile` ne porte pas l'information, `ParticipantView` non plus — son
+            `micTrackSid` dit qu'une piste est PUBLIÉE, et son propre
+            commentaire précise qu'il est « distinct de `isMuted` à dessein ».
+            Ce qui manque n'est PAS l'abonnement : `RoomEvent.TrackMuted` et
+            `TrackUnmuted` déclenchent déjà la relecture
+            (`src/call/participants.ts:26-27`). C'est le champ — il faudrait
+            lire `publication.isMuted` dans `readParticipant`, le porter dans
+            `ParticipantView` puis dans `Tile` par `toTile`. Deux fichiers hors
+            du périmètre de ce sous-lot, leurs deux specs, et une donnée
+            nouvelle : ce qu'un restylage s'interdit. Le mockup lui-même ne
+            remplit jamais ce créneau — `muteIcon:''` pour ses quatre tuiles. */}
+        <View
+          testID={tile.track === null ? `tile-placeholder-${tile.key}` : undefined}
+          style={styles.nameLayer}
+          pointerEvents="none"
+        >
+          <View testID={`tile-name-${tile.key}`} style={styles.nameBadge}>
+            <Text testID={`tile-name-${tile.key}-text`} style={styles.nameText} numberOfLines={1}>
+              {label}
+            </Text>
+          </View>
+        </View>
+
         {pinned ? (
           // I5 : un `Pressable` à part entière, imbriqué dans celui de la
           // tuile — pas un second `onPress` sur le même élément. RNTL 14
@@ -432,7 +621,11 @@ function rowsOf(tiles: readonly Tile[], columns: number): readonly (readonly Til
 // tout le principe : le vide devient de la marge de page.
 function TileGrid({ layout, onFullscreenTile }: TileGridProps): React.ReactElement {
   const { t } = useTranslation();
-  const size = [styles.gridTile, { width: layout.tileWidth, height: layout.tileHeight }];
+  // Un objet de style CALCULÉ, jamais un littéral figé : ces deux nombres
+  // descendent de la boîte mesurée et ne peuvent pas être statiques. C'est la
+  // seule forme de style dynamique du fichier. Plus rien de statique ne
+  // l'accompagne depuis que le rayon vit sur `styles.tile`.
+  const size = { width: layout.tileWidth, height: layout.tileHeight };
 
   return (
     <View style={styles.gridPage} testID="grid">
