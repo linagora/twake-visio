@@ -1,5 +1,5 @@
 import { refreshTokens } from 'src/auth/oidc';
-import { loadTokens, saveTokens } from 'src/auth/storage';
+import { clearTokens, loadTokens, saveTokens } from 'src/auth/storage';
 import type { InstanceConfig } from 'src/instance/types';
 
 // Trois issues, parce que l'appelant doit pouvoir dire trois choses
@@ -46,8 +46,26 @@ export async function forceRefresh(
       const result = await refreshTokens(config, tokens.refreshToken);
       if (!result.ok) {
         // Une panne du SSO ou du réseau n'est pas un refus : la session est
-        // peut-être parfaitement valide, seul le service manque.
+        // peut-être parfaitement valide, seul le service manque. Écarter les
+        // jetons ici déconnecterait quelqu'un pour un Wi-Fi qui a hoqueté.
         const transient = result.error === 'server' || result.error === 'network';
+        if (!transient) {
+          // Un REFUS, lui, est définitif : le jeton de rafraîchissement ne
+          // redeviendra pas valide. Mesuré le 2026-08-03 — la session OIDC
+          // avait disparu du magasin du SSO (« Unable to find OIDC session »)
+          // et le client est déclaré sans accès hors ligne, donc le jeton est
+          // mort avec elle. Le garder faisait rejouer le même refus toutes
+          // les minutes : six `POST /oauth2/token` en `400` dans les journaux
+          // du SSO, sans aucune chance d'aboutir.
+          //
+          // Une écriture qui échoue ne doit pas masquer le refus : l'appelant
+          // doit l'apprendre dans tous les cas.
+          try {
+            await clearTokens(accountId);
+          } catch {
+            // Jetons non effacés, session tout de même perdue.
+          }
+        }
         return { ok: false, reason: transient ? 'unavailable' : 'refused' };
       }
 

@@ -243,4 +243,46 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
     expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
     expect((await forceRefresh(ACCOUNT, CONFIG)).ok).toBe(false);
   });
+
+  // Mesuré sur l'instance de développement le 2026-08-03 : la session OIDC
+  // avait disparu du magasin de LemonLDAP — « Unable to find OIDC session » —
+  // et le jeton de rafraîchissement n'a pas de vie propre, le client
+  // `livekit-meet` étant déclaré sans accès hors ligne. Il était donc mort
+  // pour toujours, et l'application le rejouait toutes les minutes : six
+  // `POST /oauth2/token` en `400` relevés dans les journaux du SSO.
+  //
+  // Un refus n'est pas une panne : la session est PERDUE. L'écarter rend
+  // l'état honnête — le prochain appel dit « aucune session » sans réseau —
+  // et arrête le martèlement.
+  it('écarte les jetons quand le SSO REFUSE le rafraîchissement', async () => {
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt-mort',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'invalid_grant' });
+    const clear = jest.spyOn(storage, 'clearTokens').mockResolvedValue();
+
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: false, reason: 'refused' });
+    expect(clear).toHaveBeenCalledWith(ACCOUNT);
+  });
+
+  // L'autre polarité, et c'est celle qui compte le plus : une panne réseau ou
+  // un SSO indisponible ne dit RIEN de la session. Écarter les jetons là
+  // déconnecterait quelqu'un dont la session est parfaitement valide, pour un
+  // Wi-Fi qui a hoqueté.
+  it('garde les jetons quand le SSO est seulement INJOIGNABLE', async () => {
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'network' });
+    const clear = jest.spyOn(storage, 'clearTokens').mockResolvedValue();
+
+    expect(await forceRefresh(ACCOUNT, CONFIG)).toEqual({ ok: false, reason: 'unavailable' });
+    expect(clear).not.toHaveBeenCalled();
+  });
 });
