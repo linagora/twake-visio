@@ -4,6 +4,7 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
+import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
 import { BAR_SURFACE_COLOR } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
@@ -49,6 +50,10 @@ type Overrides = {
   defaultCameraOn?: boolean;
   unread?: number;
   hands?: readonly RaisedHand[];
+  handRaised?: boolean;
+  handBusy?: boolean;
+  onToggleHand?: () => void;
+  onSendReaction?: (key: ReactionKey) => void;
 };
 
 function bar(overrides: Overrides = {}): React.ReactElement {
@@ -63,15 +68,15 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       recording={IDLE}
       canRecord
       recordingBusy={false}
-      handRaised={false}
-      handBusy={false}
+      handRaised={overrides.handRaised ?? false}
+      handBusy={overrides.handBusy ?? false}
       hands={overrides.hands ?? []}
       unread={overrides.unread ?? 0}
       onShare={jest.fn()}
       onStartRecording={jest.fn()}
       onStopRecording={jest.fn()}
-      onToggleHand={jest.fn()}
-      onSendReaction={jest.fn()}
+      onToggleHand={overrides.onToggleHand ?? jest.fn()}
+      onSendReaction={overrides.onSendReaction ?? jest.fn()}
       onOpenChat={jest.fn()}
       effect={null}
       onEffectSelect={jest.fn()}
@@ -105,7 +110,7 @@ describe('CallControlBar', () => {
 
     expect(fill('mic-toggle')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
     expect(fill('camera-toggle')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
-    expect(fill('audio-output-btn')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
+    expect(fill('reactions-toggle')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
     expect(fill('more-btn')).toHaveStyle({ backgroundColor: BAR_SURFACE_COLOR });
   });
 
@@ -163,6 +168,82 @@ describe('CallControlBar', () => {
     expect(screen.getByTestId('chat-unread')).toHaveStyle({
       backgroundColor: tokens.color.brandStrong,
       color: tokens.color.onBrand,
+    });
+  });
+  // La rangée de réactions, la forme que le propriétaire a demandée : un appui
+  // l'ouvre au-dessus de la barre, un choix l'envoie et la referme aussitôt.
+  // Elle vivait dans le menu « Plus », à deux gestes de là.
+  describe('la rangée de réactions', () => {
+    it("n'est pas rendue tant qu'on n'a pas appuyé", async () => {
+      await render(bar());
+
+      expect(screen.queryByTestId('reaction-row-thumbs-up')).toBe(null);
+    });
+
+    it("s'ouvre sur un appui", async () => {
+      await render(bar());
+
+      await fireEvent.press(screen.getByTestId('reactions-toggle'));
+
+      expect(screen.getByTestId('reaction-row-thumbs-up')).toBeTruthy();
+    });
+
+    // Les DEUX instructions du gestionnaire, une assertion chacune. La
+    // troisième réaction, jamais la première : avec `thumbs-up`, « transmet la
+    // cible pressée » et « renvoie toujours la première » seraient
+    // indiscernables.
+    it('envoie la réaction pressée', async () => {
+      const onSendReaction = jest.fn();
+      await render(bar({ onSendReaction }));
+      await fireEvent.press(screen.getByTestId('reactions-toggle'));
+
+      await fireEvent.press(screen.getByTestId('reaction-row-clapping-hands'));
+
+      expect(onSendReaction).toHaveBeenCalledWith('clapping-hands');
+      expect(onSendReaction).not.toHaveBeenCalledWith('thumbs-up');
+    });
+
+    it('se referme au premier choix', async () => {
+      await render(bar());
+      await fireEvent.press(screen.getByTestId('reactions-toggle'));
+
+      await fireEvent.press(screen.getByTestId('reaction-row-clapping-hands'));
+
+      expect(screen.queryByTestId('reaction-row-clapping-hands')).toBe(null);
+    });
+  });
+
+  describe('la main levée', () => {
+    it('transmet la bascule', async () => {
+      const onToggleHand = jest.fn();
+      await render(bar({ onToggleHand }));
+
+      await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+      expect(onToggleHand).toHaveBeenCalledTimes(1);
+    });
+
+    // L'icône d'un `IconButton` à icône-chaîne n'est JAMAIS joignable
+    // (`IconButton.tsx:211` ne lui transmet aucun testID) : c'est le libellé
+    // d'accessibilité qui porte l'état, et lui seul est observable.
+    it('annonce une baisse quand la main est déjà levée', async () => {
+      await render(bar({ handRaised: true }));
+
+      expect(screen.getByTestId('hand-toggle').props.accessibilityLabel).toBe('call.lowerHand');
+    });
+
+    it('annonce une levée sinon', async () => {
+      await render(bar({ handRaised: false }));
+
+      expect(screen.getByTestId('hand-toggle').props.accessibilityLabel).toBe('call.raiseHand');
+    });
+
+    // MASQUÉE pendant la requête, jamais grisée : Paper teste `disabled` avant
+    // toute couleur explicite et rendrait un quasi-noir sur ce fond sombre.
+    it('disparaît pendant que la requête est en vol', async () => {
+      await render(bar({ handBusy: true }));
+
+      expect(screen.queryByTestId('hand-toggle')).toBe(null);
     });
   });
 });

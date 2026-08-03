@@ -30,9 +30,10 @@ import {
 } from 'src/call/media';
 import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
-import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
+import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
 import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
+import { ReactionRow } from 'src/screens/room/reactionRow';
 import {
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
@@ -46,7 +47,7 @@ import { tokens } from 'src/ui/tokens';
 const styles = StyleSheet.create({
   controls: {
     flexDirection: 'row',
-    // `space-evenly` et non `center` : la rangée mesure 353 dp au MINIMUM, et
+    // `space-evenly` et non `center` : la rangée mesure 345 dp au MINIMUM, et
     // un téléphone en fait rarement 360 tout juste — 402 sur un iPhone 17 Pro.
     // Groupée au centre, elle laissait donc 49 dp inutilisés aux deux bouts et
     // les commandes se touchaient presque. Répartie, l'écart effectif suit la
@@ -57,14 +58,15 @@ const styles = StyleSheet.create({
     // vers la rangée serrée d'avant plutôt que de déborder.
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    // 8 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
-    // six cibles de 52 dp sur 353 dp, donc sur un écran de 360.
+    // 4 dp entre groupes, 4 dp de marge de rangée : c'est ce qui fait tenir
+    // SEPT enfants — six cibles de 48 dp plus le caret — sur 345 dp, donc sur
+    // un écran de 360. À 8 dp d'écart la rangée mesurerait 365 et déborderait.
     //
     // `BAR_PADDING` et non le token directement : `BAR_HEIGHT` en dépend, et
     // `ReactionOverlay` en tire la garde qui empêche une bulle de se poser sur
     // « raccrocher ». Écrit deux fois, ce nombre divergerait sans que rien ne
     // le dise.
-    gap: tokens.spacing.sm,
+    gap: tokens.spacing.xs,
     padding: BAR_PADDING,
   },
   // 1 dp à l'intérieur de la paire caméra : elle se lit comme une paire, ce que
@@ -198,6 +200,8 @@ export function CallControlBar({
   const [devices, setDevices] = useState<readonly AudioDeviceChoice[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<number | null>(null);
   const [manualOutput, setManualOutput] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [reactionsOpen, setReactionsOpen] = useState(false);
 
   // Une valeur, pas une lecture de `Platform` par le composant : c'est ce qui
   // permet à une spec de rendre les deux branches sans bouchonner la
@@ -279,6 +283,14 @@ export function CallControlBar({
   // de la dernière ouverture réussie — même discipline que
   // `handleOpenCameraMenu`.
   const handleOpenAudioOutput = (): void => {
+    // Le mode 'system' n'a AUCUNE feuille à ouvrir : sur iOS il n'existe que le
+    // sélecteur de la plateforme. La branche vivait dans le composant tant
+    // qu'il portait son propre déclencheur ; elle suit le déclencheur.
+    if (routeControl === 'system') {
+      handleOpenSystemRoutePicker();
+      return;
+    }
+    setAudioOpen(true);
     // Le chemin 'devices' n'emprunte JAMAIS `listAudioOutputs()` : c'est
     // AudioSwitch qui la sert, et AudioSwitch ne tourne pas quand notre module
     // tient la route.
@@ -365,6 +377,19 @@ export function CallControlBar({
       style={[styles.controls, { paddingBottom: BAR_PADDING + insets.bottom }]}
       testID="call-controls"
     >
+      {reactionsOpen ? (
+        <ReactionRow
+          onSend={(key) => {
+            // Deux instructions, donc deux assertions : envoyer, et refermer.
+            // C'est la forme sans conditionnelle qu'un recensement de branches
+            // ne voit pas — et celle qui a déjà laissé trois feuilles ouvertes
+            // dans ce dépôt.
+            setReactionsOpen(false);
+            onSendReaction(key);
+          }}
+          testID="reaction-row"
+        />
+      ) : null}
       {/* Le rouge plein du mockup dit « coupé » une seconde fois, à côté du
           glyphe barré : c'est la seule information de cette rangée qu'on
           cherche du coin de l'œil pendant qu'on parle. Un TABLEAU de styles,
@@ -402,19 +427,40 @@ export function CallControlBar({
           onEffectSelect={onEffectSelect}
         />
       </View>
-      <AudioOutputControl
-        mode={routeControl}
-        outputs={outputs}
-        chosen={chosenOutput}
-        devices={devices}
-        currentDeviceId={currentDeviceId}
-        manual={manualOutput}
-        onOpen={handleOpenAudioOutput}
-        onSelect={handleSelectAudioOutput}
-        onSelectDevice={handleSelectAudioDevice}
-        onAutomatic={handleAutomaticAudioOutput}
-        onSystemPicker={handleOpenSystemRoutePicker}
+      {/* Les réactions, en un appui, comme le web. La rangée s'ouvre AU-DESSUS
+          de la barre et se referme au premier choix. */}
+      <IconButton
+        testID="reactions-toggle"
+        icon="emoticon-happy-outline"
+        iconColor={BAR_ICON_COLOR}
+        rippleColor={BAR_RIPPLE_COLOR}
+        style={barStyles.button}
+        hitSlop={BAR_HIT_SLOP}
+        onPress={() => setReactionsOpen((open) => !open)}
+        accessibilityLabel={t('reaction.title')}
       />
+      {/* La main levée quitte le menu « Plus » : c'est un signal qu'on donne
+          pendant que quelqu'un d'autre parle, donc au moment précis où l'on ne
+          veut pas ouvrir un menu. Sa FILE reste ailleurs — `RaisedHandsBanner`
+          la montre déjà en haut de l'écran, et la dupliquer ferait lire deux
+          signaux là où il n'y en a qu'un. */}
+      {/* MASQUÉE pendant que la requête est en vol, jamais grisée :
+          `IconButton/utils.ts:88-93` teste `disabled` AVANT toute couleur
+          explicite et rend un quasi-noir sur ce fond sombre. C'est la règle de
+          cet écran, et le comportement que la commande avait déjà dans le
+          menu. */}
+      {handBusy ? null : (
+        <IconButton
+          testID="hand-toggle"
+          icon={handRaised ? 'hand-back-right' : 'hand-back-right-outline'}
+          iconColor={BAR_ICON_COLOR}
+          rippleColor={BAR_RIPPLE_COLOR}
+          style={barStyles.button}
+          hitSlop={BAR_HIT_SLOP}
+          onPress={onToggleHand}
+          accessibilityLabel={t(handRaised ? 'call.lowerHand' : 'call.raiseHand')}
+        />
+      )}
       {/* Le partage, seule commande de la barre qu'on n'utilise qu'une fois
           par réunion, passe derrière ce menu, qui porte aussi l'enregistrement
           et la main levée. La raison d'origine était la LARGEUR — la rangée
@@ -426,16 +472,30 @@ export function CallControlBar({
         recording={recording}
         canRecord={canRecord}
         recordingBusy={recordingBusy}
-        handRaised={handRaised}
-        handBusy={handBusy}
-        hands={hands}
         unread={unread}
+        hands={hands}
         onShare={onShare}
         onStartRecording={onStartRecording}
         onStopRecording={onStopRecording}
-        onToggleHand={onToggleHand}
-        onSendReaction={onSendReaction}
         onOpenChat={onOpenChat}
+        onOpenAudioOutput={handleOpenAudioOutput}
+      />
+      {/* Montée ICI et non dans le menu « Plus » : une feuille rendue dans une
+          autre feuille est DÉMONTÉE quand celle-ci se ferme, donc elle ne
+          pourrait jamais s'ouvrir depuis elle. C'est la raison pour laquelle
+          `AudioOutputSheet` a perdu son `visible` interne. */}
+      <AudioOutputSheet
+        visible={audioOpen}
+        onDismiss={() => setAudioOpen(false)}
+        mode={routeControl}
+        outputs={outputs}
+        chosen={chosenOutput}
+        devices={devices}
+        currentDeviceId={currentDeviceId}
+        manual={manualOutput}
+        onSelect={handleSelectAudioOutput}
+        onSelectDevice={handleSelectAudioDevice}
+        onAutomatic={handleAutomaticAudioOutput}
       />
       <IconButton
         testID="leave-btn"

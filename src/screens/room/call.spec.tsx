@@ -512,6 +512,15 @@ async function openParticipantActions(index = 0): Promise<void> {
   await waitFor(() => expect(screen.getByTestId('participant-sheet-title')).toBeTruthy());
 }
 
+// La sortie audio a quitté la barre pour le menu « Plus » : ses six
+// emplacements sont allés à la main levée et aux réactions. Deux gestes au lieu
+// d'un, donc une aide plutôt que la répétition dans dix tests.
+async function openAudioOutput(): Promise<void> {
+  await fireEvent.press(screen.getByTestId('more-btn'));
+  await waitFor(() => expect(screen.getByTestId('audio-output-row')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('audio-output-row'));
+}
+
 describe('CallScreen', () => {
   it("lit l'état courant à l'initialisation, que `subscribe` ne pousse pas", async () => {
     // Le régresseur : le double n'appelle jamais le listener à l'abonnement.
@@ -1579,11 +1588,11 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(1));
   });
@@ -1593,9 +1602,9 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
@@ -1611,16 +1620,16 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() =>
       expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
     );
     await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(screen.getByTestId('audio-output-check-speaker')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
@@ -1633,9 +1642,9 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue(['bluetooth', 'speaker']);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
@@ -1650,10 +1659,10 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('system');
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.openSystemRoutePicker).toHaveBeenCalledTimes(1));
     expect(audioRoute.listAudioOutputs).not.toHaveBeenCalled();
@@ -1664,10 +1673,10 @@ describe('CallScreen, sortie audio', () => {
     // L'autre borne du mode : sans elle, un écran qui appellerait les deux
     // rappels passerait le test précédent.
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalled());
     expect(audioRoute.openSystemRoutePicker).not.toHaveBeenCalled();
@@ -1682,10 +1691,10 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockResolvedValue([]);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
     expect(screen.queryByTestId('call-notice')).toBeNull();
@@ -1700,14 +1709,14 @@ describe('CallScreen, sortie audio', () => {
     jest.spyOn(audioRoute, 'listAudioOutputs').mockRejectedValue(new Error('énumération refusée'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalled());
     expect(screen.queryByTestId('call-notice')).toBeNull();
-    expect(screen.getByTestId('audio-output-btn')).toBeTruthy();
+    expect(screen.getByTestId('audio-output-row')).toBeTruthy();
     expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
     expect(screen.queryByTestId('audio-output-option-speaker')).toBeNull();
   });
@@ -1720,14 +1729,14 @@ describe('CallScreen, sortie audio', () => {
       .mockResolvedValueOnce(['bluetooth', 'speaker']);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-option-bluetooth')).toBeTruthy());
 
     list.mockRejectedValueOnce(new Error('énumération refusée'));
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.listAudioOutputs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('audio-output-option-bluetooth')).toBeNull();
@@ -1768,12 +1777,12 @@ describe('CallScreen, sortie audio par appareil', () => {
     // Deux lectures, un seul instant — même discipline que le menu caméra. La
     // seconde est ce que le périmètre A ne pouvait pas avoir.
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     expect(audioRoute.listAudioDevices).not.toHaveBeenCalled();
     expect(audioRoute.readCurrentAudioDeviceId).not.toHaveBeenCalled();
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(audioRoute.listAudioDevices).toHaveBeenCalledTimes(1));
     expect(audioRoute.readCurrentAudioDeviceId).toHaveBeenCalledTimes(1);
@@ -1784,9 +1793,9 @@ describe('CallScreen, sortie audio par appareil', () => {
 
   it("demande l'appareil pressé, jamais le premier de la liste", async () => {
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-device-2')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('audio-output-device-2'));
@@ -1797,9 +1806,9 @@ describe('CallScreen, sortie audio par appareil', () => {
 
   it('coche ce que le système a réellement pris, et prévient du désarmement', async () => {
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() =>
       expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice'),
     );
@@ -1812,7 +1821,7 @@ describe('CallScreen, sortie audio par appareil', () => {
     // échoue — parce que le code fait bien ce qu'il annonce.
     jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(7);
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(screen.getByTestId('audio-output-check-7')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-2')).toBeNull();
@@ -1826,9 +1835,9 @@ describe('CallScreen, sortie audio par appareil', () => {
     jest.spyOn(audioRoute, 'selectAudioDevice').mockResolvedValue(false);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('audio-output-device-7'));
@@ -1837,7 +1846,7 @@ describe('CallScreen, sortie audio par appareil', () => {
       expect(screen.getByTestId('call-notice')).toHaveTextContent('call.deviceSwitchFailed'),
     );
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-7')).toBeNull();
   });
@@ -1847,15 +1856,15 @@ describe('CallScreen, sortie audio par appareil', () => {
     // la relecture, et la note qui redevient « suit l'appareil ». Le système
     // rebascule sur SON choix, et c'est celui-là que l'écran doit montrer.
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('audio-output-device-7'));
 
     jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(2);
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('audio-output-automatic'));
@@ -1871,7 +1880,7 @@ describe('CallScreen, sortie audio par appareil', () => {
     // la première ouverture, la seconde, puis celle-ci.
     await waitFor(() => expect(audioRoute.readCurrentAudioDeviceId).toHaveBeenCalledTimes(3));
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-check-2')).toBeTruthy());
     expect(screen.getByTestId('audio-output-note')).toHaveTextContent('call.outputFollowsDevice');
     expect(screen.queryByTestId('audio-output-automatic')).toBeNull();
@@ -1886,14 +1895,14 @@ describe('CallScreen, sortie audio par appareil', () => {
     const prefer = jest.spyOn(audioRoute, 'routeToPreferredDevice').mockResolvedValue(true);
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-device-7')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('audio-output-device-7'));
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-automatic')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('audio-output-automatic'));
 
@@ -1920,9 +1929,9 @@ describe('CallScreen, sortie audio par appareil', () => {
     jest.spyOn(audioRoute, 'listAudioDevices').mockRejectedValue(new Error('énumération refusée'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
     expect(screen.queryByTestId('call-notice')).toBeNull();
@@ -2178,16 +2187,21 @@ describe('CallScreen, main levée', () => {
     );
   });
 
-  it('propose de BAISSER dans le menu quand sa propre main est levée', async () => {
-    // `MoreMenu` reçoit `handRaised` de `call.tsx` et le transmet à
-    // `HandControl`, qui choisit le libellé. Une régression qui fige cette
-    // prop à `false` laisse `handleToggleHand` baisser la vraie main tout en
-    // affichant « Lever la main » — un libellé qui annonce l'inverse de son
-    // effet.
+  it('propose de BAISSER dans la barre quand sa propre main est levée', async () => {
+    // La commande est passée du menu à la BARRE, en un appui : c'est un signal
+    // qu'on donne pendant que quelqu'un parle, donc au moment précis où l'on ne
+    // veut pas ouvrir un menu.
+    //
+    // Une régression qui fige `handRaised` à `false` laisserait
+    // `handleToggleHand` baisser la vraie main tout en annonçant « Lever la
+    // main » — un libellé qui dit l'inverse de son effet. C'est le LIBELLÉ
+    // d'accessibilité qu'on garde : l'icône d'un `IconButton` n'est jamais
+    // joignable par un test (`IconButton.tsx:211` ne lui transmet aucun
+    // testID).
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
     await renderCall();
-    await openMenu();
-    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.lowerHand');
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    expect(screen.getByTestId('hand-toggle').props.accessibilityLabel).toBe('call.lowerHand');
   });
 
   it("retombe sur le slug quand le salon n'a pas d'identifiant", async () => {
@@ -2842,9 +2856,9 @@ describe('CallScreen, plein écran, sortie', () => {
     mockRoom.remoteParticipants.set('u-ada', remoteParticipant('u-ada', 'Ada'));
 
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
     await waitFor(() => expect(screen.getByTestId('audio-output-option-speaker')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('audio-output-option-speaker'));
 
@@ -2852,10 +2866,10 @@ describe('CallScreen, plein écran, sortie', () => {
     await enterFullscreen('u-ada:camera');
     // La sortie, sur la même tuile : la barre revient entière.
     await fireEvent.press(screen.getByTestId('tile-u-ada:camera'));
-    await waitFor(() => expect(screen.getByTestId('audio-output-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
 
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('audio-output-btn'));
+    await openAudioOutput();
 
     await waitFor(() => expect(screen.getByTestId('audio-output-check-speaker')).toBeTruthy());
     expect(screen.queryByTestId('audio-output-check-bluetooth')).toBeNull();
@@ -3038,14 +3052,19 @@ describe('CallScreen, plein écran, ce qui disparaît et ce qui reste', () => {
 });
 
 describe('CallScreen, réactions', () => {
-  it('envoie une réaction depuis le menu, sans jamais fermer celui-ci', async () => {
+  it('envoie une réaction depuis la barre, et referme la rangée', async () => {
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('reactions-toggle')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('more-btn'));
-    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reactions-toggle'));
+    // SANS `waitFor` : la rangée est rendue SYNCHRONEMENT par la barre, pas
+    // montée dans un `Portal` comme les feuilles. Un `waitFor` interposé ici
+    // laisse tourner les effets de `call.tsx`, dont l'un remonte la barre et
+    // remet son état local à zéro — la rangée existe, puis disparaît, et
+    // l'échec se lit comme « jamais rendue ». Vérifié par sonde le 2026-08-03.
+    expect(screen.getByTestId('reaction-row-thumbs-up')).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+    await fireEvent.press(screen.getByTestId('reaction-row-thumbs-up'));
 
     await waitFor(() => expect(mockPublishData).toHaveBeenCalledTimes(1));
     const [bytes, options] = mockPublishData.mock.calls[0] as [Uint8Array, { reliable: boolean }];
@@ -3053,18 +3072,21 @@ describe('CallScreen, réactions', () => {
       '{"type":"reactionReceived","data":{"emoji":"thumbs-up"}}',
     );
     expect(options).toEqual({ reliable: true });
-    // À l'inverse de `hand-toggle`, une réaction ne referme pas le menu.
-    expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy();
+    // La rangée se referme au premier choix — c'est la forme du web, et ce que
+    // le propriétaire a demandé. Elle vivait avant dans le menu « Plus », qui
+    // lui restait ouvert pour permettre plusieurs envois de suite ; en un
+    // appui, ce n'est plus nécessaire.
+    expect(screen.queryByTestId('reaction-row-thumbs-up')).toBe(null);
   });
 
   it('affiche sa propre bulle après un envoi accepté', async () => {
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('reactions-toggle')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('more-btn'));
-    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reactions-toggle'));
+    await waitFor(() => expect(screen.getByTestId('reaction-row-red-heart')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
+    await fireEvent.press(screen.getByTestId('reaction-row-red-heart'));
 
     await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
   });
@@ -3076,36 +3098,43 @@ describe('CallScreen, réactions', () => {
   // provenance sont dans `reactionOverlay.tsx`, à côté des constantes.
   it('remonte les bulles au-dessus de la zone de saisie dès que le chat est ouvert', async () => {
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('reactions-toggle')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('more-btn'));
-    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
+    await fireEvent.press(screen.getByTestId('reactions-toggle'));
+    await fireEvent.press(screen.getByTestId('reaction-row-red-heart'));
     await waitFor(() => expect(screen.getByTestId('reaction-overlay')).toBeTruthy());
 
     // Chat fermé : seule la barre est à dégager. Les deux nombres suivent
-    // `BAR_HEIGHT` — 4 + 52 + 4 = 60, plus 8 d'écart — et `reactionOverlay.spec`
+    // `BAR_HEIGHT` — 4 + 48 + 4 = 56, plus 8 d'écart — et `reactionOverlay.spec`
     // porte la même paire. Deux sites, un seul calcul : celui de
     // `reactionOverlay.tsx`.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 68 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 64 });
 
-    // Une réaction ne referme pas la feuille : `chat-btn` y est encore.
+    // La rangée s'est refermée sur le choix ; le chat s'ouvre depuis le menu
+    // « Plus », qui n'a rien à voir avec elle.
+    await fireEvent.press(screen.getByTestId('more-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('chat-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-title')).toBeTruthy());
 
     // Chat ouvert : la zone de saisie s'ajoute à la garde.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 140 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 136 });
   });
 
   it("n'affiche aucune bulle et ne montre aucune Snackbar quand la publication échoue", async () => {
     mockPublishData.mockRejectedValueOnce(new Error('offline'));
     await renderCall();
-    await waitFor(() => expect(screen.getByTestId('more-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('reactions-toggle')).toBeTruthy());
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('more-btn'));
-    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('reactions-toggle'));
+    // SANS `waitFor` : la rangée est rendue SYNCHRONEMENT par la barre, pas
+    // montée dans un `Portal` comme les feuilles. Un `waitFor` interposé ici
+    // laisse tourner les effets de `call.tsx`, dont l'un remonte la barre et
+    // remet son état local à zéro — la rangée existe, puis disparaît, et
+    // l'échec se lit comme « jamais rendue ». Vérifié par sonde le 2026-08-03.
+    expect(screen.getByTestId('reaction-row-thumbs-up')).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
+    await fireEvent.press(screen.getByTestId('reaction-row-thumbs-up'));
 
     await waitFor(() => expect(mockPublishData).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('reaction-overlay')).toBeNull();

@@ -3,7 +3,6 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
-import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
 import { SHEET_SURFACE_COLOR } from 'src/screens/room/bottomSheet';
 import { tokens } from 'src/ui/tokens';
@@ -48,16 +47,13 @@ type Overrides = {
   recording?: RecordingState;
   canRecord?: boolean;
   recordingBusy?: boolean;
-  handRaised?: boolean;
-  handBusy?: boolean;
   hands?: readonly RaisedHand[];
   unread?: number;
   onShare?: () => void;
   onStartRecording?: () => void;
   onStopRecording?: () => void;
-  onToggleHand?: () => void;
-  onSendReaction?: (key: ReactionKey) => void;
   onOpenChat?: () => void;
+  onOpenAudioOutput?: () => void;
 };
 
 function menu(overrides: Overrides = {}): React.ReactElement {
@@ -66,16 +62,13 @@ function menu(overrides: Overrides = {}): React.ReactElement {
       recording={overrides.recording ?? IDLE}
       canRecord={overrides.canRecord ?? true}
       recordingBusy={overrides.recordingBusy ?? false}
-      handRaised={overrides.handRaised ?? false}
-      handBusy={overrides.handBusy ?? false}
       hands={overrides.hands ?? []}
       unread={overrides.unread ?? 0}
       onShare={overrides.onShare ?? jest.fn()}
       onStartRecording={overrides.onStartRecording ?? jest.fn()}
       onStopRecording={overrides.onStopRecording ?? jest.fn()}
-      onToggleHand={overrides.onToggleHand ?? jest.fn()}
-      onSendReaction={overrides.onSendReaction ?? jest.fn()}
       onOpenChat={overrides.onOpenChat ?? jest.fn()}
+      onOpenAudioOutput={overrides.onOpenAudioOutput ?? jest.fn()}
     />,
   );
 }
@@ -231,42 +224,6 @@ describe('MoreMenu', () => {
     await waitFor(() => expect(screen.queryByTestId('share-btn')).toBe(null));
   });
 
-  it('lève la main et referme le menu, comme ses deux voisines', async () => {
-    // Rien ne garantit qu'une entrée referme le menu parce que ses voisines le
-    // font : le `setVisible(false)` est écrit une fois par entrée.
-    const onToggleHand = jest.fn();
-    const onShare = jest.fn();
-    await render(menu({ onToggleHand, onShare }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
-    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.raiseHand');
-    await fireEvent.press(screen.getByTestId('hand-toggle'));
-
-    expect(onToggleHand).toHaveBeenCalledTimes(1);
-    expect(onShare).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByTestId('hand-toggle')).toBe(null));
-  });
-
-  it('devient une baisse quand la main est levée', async () => {
-    await render(menu({ handRaised: true }));
-
-    await open();
-
-    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
-    expect(screen.getByTestId('hand-toggle')).toHaveTextContent('call.lowerHand');
-  });
-
-  it('retire la commande pendant un appel en vol, sans toucher au reste', async () => {
-    await render(menu({ handBusy: true, hands: [ADA] }));
-
-    await open();
-
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    expect(screen.queryByTestId('hand-toggle')).toBe(null);
-    expect(screen.getByTestId('hand-queue')).toBeTruthy();
-  });
-
   it('montre la file entière, la seconde entrée comprise', async () => {
     const bob: RaisedHand = {
       identity: 'u-bob',
@@ -282,7 +239,7 @@ describe('MoreMenu', () => {
     expect(screen.getByTestId('hand-queue-title')).toHaveTextContent('call.handQueue');
     // Deux entrées, et c'est la SECONDE qu'on vise : avec une seule, une liste
     // tronquée à son premier élément passerait. La numérotation elle-même est
-    // gardée un étage plus bas, dans `handControl.spec.tsx` — le mock de `t`
+    // gardée un étage plus bas, dans `handQueue.spec.tsx` — le mock de `t`
     // de CE fichier ne rend pas les valeurs interpolées.
     expect(screen.getByTestId('hand-queue-row-u-bob')).toBeTruthy();
     expect(screen.getByTestId('hand-queue-row-u-ada')).toBeTruthy();
@@ -295,33 +252,6 @@ describe('MoreMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
     expect(screen.queryByTestId('hand-queue')).toBe(null);
-  });
-
-  it('offre les huit réactions et les garde après un envoi', async () => {
-    const onSendReaction = jest.fn();
-    await render(menu({ onSendReaction }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
-
-    expect(onSendReaction).toHaveBeenCalledWith('thumbs-up');
-    // À l'inverse de ses trois voisines (`share-btn`, `recording-toggle`,
-    // `hand-toggle`), une réaction NE referme PAS le menu.
-    expect(screen.getByTestId('reaction-thumbs-up')).toBeTruthy();
-  });
-
-  it('envoie une seconde réaction sans rouvrir le menu', async () => {
-    const onSendReaction = jest.fn();
-    await render(menu({ onSendReaction }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('reaction-red-heart')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('reaction-thumbs-up'));
-    await fireEvent.press(screen.getByTestId('reaction-red-heart'));
-
-    expect(onSendReaction).toHaveBeenNthCalledWith(1, 'thumbs-up');
-    expect(onSendReaction).toHaveBeenNthCalledWith(2, 'red-heart');
   });
 
   it('ouvre le chat et referme la feuille, comme ses trois voisines', async () => {
@@ -379,5 +309,32 @@ describe('MoreMenu', () => {
     await view.rerender(menu({ unread: 7 }));
 
     expect(screen.getByTestId('chat-unread')).toHaveTextContent('7');
+  });
+
+  // La sortie audio est descendue de la barre à ce menu : ses six emplacements
+  // sont allés à la main levée et aux réactions, que le propriétaire voulait en
+  // un appui. Deux instructions dans le gestionnaire, donc deux tests.
+  it('ouvre la feuille de sortie audio', async () => {
+    const onOpenAudioOutput = jest.fn();
+    await render(menu({ onOpenAudioOutput }));
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('audio-output-row')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-row'));
+
+    expect(onOpenAudioOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it("referme le menu AVANT d'ouvrir la feuille de sortie audio", async () => {
+    // Les deux ne peuvent pas coexister : la feuille audio est montée par
+    // `callControlBar.tsx`, pas ici, précisément parce qu'une feuille rendue
+    // dans une autre est démontée quand celle-ci se ferme.
+    await render(menu());
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('audio-output-row')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('audio-output-row'));
+
+    await waitFor(() => expect(screen.queryByTestId('audio-output-row')).toBe(null));
   });
 });

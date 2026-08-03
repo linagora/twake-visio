@@ -2,30 +2,35 @@ import { StyleSheet } from 'react-native';
 
 import { tokens } from 'src/ui/tokens';
 
-// SIX cibles sur une rangée, à 52 dp — le gabarit du mockup. `IconButton` de
-// Paper fait 40 dp de côté plus `margin: 6` ; la marge est neutralisée par la
-// prop `style`, appliquée en dernier, et la cible posée explicitement.
+// SEPT enfants sur une rangée — six cibles de 48 dp et le caret du chevron.
+// `IconButton` de Paper fait 40 dp de côté plus `margin: 6` ; la marge est
+// neutralisée par la prop `style`, appliquée en dernier, et la cible posée
+// explicitement.
 //
-//     6 × 52 + 1 (dans la paire caméra) + 4 × 8 + 2 × 4 = 353 dp
+//     5 × 48 + (48 + 28 + 1, la paire caméra) + 5 × 4 + 2 × 4 = 345 dp
 //
 // `borderRadius` est relu depuis le `style` aplati par `IconButton`, donc
 // l'ondulation reste ronde.
 //
-// **Ces 52 dp étaient hors d'atteinte tant que la rangée portait SEPT
-// cibles.** Le compteur de participants y faisait doublon avec celui de
-// l'en-tête ; le propriétaire a tranché pour l'en-tête, et la septième cible
-// est partie. À sept, le mockup aurait demandé :
 //
-//     52 + (52 + 1 + 52) + 52 + 52 + 52 + 60 = 373 dp   sur un écran de 360
+// **52 a vécu, et le compte qui l'a tué mérite d'être écrit.** La cible est
+// passée de 44 à 52 quand la barre portait SIX enfants ; elle en porte sept
+// depuis que la main levée et les réactions y sont entrées. À 52, la rangée
+// mesure 389 dp — elle tient sur un écran de 393 (iPhone 15, Pixel 8) et
+// DÉBORDE sur un écran de 360, où personne ne la regarde.
 //
-// La rangée d'avant tenait à 357 dp parce qu'elle rabotait la cible à 44. Le
-// résultat net du passage à six : 353 dp, soit MOINS de largeur qu'avant pour
-// une cible PLUS GRANDE — et 48 dp de marge sur un écran de 360.
+//     bouton 52, écart 8 : 389 dp   déborde 360
+//     bouton 48, écart 4 : 345 dp   tient
+//     bouton 44, écart 8 : 341 dp   tient
+//
+// 48 plutôt que 44 : la hausse à 52 était une demande du propriétaire, et
+// rendre trois points sur huit vaut mieux que les rendre tous. 48 reste au-dessus
+// du minimum tactile de 44.
 //
 // La cible tactile d'un bouton de barre, en dp. Nommée plutôt qu'écrite trois
 // fois : `barStyles.button` la pose, `BAR_HEIGHT` s'en déduit, et les deux ne
 // peuvent plus diverger au premier changement de gabarit.
-export const BAR_BUTTON_SIZE = 52;
+export const BAR_BUTTON_SIZE = 48;
 
 // Le caret du chevron caméra : une cible ÉTROITE, accolée au bouton qu'elle
 // prolonge, comme le fait le web sur son micro et sa caméra.
@@ -33,17 +38,17 @@ export const BAR_BUTTON_SIZE = 52;
 // **C'est ce qui a fait rentrer deux commandes de plus.** L'arithmétique ne
 // laissait aucun autre choix, et elle mérite d'être écrite ici parce qu'elle
 // se mesure sur le mauvais appareil : le Pixel 10 Pro Fold fait 443 dp de large
-// (1080 px à 390 ppp, relevé le 2026-08-03), donc HUIT boutons de 52 dp y
+// (1080 px à 390 ppp, relevé le 2026-08-03), donc huit boutons de 52 dp y
 // tiennent — 416 dp. Sur un téléphone ordinaire de 360 dp, il n'en tient que
-// six, et même à 44 dp — le minimum tactile — huit débordent (352 > 344).
+// six, et même à 44 dp — le minimum tactile — huit débordent.
 //
 // Vérifier sur le Fold seul aurait donc validé une barre cassée partout
 // ailleurs. Le compte qui gouverne est celui de 360 dp.
 //
-//     5 × 52 (boutons) + 28 (caret) = 288 dp
-//
-// La cible garde sa HAUTEUR de 52 dp : c'est la largeur qu'on rabote, et un
-// doigt vise plus mal en largeur qu'en hauteur sur une rangée horizontale.
+// La cible garde sa HAUTEUR pleine — `BAR_BUTTON_SIZE` — : c'est la largeur
+// qu'on rabote, et un doigt vise plus mal en largeur qu'en hauteur sur une
+// rangée horizontale. Le `hitSlop` de la barre rend d'ailleurs la zone
+// sensible plus large que la surface peinte.
 export const BAR_CARET_WIDTH = 28;
 
 // Le rembourrage de la rangée, de part et d'autre. Nommé et EXPORTÉ pour la
@@ -56,9 +61,9 @@ export const BAR_PADDING = tokens.spacing.xs;
 // La hauteur RÉELLE de la rangée, celle qu'un calque posé par-dessus doit
 // dégager :
 //
-//     4 (padding) + 52 (bouton) + 4 (padding) = 60 dp
+//     4 (padding) + 48 (bouton) + 4 (padding) = 56 dp
 //
-// C'est le même 60 que cite `src/call/layout.ts` à propos de la boîte offerte à
+// C'est le même 56 que cite `src/call/layout.ts` à propos de la boîte offerte à
 // la scène.
 //
 // Lue par `ReactionOverlay`, qui s'ancre en bas à droite — précisément là où
@@ -95,7 +100,7 @@ export const barStyles = StyleSheet.create({
     height: BAR_BUTTON_SIZE,
     borderRadius: BAR_BUTTON_SIZE / 2,
     // Posé ICI et non au cas par cas : `cameraMenu.tsx`, `audioOutputControl.tsx`
-    // et `moreMenu.tsx` rendent trois des six boutons de la rangée et ne
+    // et `moreMenu.tsx` rendent une partie des boutons de la rangée et ne
     // connaissent que ce style. Un voile appliqué dans `callControlBar.tsx`
     // seul laisserait ces trois-là nus au milieu des autres.
     backgroundColor: BAR_SURFACE_COLOR,
@@ -126,7 +131,7 @@ export const barStyles = StyleSheet.create({
   },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
-  // 52 dp et la pastille est hors flux, donc la rangée vaut toujours 353 dp —
+  // 48 dp et la pastille est hors flux, donc la rangée vaut toujours 345 dp —
   // le calcul ci-dessus n'a pas bougé d'un dp.
   anchor: { position: 'relative' },
   // Le compteur du mockup : fond vert, texte blanc. Les DEUX couleurs sont
@@ -157,7 +162,7 @@ export const barStyles = StyleSheet.create({
 // le voile de `BAR_SURFACE_COLOR`, 4,11:1 sur le rouge de `barStyles.danger`.
 // C'est le troisième qui gouverne — au-dessus des 3:1 d'un objet graphique, en
 // dessous des 4,5:1 d'un texte, ce qu'un glyphe n'est pas. Une seule couleur de
-// glyphe pour les six boutons : `dangerDark` sur ce même rouge tomberait à
+// glyphe pour les boutons neutres : `dangerDark` sur ce même rouge tomberait à
 // 2,13:1.
 //
 // Aucun `IconButton` de cette barre ne porte `disabled` : Paper teste
