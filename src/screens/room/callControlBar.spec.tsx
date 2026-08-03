@@ -238,12 +238,26 @@ describe('CallControlBar', () => {
       expect(screen.getByTestId('hand-toggle').props.accessibilityLabel).toBe('call.raiseHand');
     });
 
-    // MASQUÉE pendant la requête, jamais grisée : Paper teste `disabled` avant
-    // toute couleur explicite et rendrait un quasi-noir sur ce fond sombre.
-    it('disparaît pendant que la requête est en vol', async () => {
+    // RESTE rendue pendant la requête. Elle a été masquée, et le propriétaire a
+    // vu le bouton disparaître puis revenir sous son doigt : dans un menu qui
+    // se referme au même instant cela ne se voyait pas, dans la barre si.
+    //
+    // Elle n'est pas non plus grisée : Paper teste `disabled` avant toute
+    // couleur explicite et rendrait un quasi-noir sur ce fond sombre.
+    it('reste visible pendant que la requête est en vol', async () => {
       await render(bar({ handBusy: true }));
 
-      expect(screen.queryByTestId('hand-toggle')).toBe(null);
+      expect(screen.getByTestId('hand-toggle')).toBeTruthy();
     });
+
+    // **La COULEUR ambre n'est pas gardée, et ce n'est pas un oubli.**
+    // `IconButton.tsx:211` rend `<IconComponent color={iconColor} …>` sans lui
+    // transmettre de testID, et pose en plus `accessibilityElementsHidden` :
+    // aucune requête n'atteint le glyphe. Aucun bouton de cette barre ne garde
+    // son `iconColor` ; en fabriquer un ici demanderait de passer `icon` en
+    // fonction, ce qui est un changement d'architecture et non un test.
+    //
+    // Ce qui EST observable, c'est l'état que la couleur accompagne — et il est
+    // gardé par les deux libellés ci-dessus.
   });
 });

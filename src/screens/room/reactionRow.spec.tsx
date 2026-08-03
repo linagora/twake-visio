@@ -18,7 +18,7 @@ describe('ReactionRow', () => {
     // Le compte vient de `REACTION_KEYS`, jamais d'un littéral : une neuvième
     // réaction ajoutée au module doit apparaître ici sans qu'on y pense, et un
     // test qui écrirait « 8 » resterait vert en n'en montrant que huit.
-    await render(withPaper(<ReactionRow onSend={jest.fn()} testID="row" />));
+    await render(withPaper(<ReactionRow onSend={jest.fn()} bottom={64} testID="row" />));
 
     for (const key of REACTION_KEYS) {
       expect(screen.getByTestId(`row-${key}`)).toBeTruthy();
@@ -28,7 +28,7 @@ describe('ReactionRow', () => {
   it('dessine le glyphe de chaque réaction, jamais une cible vide', async () => {
     // Une cible pressable sans glyphe serait invisible et parfaitement
     // fonctionnelle : aucun test de comportement ne l'attraperait.
-    await render(withPaper(<ReactionRow onSend={jest.fn()} testID="row" />));
+    await render(withPaper(<ReactionRow onSend={jest.fn()} bottom={64} testID="row" />));
 
     expect(screen.getByTestId('row-red-heart')).toHaveTextContent(reactionGlyph('red-heart'));
   });
@@ -39,7 +39,7 @@ describe('ReactionRow', () => {
   it('transmet la réaction pressée, pas la première de la rangée', async () => {
     const onSend = jest.fn();
 
-    await render(withPaper(<ReactionRow onSend={onSend} testID="row" />));
+    await render(withPaper(<ReactionRow onSend={onSend} bottom={64} testID="row" />));
     await fireEvent.press(screen.getByTestId('row-clapping-hands'));
 
     expect(onSend).toHaveBeenCalledWith('clapping-hands');
@@ -50,9 +50,20 @@ describe('ReactionRow', () => {
     // Un emoji seul n'est pas annoncé de façon fiable par un lecteur d'écran.
     // Deux réactions vérifiées, pas une : un libellé constant passerait avec
     // une seule.
-    await render(withPaper(<ReactionRow onSend={jest.fn()} testID="row" />));
+    await render(withPaper(<ReactionRow onSend={jest.fn()} bottom={64} testID="row" />));
 
     expect(screen.getByTestId('row-thumbs-up').props.accessibilityLabel).toBe('reaction.thumbsUp');
     expect(screen.getByTestId('row-folded-hands').props.accessibilityLabel).toBe('reaction.please');
+  });
+
+  // La position est la SEULE chose que ce composant décide et qu'un test puisse
+  // observer — et elle a été fausse en production. `bottom: '100%'` posait les
+  // émojis PAR-DESSUS les boutons ; le propriétaire l'a vu du premier coup
+  // d'œil sur appareil, et aucun test ne pouvait le dire, RNTL ne mettant rien
+  // en page. Un nombre, lui, se compare.
+  it('dégage la hauteur que la barre lui donne', async () => {
+    await render(withPaper(<ReactionRow onSend={jest.fn()} bottom={99} testID="row" />));
+
+    expect(screen.getByTestId('row')).toHaveStyle({ bottom: 99, position: 'absolute' });
   });
 });

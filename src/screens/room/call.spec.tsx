@@ -2294,7 +2294,7 @@ describe('CallScreen, main levée', () => {
     });
   });
 
-  it('masque la commande du menu tant que la requête est en vol', async () => {
+  it('garde la commande visible tant que la requête est en vol', async () => {
     // Complément du test ci-dessus, côté menu cette fois : `HandControl` ne
     // grise pas `hand-toggle` pendant l'appel, il ne le rend pas — même
     // convention que `RecordingControl`, puisque Paper teste `disabled` avant
@@ -2307,14 +2307,19 @@ describe('CallScreen, main levée', () => {
     );
 
     await renderCall();
-    await openMenu();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
     await fireEvent.press(screen.getByTestId('hand-toggle'));
 
     expect(toggle).toHaveBeenCalledTimes(1);
     await settleMenus();
-    await fireEvent.press(screen.getByTestId('more-btn'));
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    expect(screen.queryByTestId('hand-toggle')).toBeNull();
+    // La commande RESTE rendue pendant que la requête est en vol. Elle était
+    // masquée, comme elle l'était dans le menu — invisible là-bas, la feuille
+    // se refermant au même instant ; dans la barre, le bouton disparaissait
+    // puis revenait sous le doigt. Le propriétaire l'a relevé au premier essai.
+    //
+    // Elle n'est pas non plus `disabled` : Paper teste `disabled` avant toute
+    // couleur explicite et rendrait un quasi-noir sur ce fond sombre.
+    expect(screen.getByTestId('hand-toggle')).toBeTruthy();
 
     await act(async () => {
       settle({ ok: true, value: undefined });

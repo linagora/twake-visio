@@ -33,8 +33,10 @@ import type { RecordingState } from 'src/call/recording';
 import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
 import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
+import { HAND_SIGNAL_TEXT } from 'src/screens/room/handBanner';
 import { ReactionRow } from 'src/screens/room/reactionRow';
 import {
+  BAR_HEIGHT,
   BAR_HIT_SLOP,
   BAR_ICON_COLOR,
   BAR_PADDING,
@@ -387,6 +389,11 @@ export function CallControlBar({
             setReactionsOpen(false);
             onSendReaction(key);
           }}
+          // La hauteur ENTIÈRE de la barre, encoche comprise, plus un pas
+          // d'écart. Le conteneur mesure `BAR_PADDING + bouton + BAR_PADDING +
+          // insets.bottom`, soit `BAR_HEIGHT + insets.bottom` : un décalage
+          // moindre pose la rangée SUR les commandes.
+          bottom={BAR_HEIGHT + insets.bottom + tokens.spacing.sm}
           testID="reaction-row"
         />
       ) : null}
@@ -444,23 +451,30 @@ export function CallControlBar({
           veut pas ouvrir un menu. Sa FILE reste ailleurs — `RaisedHandsBanner`
           la montre déjà en haut de l'écran, et la dupliquer ferait lire deux
           signaux là où il n'y en a qu'un. */}
-      {/* MASQUÉE pendant que la requête est en vol, jamais grisée :
-          `IconButton/utils.ts:88-93` teste `disabled` AVANT toute couleur
-          explicite et rend un quasi-noir sur ce fond sombre. C'est la règle de
-          cet écran, et le comportement que la commande avait déjà dans le
-          menu. */}
-      {handBusy ? null : (
-        <IconButton
-          testID="hand-toggle"
-          icon={handRaised ? 'hand-back-right' : 'hand-back-right-outline'}
-          iconColor={BAR_ICON_COLOR}
-          rippleColor={BAR_RIPPLE_COLOR}
-          style={barStyles.button}
-          hitSlop={BAR_HIT_SLOP}
-          onPress={onToggleHand}
-          accessibilityLabel={t(handRaised ? 'call.lowerHand' : 'call.raiseHand')}
-        />
-      )}
+      {/* TOUJOURS rendue, même pendant que la requête est en vol.
+          `handBusy` la masquait, comme elle le faisait dans le menu — et sur
+          une commande de MENU cela ne se voyait pas, la feuille se refermant
+          au même instant. Dans la barre, le bouton disparaissait puis
+          revenait sous le doigt : un clignotement que le propriétaire a
+          relevé au premier essai.
+          Elle n'est pas non plus `disabled` — `IconButton/utils.ts:88-93`
+          teste `disabled` AVANT toute couleur explicite et rendrait un
+          quasi-noir sur ce fond sombre. Un second appui pendant la requête ne
+          casse rien : `handleToggleHand` ignore les appels concurrents. */}
+      <IconButton
+        testID="hand-toggle"
+        icon={handRaised ? 'hand-back-right' : 'hand-back-right-outline'}
+        // AMBRE quand la main est levée, blanc sinon. C'est la couleur d'état
+        // « une main est levée » dans tout cet écran — le bandeau du haut et
+        // celui des autres participants la portent déjà —, et une main levée
+        // en blanc ne se distinguait pas d'une main au repos.
+        iconColor={handRaised ? HAND_SIGNAL_TEXT : BAR_ICON_COLOR}
+        rippleColor={BAR_RIPPLE_COLOR}
+        style={barStyles.button}
+        hitSlop={BAR_HIT_SLOP}
+        onPress={onToggleHand}
+        accessibilityLabel={t(handRaised ? 'call.lowerHand' : 'call.raiseHand')}
+      />
       {/* Le partage, seule commande de la barre qu'on n'utilise qu'une fois
           par réunion, passe derrière ce menu, qui porte aussi l'enregistrement
           et la main levée. La raison d'origine était la LARGEUR — la rangée

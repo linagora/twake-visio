@@ -25,6 +25,9 @@ const REACTION_LABEL_KEYS: Readonly<Record<ReactionKey, string>> = {
 
 export type ReactionRowProps = {
   readonly onSend: (key: ReactionKey) => void;
+  // La hauteur à dégager sous la rangée, en points. Calculée par la barre, qui
+  // seule connaît l'encoche du bas.
+  readonly bottom: number;
   readonly testID: string;
 };
 
@@ -43,11 +46,11 @@ export type ReactionRowProps = {
  * plutôt que d'une autre commande destructrice, et une erreur de visée envoie
  * un emoji voisin — pas un raccrochage.
  */
-export function ReactionRow({ onSend, testID }: ReactionRowProps): React.ReactElement {
+export function ReactionRow({ onSend, bottom, testID }: ReactionRowProps): React.ReactElement {
   const { t } = useTranslation();
 
   return (
-    <View style={styles.row} testID={testID}>
+    <View style={[styles.row, { bottom }]} testID={testID}>
       {REACTION_KEYS.map((key) => (
         <TouchableRipple
           accessibilityLabel={t(REACTION_LABEL_KEYS[key])}
@@ -74,20 +77,27 @@ const styles = StyleSheet.create({
   // poserait : ce n'est donc pas un oubli de la doctrine de contraste
   // d'`AGENTS.md`, qui porte sur du texte retombant sur une couleur de thème.
   glyph: { fontSize: 24 },
-  // HORS FLUX, et ancrée au-dessus de la barre par `bottom: '100%'`. La barre
-  // garde donc exactement sa hauteur `BAR_HEIGHT`, dont `src/call/layout.ts`
-  // déduit la boîte offerte à la scène : une rangée en flux l'aurait fait
-  // varier selon qu'elle est ouverte ou non, et la scène aurait sauté à chaque
-  // ouverture.
+  // HORS FLUX. La barre garde donc exactement sa hauteur `BAR_HEIGHT`, dont
+  // `src/call/layout.ts` déduit la boîte offerte à la scène : une rangée en
+  // flux l'aurait fait varier selon qu'elle est ouverte ou non, et la scène
+  // aurait sauté à chaque ouverture.
+  //
+  // **Le décalage est un NOMBRE, passé par la barre — `bottom: '100%'` a été
+  // essayé et ne marche pas.** Livré ainsi, il posait les émojis PAR-DESSUS les
+  // boutons ; le propriétaire l'a vu sur appareil du premier coup d'œil. Yoga
+  // ne résout pas ce pourcentage contre la hauteur qu'on croit, et aucun test
+  // ne pouvait le dire : RNTL ne met rien en page, donc `bottom: '100%'` s'y
+  // lit comme une valeur parfaitement valide.
+  //
+  // Un nombre, lui, se compare : c'est la seule forme de cette position qui
+  // soit gardable par un test.
   row: {
     alignItems: 'center',
     alignSelf: 'center',
     backgroundColor: BAR_SURFACE_COLOR,
     borderRadius: tokens.radius.lg,
-    bottom: '100%',
     flexDirection: 'row',
     gap: 2,
-    marginBottom: tokens.spacing.xs,
     paddingHorizontal: tokens.spacing.xs,
     position: 'absolute',
   },

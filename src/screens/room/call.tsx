@@ -1077,7 +1077,16 @@ export function CallScreen(): React.ReactElement {
               bandeau la dit, et la baisse en un seul appui. Ne rend rien au
               repos. La bande empile ses lignes : l'indicateur d'enregistrement
               et celui-ci peuvent être vrais en même temps. */}
-          <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
+          {/* La position n'est montrée QUE si elle informe. Seul à lever la
+              main, « Position 1 » n'apprend rien et allonge un bandeau déjà
+              chargé — le propriétaire l'a relevé. Dès qu'une autre main est
+              levée, le rang redevient une information : c'est l'ordre dans
+              lequel on prendra la parole. */}
+          <HandBanner
+            raised={handRaised}
+            position={hands.length > 1 ? handRank : null}
+            onLower={handleToggleHand}
+          />
         </>
       ) : null}
 
