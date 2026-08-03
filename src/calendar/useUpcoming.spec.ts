@@ -1,10 +1,10 @@
-import { renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 
 import * as accounts from 'src/auth/accounts';
 import * as session from 'src/auth/session';
 import type { CalendarEvent } from 'src/calendar/ics';
 import * as sideService from 'src/calendar/sideService';
-import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
+import { useUpcomingMeetings, type UpcomingState } from 'src/calendar/useUpcoming';
 
 // Espionné par le namespace, et non par `require` : ce sont NOS modules, donc
 // `__esModule` est vrai et `jest.spyOn` atteint bien la liaison que voit le
@@ -122,5 +122,89 @@ describe('useUpcomingMeetings', () => {
 
     await waitFor(() => expect(view.result.current.status).toBe('ready'));
     expect(session.forceRefresh).not.toHaveBeenCalled();
+  });
+
+  // DEUX cadences, et c'est tout l'intérêt : le décompte bat la seconde pour
+  // que « dans 6 h 45 min 12 s » avance, mais une requête par seconde sur un
+  // service CalDAV serait indéfendable. Les évènements déjà obtenus sont
+  // republiés avec un instant frais.
+  describe('les deux cadences', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    async function settled(): Promise<{ readonly result: { current: UpcomingState } }> {
+      const view = await renderHook(() => useUpcomingMeetings());
+      // Le chargement initial est une chaîne de promesses : sans ce tour de
+      // boucle, l'état est encore `loading` et les avances de temps ne
+      // mesureraient rien.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      return view;
+    }
+
+    it('avance l’instant chaque seconde SANS refaire de requête', async () => {
+      const fetchUpcoming = jest.spyOn(sideService, 'fetchUpcoming').mockResolvedValue([anEvent()]);
+
+      const view = await settled();
+      const before = view.result.current;
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      const after = view.result.current;
+
+      expect(before.status).toBe('ready');
+      expect(after.status).toBe('ready');
+      // `now` est ce que le composant lit pour formuler le décompte : s'il ne
+      // bouge pas, la ligne est figée quelle que soit la cadence du tic.
+      expect(after.status === 'ready' && before.status === 'ready' && after.now > before.now).toBe(
+        true,
+      );
+      expect(fetchUpcoming).toHaveBeenCalledTimes(1);
+    });
+
+    // L'autre cadence. Sans ce test, un tic qui rechargerait TOUT chaque
+    // seconde passerait le précédent aussi bien.
+    it('ne recharge les données qu’à la minute', async () => {
+      const fetchUpcoming = jest.spyOn(sideService, 'fetchUpcoming').mockResolvedValue([anEvent()]);
+
+      await settled();
+      await act(async () => {
+        jest.advanceTimersByTime(59000);
+      });
+      expect(fetchUpcoming).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(fetchUpcoming).toHaveBeenCalledTimes(2);
+    });
+
+    // Le tic republie depuis une mémoire ; il ne doit pas republier une
+    // mémoire PÉRIMÉE. Sans cette remise à zéro, un agenda devenu injoignable
+    // laisserait le panneau afficher indéfiniment ses dernières réunions.
+    it('ne ressuscite pas un panneau devenu indisponible', async () => {
+      jest
+        .spyOn(sideService, 'fetchUpcoming')
+        .mockResolvedValueOnce([anEvent()])
+        .mockRejectedValue(httpError(503));
+
+      const view = await settled();
+      expect(view.result.current.status).toBe('ready');
+
+      await act(async () => {
+        jest.advanceTimersByTime(60000);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      expect(view.result.current.status).toBe('unavailable');
+    });
   });
 });

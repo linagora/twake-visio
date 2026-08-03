@@ -1,10 +1,12 @@
 import { useRouter } from 'expo-router';
+import { openBrowserAsync } from 'expo-web-browser';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
+import { calendarEventUrl } from 'src/calendar/webCalendar';
 import { parseMeetingLink } from 'src/navigation/deepLinks';
 import { JoinSheet } from 'src/screens/joinSheet';
 import { ActionCard } from 'src/ui/actionCard';
@@ -115,6 +117,19 @@ export function HomeScreen(): React.ReactElement {
               // instance : c'est cet hôte-là qui fait autorité, et lui seul.
               const slug = parseMeetingLink(event.meetUrl, allowedHosts);
               if (slug !== null) router.push(`/room/${slug}/prejoin`);
+            }}
+            onOpenEvent={(event) => {
+              // L'agenda WEB, dans un onglet du système : la fiche complète
+              // d'un évènement — invités, description, pièces jointes — n'a
+              // aucun équivalent dans cette application, et n'a pas à en
+              // avoir. `openBrowserAsync` garde la personne dans l'app et
+              // partage les cookies du navigateur, donc la session SSO déjà
+              // ouverte y vaut.
+              if (account === null) return;
+              const url = calendarEventUrl(account.instance.serverUrl, event.uid);
+              // `null` quand l'hôte ne se déduit pas : mieux vaut ne rien
+              // ouvrir qu'ouvrir une page d'erreur.
+              if (url !== null) void openBrowserAsync(url);
             }}
           />
         ) : null}

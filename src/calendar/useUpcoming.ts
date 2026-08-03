@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { forceRefresh, getAccessToken } from 'src/auth/session';
@@ -29,11 +29,19 @@ export type UpcomingState =
   | { readonly status: 'unavailable'; readonly reason: string }
   | { readonly status: 'ready'; readonly events: readonly CalendarEvent[]; readonly now: number };
 
-// Une minute. Le widget web recharge à la même cadence et réaffiche à la
-// seconde ; on garde le rechargement et on laisse tomber le tic, qui réveille
-// le fil JavaScript trois mille six cents fois par heure pour une information
-// que personne ne lit à ce grain.
+// DEUX cadences, et il faut les deux. Le widget web fait de même.
+//
+// Les DONNÉES viennent d'un service CalDAV : trois requêtes enchaînées, plus
+// un REPORT par agenda. Une minute est déjà généreux.
+//
+// Le DÉCOMPTE, lui, doit battre la seconde, sinon « dans 6 h 45 min 12 s »
+// afficherait douze secondes pendant une minute entière — un compteur figé se
+// lit comme une application bloquée.
+//
+// Le tic ne redemande rien : il republie les évènements déjà en mémoire avec
+// un instant frais. Confondre les deux ferait soixante fois plus de requêtes.
 const REFRESH_MS = 60000;
+const TICK_MS = 1000;
 
 // La charge utile d'un JWT est du base64url, sans signature à vérifier ici :
 // on ne fait CONFIANCE à rien de ce qu'elle dit, on l'affiche pour diagnostiquer.
@@ -51,26 +59,41 @@ function audienceOf(token: string): string {
 
 export function useUpcomingMeetings(): UpcomingState {
   const [state, setState] = useState<UpcomingState>({ status: 'loading' });
+  // Les évènements du dernier chargement RÉUSSI, et `null` dès qu'un
+  // chargement échoue. C'est ce que le tic de la seconde republie ; sans cette
+  // remise à `null`, un agenda devenu injoignable laisserait le panneau
+  // afficher indéfiniment ses dernières réunions.
+  const loaded = useRef<readonly CalendarEvent[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
+    const publish = (all: readonly CalendarEvent[], now: number): void => {
+      loaded.current = all;
+      setState({ status: 'ready', events: selectUpcoming(all, now), now });
+    };
+
+    const hide = (reason: string): void => {
+      loaded.current = null;
+      setState({ status: 'unavailable', reason });
+    };
+
     const load = async (): Promise<void> => {
       const account = getActiveAccount();
       if (account === null) {
-        if (!cancelled) setState({ status: 'unavailable', reason: 'aucun compte' });
+        if (!cancelled) hide('aucun compte');
         return;
       }
 
       const base = sideServiceUrl(account.instance.serverUrl);
       if (base === null) {
-        if (!cancelled) setState({ status: 'unavailable', reason: 'hôte indéductible' });
+        if (!cancelled) hide('hôte indéductible');
         return;
       }
 
       const outcome = await getAccessToken(account.id, account.instance);
       if (!outcome.ok) {
-        if (!cancelled) setState({ status: 'unavailable', reason: `jeton: ${outcome.reason}` });
+        if (!cancelled) hide(`jeton: ${outcome.reason}`);
         return;
       }
 
@@ -82,7 +105,7 @@ export function useUpcomingMeetings(): UpcomingState {
           const now = Date.now();
           const all = await fetchUpcoming(base, token, now);
           if (cancelled) return;
-          setState({ status: 'ready', events: selectUpcoming(all, now), now });
+          publish(all, now);
         } catch (error: unknown) {
           // Un 401 peut ne rien dire de la session : `getAccessToken` rend le
           // jeton en cache jusqu'à trente secondes de son expiration, donc un
@@ -106,10 +129,7 @@ export function useUpcomingMeetings(): UpcomingState {
           // service peut refuser un jeton frappé pour `livekit-meet`, et ce
           // refus se lit « pas de calendrier ici », jamais comme une panne.
           if (!cancelled) {
-            setState({
-              status: 'unavailable',
-              reason: `${error instanceof Error ? error.message : String(error)}${detail}`,
-            });
+            hide(`${error instanceof Error ? error.message : String(error)}${detail}`);
           }
         }
       };
@@ -118,11 +138,17 @@ export function useUpcomingMeetings(): UpcomingState {
     };
 
     void load();
-    const timer = setInterval(() => void load(), REFRESH_MS);
+    const refresh = setInterval(() => void load(), REFRESH_MS);
+    const tick = setInterval(() => {
+      const all = loaded.current;
+      if (all === null) return;
+      publish(all, Date.now());
+    }, TICK_MS);
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearInterval(refresh);
+      clearInterval(tick);
     };
   }, []);
 

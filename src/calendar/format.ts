@@ -3,10 +3,14 @@
 // serait intraduisible et intestable dans les sept langues du dépôt.
 export type Relative =
   | { readonly kind: 'ongoing' }
-  | { readonly kind: 'minutes'; readonly minutes: number }
-  | { readonly kind: 'hours'; readonly hours: number; readonly minutes: number };
+  | { readonly kind: 'minutes'; readonly minutes: number; readonly seconds: number }
+  | {
+      readonly kind: 'hours';
+      readonly hours: number;
+      readonly minutes: number;
+      readonly seconds: number;
+    };
 
-const MINUTE_MS = 60000;
 const HOUR_MS = 3600000;
 
 /**
@@ -15,9 +19,15 @@ const HOUR_MS = 3600000;
  * `now` est un paramètre, jamais l'horloge lue à l'intérieur : sans quoi aucune
  * fixture ne peut rendre les trois formes.
  *
- * Le seuil est à l'heure PLEINE : en dessous on compte en minutes, au-dessus en
- * heures et minutes. C'est ce que fait le panneau web, à ceci près qu'il affiche
- * aussi les secondes — retirées ici, voir `useUpcoming`.
+ * Le seuil est à l'heure PLEINE : en dessous on compte en minutes et secondes,
+ * au-dessus en heures, minutes et secondes. C'est ce que fait le panneau web,
+ * secondes comprises — `useUpcoming` bat donc la seconde pour les animer.
+ *
+ * **Tout est TRONQUÉ, jamais arrondi au supérieur.** Ce module a d'abord
+ * arrondi les minutes, pour ne pas afficher « dans 0 min » à trente secondes du
+ * début — un zéro qui se lisait « c'est passé ». Les secondes rendent cet
+ * arrondi FAUX : à trente secondes du début il dirait « dans 1 min 30 s ». Le
+ * zéro qu'il évitait ne gêne plus, puisqu'une seconde l'accompagne toujours.
  */
 export function relativeTo(startMs: number, now: number): Relative {
   const delta = startMs - now;
@@ -25,14 +35,19 @@ export function relativeTo(startMs: number, now: number): Relative {
   // exact et illisible.
   if (delta <= 0) return { kind: 'ongoing' };
 
-  if (delta < HOUR_MS) {
-    // Arrondi au SUPÉRIEUR : à 59 s du début, « dans 1 min » est plus juste que
-    // « dans 0 min », qui se lirait comme « c'est passé ».
-    return { kind: 'minutes', minutes: Math.max(1, Math.ceil(delta / MINUTE_MS)) };
-  }
+  // Une seule troncature, en tête : compter ensuite sur des secondes entières
+  // évite qu'un reste de millisecondes fasse diverger les trois nombres.
+  const total = Math.floor(delta / 1000);
+  const seconds = total % 60;
 
-  const hours = Math.floor(delta / HOUR_MS);
-  return { kind: 'hours', hours, minutes: Math.floor((delta % HOUR_MS) / MINUTE_MS) };
+  if (delta < HOUR_MS) return { kind: 'minutes', minutes: Math.floor(total / 60), seconds };
+
+  return {
+    kind: 'hours',
+    hours: Math.floor(total / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds,
+  };
 }
 
 /**

@@ -31,6 +31,14 @@ jest.mock(
 
 jest.mock('expo-clipboard', () => ({ getStringAsync: jest.fn(async () => '') }));
 
+// L'onglet du système qu'ouvre l'icône agenda. Doublé au niveau du PAQUET :
+// c'est la seule couche que l'application ne possède pas, et le doubler plus
+// haut ne prouverait rien du chemin réellement emprunté.
+const mockOpenBrowser = jest.fn(async (_url: string) => ({ type: 'opened' }));
+jest.mock('expo-web-browser', () => ({
+  openBrowserAsync: (url: string) => mockOpenBrowser(url),
+}));
+
 function renderHome(): Promise<unknown> {
   return render(
     <PaperProvider theme={{ animation: { scale: 0 } }}>
@@ -202,6 +210,43 @@ describe('HomeScreen', () => {
       await fireEvent.press(screen.getByTestId('upcoming-join-evt-1'));
 
       expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("ouvre l'évènement dans l'agenda web depuis l'icône", async () => {
+      jest.spyOn(upcoming, 'useUpcomingMeetings').mockReturnValue({
+        status: 'ready',
+        events: [EVENT],
+        now: NOW,
+      });
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+
+      await renderHome();
+      await fireEvent.press(screen.getByTestId('upcoming-calendar-evt-1'));
+
+      // L'URL COMPLÈTE, pas seulement « une URL » : l'hôte est déduit de celui
+      // de meet et la route a été relevée dans le bundle de l'agenda web.
+      expect(mockOpenBrowser).toHaveBeenCalledWith(
+        'https://calendar-ng.twake-dev.maudet.cloud/events/evt-1',
+      );
+      // Consulter n'est pas rejoindre : les deux commandes sont voisines.
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("n'ouvre aucun onglet sans compte actif", async () => {
+      // L'autre polarité de la garde. Sans elle, `account.instance` jetterait
+      // sur un `null` — et l'accueil est justement l'écran qu'on peut voir une
+      // fraction de seconde avant que le compte soit lu.
+      jest.spyOn(upcoming, 'useUpcomingMeetings').mockReturnValue({
+        status: 'ready',
+        events: [EVENT],
+        now: NOW,
+      });
+      jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+
+      await renderHome();
+      await fireEvent.press(screen.getByTestId('upcoming-calendar-evt-1'));
+
+      expect(mockOpenBrowser).not.toHaveBeenCalled();
     });
   });
 

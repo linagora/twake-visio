@@ -3,6 +3,7 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 
 import type { CalendarEvent } from 'src/calendar/ics';
+import { tokens } from 'src/ui/tokens';
 import { UpcomingMeetings } from './upcomingMeetings';
 
 // `t` rend la clé ET ses paramètres. Le double habituel du dépôt ne rend que la
@@ -33,9 +34,19 @@ function event(uid: string, startMs: number, summary = 'COCO'): CalendarEvent {
 
 function renderPanel(
   events: readonly CalendarEvent[],
-  onJoin: (e: CalendarEvent) => void = jest.fn(),
+  handlers: {
+    readonly onJoin?: (e: CalendarEvent) => void;
+    readonly onOpenEvent?: (e: CalendarEvent) => void;
+  } = {},
 ): Promise<unknown> {
-  return render(<UpcomingMeetings events={events} now={NOW} onJoin={onJoin} />);
+  return render(
+    <UpcomingMeetings
+      events={events}
+      now={NOW}
+      onJoin={handlers.onJoin ?? jest.fn()}
+      onOpenEvent={handlers.onOpenEvent ?? jest.fn()}
+    />,
+  );
 }
 
 describe('UpcomingMeetings', () => {
@@ -71,38 +82,66 @@ describe('UpcomingMeetings', () => {
     expect(screen.getByTestId('upcoming-title-a')).toHaveTextContent('COMEX');
   });
 
-  it('dit « en cours » pour une réunion commencée', async () => {
-    await renderPanel([event('a', NOW - MINUTE)]);
+  describe('le décompte', () => {
+    it('dit « en cours » pour une réunion commencée', async () => {
+      await renderPanel([event('a', NOW - MINUTE)]);
 
-    expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent('home.upcoming.ongoing');
+      expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent('home.upcoming.ongoing');
+    });
+
+    it('compte en minutes ET secondes en deçà d’une heure', async () => {
+      await renderPanel([event('a', NOW + 25 * MINUTE + 7000)]);
+
+      expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
+        'home.upcoming.inMinutes {"minutes":25,"seconds":"07"}',
+      );
+    });
+
+    it('compte en heures, minutes ET secondes au-delà', async () => {
+      await renderPanel([event('a', NOW + 3 * HOUR + 39 * MINUTE + 42000)]);
+
+      expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
+        'home.upcoming.inHours {"hours":3,"minutes":"39","seconds":"42"}',
+      );
+    });
+
+    // L'unité de TÊTE est un compte, celles qui suivent sont des positions
+    // d'horloge. « dans 9 min » se lit, « dans 09 min » non ; mais « 3 h 9 »
+    // n'existe pas, et un décompte dont les chiffres changent de largeur
+    // chaque seconde sautille.
+    it('remplit les unités subordonnées, jamais celle de tête', async () => {
+      await renderPanel([
+        event('a', NOW + 9 * MINUTE + 5000),
+        event('b', NOW + 3 * HOUR + 9 * MINUTE + 5000),
+      ]);
+
+      expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
+        'home.upcoming.inMinutes {"minutes":9,"seconds":"05"}',
+      );
+      expect(screen.getByTestId('upcoming-when-b')).toHaveTextContent(
+        'home.upcoming.inHours {"hours":3,"minutes":"09","seconds":"05"}',
+      );
+    });
   });
 
-  it('compte en minutes en deçà d’une heure', async () => {
-    await renderPanel([event('a', NOW + 25 * MINUTE)]);
+  describe('la pastille « en cours »', () => {
+    // Ce que RNTL peut prouver : la pastille est RENDUE, et elle porte la
+    // couleur voulue. Ce qu'il ne peut pas : qu'elle clignote — rien n'est
+    // rastérisé, et l'animation est pilotée hors du fil JavaScript.
+    it('pose une pastille sur une réunion commencée', async () => {
+      await renderPanel([event('a', NOW - MINUTE)]);
 
-    expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
-      'home.upcoming.inMinutes {"minutes":25}',
-    );
-  });
+      expect(screen.getByTestId('upcoming-live-a')).toHaveStyle({
+        backgroundColor: tokens.color.danger,
+      });
+    });
 
-  it('compte en heures et minutes au-delà', async () => {
-    await renderPanel([event('a', NOW + 3 * HOUR + 39 * MINUTE)]);
+    it('ne pose aucune pastille sur une réunion à venir', async () => {
+      // L'autre polarité : sans ce cas, une pastille INCONDITIONNELLE passerait.
+      await renderPanel([event('a', NOW + MINUTE)]);
 
-    expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
-      'home.upcoming.inHours {"hours":3,"minutes":"39"}',
-    );
-  });
-
-  it('remplit les minutes à deux chiffres, sans quoi on lit « 3 h 9 »', async () => {
-    // Mesuré sur appareil le 2026-08-03 : le panneau affichait « dans 3 h 9 »
-    // pour une réunion à 3 h 09. Le gabarit des sept langues est
-    // « {{hours}} h {{minutes}} », une lecture d'horloge : les minutes s'y
-    // écrivent sur deux chiffres ou ne s'y écrivent pas.
-    await renderPanel([event('a', NOW + 3 * HOUR + 9 * MINUTE)]);
-
-    expect(screen.getByTestId('upcoming-when-a')).toHaveTextContent(
-      'home.upcoming.inHours {"hours":3,"minutes":"09"}',
-    );
+      expect(screen.queryByTestId('upcoming-live-a')).toBe(null);
+    });
   });
 
   it('ne pose un filet que sur les lignes suivantes, jamais la première', async () => {
@@ -116,16 +155,44 @@ describe('UpcomingMeetings', () => {
     });
   });
 
-  it('« Rejoindre » remonte CET évènement, pas le premier de la liste', async () => {
-    // Deux lignes, et c'est la seconde qu'on presse : avec une seule, un
+  describe('les deux commandes de la ligne', () => {
+    // Deux lignes, et c'est la SECONDE qu'on presse : avec une seule, un
     // gestionnaire qui remonterait toujours `events[0]` passerait aussi.
-    const onJoin = jest.fn();
-    const second = event('b', NOW + 2 * HOUR, 'Point BC');
-    await renderPanel([event('a', NOW + HOUR), second], onJoin);
+    it('« Rejoindre » remonte CET évènement, pas le premier de la liste', async () => {
+      const onJoin = jest.fn();
+      const second = event('b', NOW + 2 * HOUR, 'Point BC');
+      await renderPanel([event('a', NOW + HOUR), second], { onJoin });
 
-    await fireEvent.press(screen.getByTestId('upcoming-join-b'));
+      await fireEvent.press(screen.getByTestId('upcoming-join-b'));
 
-    expect(onJoin).toHaveBeenCalledTimes(1);
-    expect(onJoin).toHaveBeenCalledWith(second);
+      expect(onJoin).toHaveBeenCalledTimes(1);
+      expect(onJoin).toHaveBeenCalledWith(second);
+    });
+
+    it("l'icône agenda remonte CET évènement, et ne rejoint rien", async () => {
+      const onJoin = jest.fn();
+      const onOpenEvent = jest.fn();
+      const second = event('b', NOW + 2 * HOUR, 'Point BC');
+      await renderPanel([event('a', NOW + HOUR), second], { onJoin, onOpenEvent });
+
+      await fireEvent.press(screen.getByTestId('upcoming-calendar-b'));
+
+      expect(onOpenEvent).toHaveBeenCalledTimes(1);
+      expect(onOpenEvent).toHaveBeenCalledWith(second);
+      // Les deux commandes sont voisines dans la même ligne : presser l'une ne
+      // doit pas déclencher l'autre.
+      expect(onJoin).not.toHaveBeenCalled();
+    });
+
+    it('teinte le glyphe agenda en textSecondary', async () => {
+      // `color` est une prop que `MaterialCommunityIcons` CONSOMME — elle
+      // n'atteint pas l'élément hôte. Ce qu'on observe est la conséquence : le
+      // STYLE du `Text` que le glyphe rend. Précédent : `tabBarIcon.spec.tsx`.
+      await renderPanel([event('a', NOW + HOUR)]);
+
+      expect(screen.getByTestId('upcoming-calendar-a-glyph')).toHaveStyle({
+        color: tokens.color.textSecondary,
+      });
+    });
   });
 });

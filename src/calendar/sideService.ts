@@ -1,30 +1,16 @@
 import { REQUEST_TIMEOUT_MS } from 'src/constants';
+import { siblingHost } from 'src/calendar/hosts';
 import { readEvent, type CalendarEvent } from 'src/calendar/ics';
 import { WINDOW_AHEAD_MS, WINDOW_BEHIND_MS } from 'src/calendar/upcoming';
 
 /**
  * L'hôte du service d'agenda, déduit de celui de meet.
  *
- * `https://meet.<domaine>` → `https://tcalendar-side-service.<domaine>`, en
- * remplaçant le PREMIER label. C'est la règle du widget web (`BASE_DOMAIN`),
- * reprise telle quelle et validée avec Michel-Marie.
- *
- * C'est une HYPOTHÈSE sur les autres instances : rien ne garantit qu'elles
- * nomment leurs hôtes ainsi. Cette fonction est le seul endroit à corriger si
- * l'une d'elles fait autrement.
+ * La règle de déduction et sa fragilité vivent dans `hosts.ts`, avec l'autre
+ * appelant : c'est là qu'on corrige si une instance nomme ses hôtes autrement.
  */
 export function sideServiceUrl(serverUrl: string): string | null {
-  let host: string;
-  try {
-    host = new URL(serverUrl).hostname;
-  } catch {
-    return null;
-  }
-  const dot = host.indexOf('.');
-  // Sans domaine parent il n'y a rien à remplacer : préfixer donnerait un hôte
-  // inexistant, donc une requête qui échoue sans nommer sa cause.
-  if (dot < 0) return null;
-  return `https://tcalendar-side-service${host.slice(dot)}`;
+  return siblingHost(serverUrl, 'tcalendar-side-service');
 }
 
 // `YYYYMMDDTHHMMSSZ`, sans tirets ni deux-points. Un horodatage ISO passé tel
