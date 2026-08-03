@@ -162,7 +162,7 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
 
     // 2. Le masque, reconstruit une image sur deux et conservé entre-temps.
     if (small != null) {
-      buildMask(small)
+      buildMask(small, rotation)
       if (small !== full) small.recycle()
     }
     // Le masque manque encore : la toute première segmentation a échoué ou
@@ -236,10 +236,20 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
    * touche. C'est ce qui rend la conservation entre deux images sûre sans
    * verrou.
    */
-  private fun buildMask(input: Bitmap) {
+  private fun buildMask(input: Bitmap, rotation: Int) {
     val segmentationStart = SystemClock.elapsedRealtimeNanos()
     val mask = Tasks.await(
-      segmenter.process(InputImage.fromBitmap(input, 0)),
+      // **La ROTATION est transmise, et ce n'est pas un détail de confort.**
+      // Le tampon du capteur est en 640x480 PAYSAGE ; sur un téléphone tenu en
+      // portrait, la personne y est couchée. Le segmenteur *selfie* est
+      // entraîné sur des bustes droits — lui donner une personne à l'horizontale
+      // lui fait rendre un masque vague, presque uniforme, et c'est ce que le
+      // propriétaire a vu : sa pièce visible tout autour de lui.
+      //
+      // Le code SAVAIT déjà que l'image est couchée : vingt lignes plus haut, le
+      // fond est contre-pivoté pour cette raison exacte. Les deux endroits se
+      // contredisaient, et seul celui-ci était faux.
+      segmenter.process(InputImage.fromBitmap(input, rotation)),
       SEGMENTATION_TIMEOUT_MS,
       TimeUnit.MILLISECONDS,
     )
@@ -279,11 +289,51 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
     }
 
+    // Une SONDE, temporaire : le propriétaire voit sa pièce autour de lui alors
+    // que le fond est censé la couvrir. Avant de corriger, on regarde ce que le
+    // masque contient réellement — sa taille, celle de l'image, et la part de
+    // pixels que le seuil déclare « personne ». Un masque presque tout opaque
+    // et un masque mal cadré produisent la même plainte et demandent deux
+    // corrections opposées.
+    if (frameCount % 120 == 0L) {
+      var opaque = 0
+      var clear = 0
+      var minC = Float.MAX_VALUE
+      var maxC = -Float.MAX_VALUE
+      for (index in 0 until pixelCount) {
+        val c = confidenceScratch[index]
+        if (c < minC) minC = c
+        if (c > maxC) maxC = c
+        when (alphaPixels[index] ushr 24) {
+          255 -> opaque += 1
+          0 -> clear += 1
+        }
+      }
+      Log.i(
+        TAG,
+        "masque ${mask.width}x${mask.height} pour image ${input.width}x${input.height} — " +
+          "opaque ${100 * opaque / pixelCount}%, transparent ${100 * clear / pixelCount}%, " +
+          "confiance [${"%.3f".format(minC)} .. ${"%.3f".format(maxC)}]",
+      )
+    }
+
     // `setPixels` sur un bitmap neuf plutôt que `createBitmap(tableau, …)` : ce
     // dernier exige un tableau de la taille EXACTE, ce qui interdirait de
     // réutiliser un tampon dimensionné une fois pour toutes.
-    val next = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
-    next.setPixels(alphaPixels, 0, mask.width, 0, 0, mask.width, mask.height)
+    val upright = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
+    upright.setPixels(alphaPixels, 0, mask.width, 0, 0, mask.width, mask.height)
+
+    // MLKit rend son masque dans l'orientation REDRESSÉE, celle qu'on vient de
+    // lui annoncer. La composition, elle, travaille dans le tampon couché : il
+    // faut donc le recoucher. Sans ce retour, le masque serait appliqué à 90°
+    // du sujet — un défaut bien plus visible que celui qu'on corrige.
+    val next = if (rotation % 360 == 0) {
+      upright
+    } else {
+      val matrix = Matrix().apply { postRotate(-rotation.toFloat()) }
+      Bitmap.createBitmap(upright, 0, 0, upright.width, upright.height, matrix, true)
+    }
+    if (next !== upright) upright.recycle()
     maskBitmap?.recycle()
     maskBitmap = next
     maskNanos += SystemClock.elapsedRealtimeNanos() - maskStart
