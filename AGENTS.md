@@ -304,6 +304,32 @@ appareil le 2026-08-02 ; le détail est dans
 Confondre les deux premiers a failli faire conclure qu'un service de premier plan tout neuf
 ne servait à rien.
 
+### Le Pixel 10 Pro Fold a TROIS écrans, et l'application n'est pas toujours sur celui qu'on capture
+
+Mesuré le 2026-08-03, six allers-retours perdus. `screencap` et `uiautomator dump` rendaient
+une page **blanche** — un seul bouton flottant « Tools » dans tout l'arbre d'accessibilité —
+alors que l'application tournait, que `topResumedActivity` la nommait, que le journal
+montrait MMKV chargeant ses comptes, et que le paquet servait un bundle de 12 Mo en `200`.
+Rien ne mentait ; je regardais le mauvais écran.
+
+`adb shell dumpsys display | grep mUniqueId` les énumère. Sur cet appareil :
+
+| écran                            | `-d` à passer          | quand                                                            |
+| -------------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| Outer Display (1080×2364)        | `4619827677550801153`  | téléphone plié — `mState=ON`                                     |
+| Inner Display (2076×2152)        | `4619827677550801152`  | téléphone déplié                                                 |
+| **virtuel `scrcpy`** (1080×2360) | `11529215049685854924` | **quand `scrcpy --new-display` tourne : c'est là que l'app vit** |
+
+L'identifiant du virtuel **change à chaque lancement de `scrcpy`** : ne le code jamais en
+dur, relis-le. Et `am force-stop` + `monkey` relance l'activité sur l'écran **par défaut**,
+donc déplace l'application hors de la fenêtre que la personne regarde — préférer le
+rechargement à chaud de Metro, qui ne déplace rien.
+
+**Le signe qui distingue « écran vide » de « mauvais écran » :** un arbre d'accessibilité
+qui contient les vues de l'application (`package=com.linagora.twakevisio`, un `ComposeView`)
+mais **aucun texte**. Une application réellement plantée n'a pas d'arbre du tout ; une
+application qui rend ailleurs en a un, vide.
+
 ## Internationalisation
 
 Seven locales (`en fr es it de vi ru`), all filled before merge. No hardcoded
