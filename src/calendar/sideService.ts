@@ -53,12 +53,30 @@ function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}`, Accept: 'application/json' };
 }
 
+/**
+ * Le code HTTP porté par une erreur jetée ici, s'il y en a un.
+ *
+ * Un `Error` ne transporte qu'un message, et l'appelant a besoin de distinguer
+ * un `401` — rattrapable en renouvelant le jeton — de tout le reste. Une
+ * sous-classe d'`Error` serait plus naturelle, mais son `instanceof` ne
+ * survit pas de façon fiable à la transpilation des classes ; une propriété
+ * lue par `in`, si. C'est la même prudence que `readAudioDevices` face aux
+ * formes venues du pont natif.
+ */
+export function httpStatusOf(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null;
+  const status = (error as { readonly status: unknown }).status;
+  return typeof status === 'number' ? status : null;
+}
+
 async function getJson(url: string, token: string): Promise<unknown> {
   const response = await fetch(url, {
     headers: authHeaders(token),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  if (!response.ok) {
+    throw Object.assign(new Error(`${url}: ${response.status}`), { status: response.status });
+  }
   return (await response.json()) as unknown;
 }
 

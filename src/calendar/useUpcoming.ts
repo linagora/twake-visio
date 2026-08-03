@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
 import { getActiveAccount } from 'src/auth/accounts';
-import { getAccessToken } from 'src/auth/session';
+import { forceRefresh, getAccessToken } from 'src/auth/session';
 import type { CalendarEvent } from 'src/calendar/ics';
-import { fetchUpcoming, sideServiceUrl } from 'src/calendar/sideService';
+import { fetchUpcoming, httpStatusOf, sideServiceUrl } from 'src/calendar/sideService';
 import { selectUpcoming } from 'src/calendar/upcoming';
 
 /**
@@ -74,28 +74,47 @@ export function useUpcomingMeetings(): UpcomingState {
         return;
       }
 
-      try {
-        const now = Date.now();
-        const all = await fetchUpcoming(base, outcome.token, now);
-        if (cancelled) return;
-        setState({ status: 'ready', events: selectUpcoming(all, now), now });
-      } catch (error: unknown) {
-        // Un 401 ne dit pas POURQUOI. Les claims du jeton, si — et `aud` est le
-        // suspect nommé dans le document de conception : le jeton qui fonctionne
-        // porte `["visio-widget", "openpaas"]`, celui de l'application est
-        // frappé pour `livekit-meet`. Lire l'audience transforme une hypothèse
-        // en mesure. `__DEV__` seulement, et jamais le jeton lui-même.
-        const detail = __DEV__ ? ` ${audienceOf(outcome.token)}` : '';
-        // Y COMPRIS le 401 d'audience. Voir le document de conception : le
-        // service peut refuser un jeton frappé pour `livekit-meet`, et ce
-        // refus se lit « pas de calendrier ici », jamais comme une panne.
-        if (!cancelled) {
-          setState({
-            status: 'unavailable',
-            reason: `${error instanceof Error ? error.message : String(error)}${detail}`,
-          });
+      // `mayRefresh` n'est vrai qu'au PREMIER essai. Sans cette garde, un
+      // service définitivement fermé ferait tourner le SSO en rond, un
+      // renouvellement par refus.
+      const attempt = async (token: string, mayRefresh: boolean): Promise<void> => {
+        try {
+          const now = Date.now();
+          const all = await fetchUpcoming(base, token, now);
+          if (cancelled) return;
+          setState({ status: 'ready', events: selectUpcoming(all, now), now });
+        } catch (error: unknown) {
+          // Un 401 peut ne rien dire de la session : `getAccessToken` rend le
+          // jeton en cache jusqu'à trente secondes de son expiration, donc un
+          // jeton frappé AVANT un changement de configuration du SSO survit
+          // jusqu'à une heure. Mesuré le 2026-08-03 : l'audience du client
+          // `livekit-meet` a été corrigée côté LemonLDAP, et sans ce rejeu le
+          // panneau serait resté masqué tout ce temps, correctif en place.
+          if (mayRefresh && httpStatusOf(error) === 401) {
+            const refreshed = await forceRefresh(account.id, account.instance);
+            if (cancelled) return;
+            if (refreshed.ok) return attempt(refreshed.token, false);
+          }
+
+          // Le 401 qui SUBSISTE, lui, ne dit toujours pas pourquoi. Les claims
+          // du jeton, si — et `aud` est le suspect nommé dans le document de
+          // conception : le jeton qui fonctionne porte
+          // `["visio-widget", "openpaas"]`. Lire l'audience transforme une
+          // hypothèse en mesure. `__DEV__` seulement, et jamais le jeton.
+          const detail = __DEV__ ? ` ${audienceOf(token)}` : '';
+          // Y COMPRIS le 401 d'audience. Voir le document de conception : le
+          // service peut refuser un jeton frappé pour `livekit-meet`, et ce
+          // refus se lit « pas de calendrier ici », jamais comme une panne.
+          if (!cancelled) {
+            setState({
+              status: 'unavailable',
+              reason: `${error instanceof Error ? error.message : String(error)}${detail}`,
+            });
+          }
         }
-      }
+      };
+
+      await attempt(outcome.token, true);
     };
 
     void load();

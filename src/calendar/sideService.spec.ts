@@ -1,4 +1,9 @@
-import { calendarQueryBody, fetchUpcoming, sideServiceUrl } from 'src/calendar/sideService';
+import {
+  calendarQueryBody,
+  fetchUpcoming,
+  httpStatusOf,
+  sideServiceUrl,
+} from 'src/calendar/sideService';
 
 describe('sideServiceUrl', () => {
   it("remplace le premier label de l'hôte meet", () => {
@@ -170,5 +175,31 @@ describe('fetchUpcoming', () => {
     const events = await fetchUpcoming('https://side', 'jeton', Date.UTC(2026, 7, 3, 8, 0, 0));
 
     expect(events.map((e) => e.summary)).toEqual(['COCO']);
+  });
+});
+
+// L'autre bout du contrat gardé par `useUpcoming.spec.ts` : ce crochet ne
+// rejoue que sur un 401, et il le reconnaît par `httpStatusOf`. Si le pont
+// cessait de poser `status`, le rejeu deviendrait muet sans qu'aucun test du
+// crochet ne rougisse — il fabrique son erreur lui-même.
+describe('httpStatusOf', () => {
+  it("porte le code HTTP sur l'erreur d'un appel refusé", async () => {
+    mockFetch(() => ({ ok: false, status: 401 }) as Response);
+
+    // Les deux polarités du même prédicat : un refus porte son code, une
+    // erreur ordinaire n'en porte aucun.
+    const error = await fetchUpcoming('https://side', 'jeton', 0).catch((e: unknown) => e);
+
+    expect(httpStatusOf(error)).toBe(401);
+    expect(httpStatusOf(new Error('réseau'))).toBeNull();
+  });
+
+  it('distingue les codes entre eux', async () => {
+    // Sans ce second code, `status` pourrait être une constante 401.
+    mockFetch(() => ({ ok: false, status: 503 }) as Response);
+
+    const error = await fetchUpcoming('https://side', 'jeton', 0).catch((e: unknown) => e);
+
+    expect(httpStatusOf(error)).toBe(503);
   });
 });
