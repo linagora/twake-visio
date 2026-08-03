@@ -29,7 +29,6 @@ import {
   type FacingMode,
 } from 'src/call/media';
 import type { ReactionKey } from 'src/call/reactions';
-import type { RecordingState } from 'src/call/recording';
 import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
 import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
@@ -113,19 +112,10 @@ export type CallControlBarProps = {
   // sous-ensemble du `MessageKey` de `call.tsx`, redit ici plutôt qu'importé —
   // l'importer ferait un cycle entre l'écran et sa barre.
   readonly onNotice: (key: 'call.deviceSwitchFailed' | null) => void;
-
-  // Ce que la barre PORTE sans rien en savoir : les six entrées et six rappels
-  // du menu « plus », qui traversent jusqu'à `MoreMenu` sans être lus ici.
-  readonly recording: RecordingState;
-  readonly canRecord: boolean;
-  readonly recordingBusy: boolean;
   readonly handRaised: boolean;
   readonly handBusy: boolean;
   readonly hands: readonly RaisedHand[];
   readonly unread: number;
-  readonly onShare: () => void;
-  readonly onStartRecording: () => void;
-  readonly onStopRecording: () => void;
   readonly onToggleHand: () => void;
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
@@ -155,16 +145,10 @@ export function CallControlBar({
   defaultCameraOn,
   onFacingChange,
   onNotice,
-  recording,
-  canRecord,
-  recordingBusy,
   handRaised,
   handBusy,
   hands,
   unread,
-  onShare,
-  onStartRecording,
-  onStopRecording,
   onToggleHand,
   onSendReaction,
   onOpenChat,
@@ -483,14 +467,8 @@ export function CallControlBar({
           d'enregistrement n'y est jamais adjacente au bouton quitter, et
           c'est cette raison-là qui survit. */}
       <MoreMenu
-        recording={recording}
-        canRecord={canRecord}
-        recordingBusy={recordingBusy}
         unread={unread}
         hands={hands}
-        onShare={onShare}
-        onStartRecording={onStartRecording}
-        onStopRecording={onStopRecording}
         onOpenChat={onOpenChat}
         onOpenAudioOutput={handleOpenAudioOutput}
       />

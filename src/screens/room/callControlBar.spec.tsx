@@ -5,7 +5,6 @@ import { PaperProvider } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
 import type { ReactionKey } from 'src/call/reactions';
-import type { RecordingState } from 'src/call/recording';
 import { BAR_SURFACE_COLOR } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
 import { CallControlBar } from './callControlBar';
@@ -39,8 +38,6 @@ function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
 }
 
-const IDLE: RecordingState = { phase: 'idle', mode: null };
-
 // La barre ne lit jamais la `Room` au montage : elle ne la passe qu'aux
 // fonctions de `src/call/media`, bouchonnées ci-dessus.
 const ROOM = {} as unknown as Room;
@@ -65,16 +62,10 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       defaultCameraOn={overrides.defaultCameraOn ?? true}
       onFacingChange={jest.fn()}
       onNotice={jest.fn()}
-      recording={IDLE}
-      canRecord
-      recordingBusy={false}
       handRaised={overrides.handRaised ?? false}
       handBusy={overrides.handBusy ?? false}
       hands={overrides.hands ?? []}
       unread={overrides.unread ?? 0}
-      onShare={jest.fn()}
-      onStartRecording={jest.fn()}
-      onStopRecording={jest.fn()}
       onToggleHand={overrides.onToggleHand ?? jest.fn()}
       onSendReaction={overrides.onSendReaction ?? jest.fn()}
       onOpenChat={jest.fn()}

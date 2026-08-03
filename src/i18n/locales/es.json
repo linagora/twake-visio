@@ -33,6 +33,8 @@
   "lobby.denied": "Su solicitud de entrada ha sido rechazada",
   "call.leave": "Salir",
   "call.share": "Compartir el enlace",
+  "call.copyLink": "Copiar el enlace",
+  "call.linkCopied": "Enlace copiado",
   "call.more": "Más",
   "call.muted": "Silenciado",
   "call.pinned": "Fijado",

@@ -33,6 +33,8 @@
   "lobby.denied": "Your request to join was declined",
   "call.leave": "Leave",
   "call.share": "Share the link",
+  "call.copyLink": "Copy the link",
+  "call.linkCopied": "Link copied",
   "call.more": "More",
   "call.muted": "Muted",
   "call.pinned": "Pinned",

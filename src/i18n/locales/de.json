@@ -33,6 +33,8 @@
   "lobby.denied": "Ihre Beitrittsanfrage wurde abgelehnt",
   "call.leave": "Verlassen",
   "call.share": "Link teilen",
+  "call.copyLink": "Link kopieren",
+  "call.linkCopied": "Link kopiert",
   "call.more": "Mehr",
   "call.muted": "Stummgeschaltet",
   "call.pinned": "Angeheftet",

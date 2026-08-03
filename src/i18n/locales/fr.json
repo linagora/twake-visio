@@ -33,6 +33,8 @@
   "lobby.denied": "Votre demande d'entrée a été refusée",
   "call.leave": "Quitter",
   "call.share": "Partager le lien",
+  "call.copyLink": "Copier le lien",
+  "call.linkCopied": "Lien copié",
   "call.more": "Plus",
   "call.muted": "Micro coupé",
   "call.pinned": "Épinglé",

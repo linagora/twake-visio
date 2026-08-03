@@ -3,8 +3,6 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
-import type { RecordingState } from 'src/call/recording';
-import { SHEET_SURFACE_COLOR } from 'src/screens/room/bottomSheet';
 import { tokens } from 'src/ui/tokens';
 import { MoreMenu } from './moreMenu';
 
@@ -32,10 +30,6 @@ function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
 }
 
-const IDLE: RecordingState = { phase: 'idle', mode: null };
-const RECORDING: RecordingState = { phase: 'recording', mode: 'screen_recording' };
-const STARTING: RecordingState = { phase: 'starting', mode: 'screen_recording' };
-
 const ADA: RaisedHand = {
   identity: 'u-ada',
   name: 'Ada',
@@ -44,14 +38,8 @@ const ADA: RaisedHand = {
 };
 
 type Overrides = {
-  recording?: RecordingState;
-  canRecord?: boolean;
-  recordingBusy?: boolean;
   hands?: readonly RaisedHand[];
   unread?: number;
-  onShare?: () => void;
-  onStartRecording?: () => void;
-  onStopRecording?: () => void;
   onOpenChat?: () => void;
   onOpenAudioOutput?: () => void;
 };
@@ -59,14 +47,8 @@ type Overrides = {
 function menu(overrides: Overrides = {}): React.ReactElement {
   return withPaper(
     <MoreMenu
-      recording={overrides.recording ?? IDLE}
-      canRecord={overrides.canRecord ?? true}
-      recordingBusy={overrides.recordingBusy ?? false}
       hands={overrides.hands ?? []}
       unread={overrides.unread ?? 0}
-      onShare={overrides.onShare ?? jest.fn()}
-      onStartRecording={overrides.onStartRecording ?? jest.fn()}
-      onStopRecording={overrides.onStopRecording ?? jest.fn()}
       onOpenChat={overrides.onOpenChat ?? jest.fn()}
       onOpenAudioOutput={overrides.onOpenAudioOutput ?? jest.fn()}
     />,
@@ -86,143 +68,18 @@ describe('MoreMenu', () => {
     expect(screen.queryByTestId('hand-toggle')).toBe(null);
   });
 
-  it('offre le partage et le démarrage au repos', async () => {
-    await render(menu());
-
-    await open();
-
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.start');
-    // Surfaces de couleur propres à cette feuille (voir `controlBar.ts` et le
-    // C1 de `recordingControl.spec.tsx` pour le même principe) : la surface de
-    // la feuille et le libellé de partage portent tous deux une couleur
-    // explicite issue des tokens, jamais celle que Paper calculerait depuis le
-    // thème — cette scène est sombre dans les deux schémas alors que le thème
-    // suit le schéma système. `BottomSheet` passe `testID="more-sheet"` à
-    // `Modal`, qui expose sa `Surface` sous `` `${testID}-surface` ``
-    // (`Modal.tsx:219-220`) : la feuille porte donc le nôtre, jamais le testID
-    // par défaut de la bibliothèque. `SheetRow` suffixe le sien de `-title`
-    // pour son `Text` interne, exactement comme `Menu.Item`.
-    expect(screen.getByTestId('more-sheet-surface')).toHaveStyle({
-      backgroundColor: SHEET_SURFACE_COLOR,
-    });
-    expect(screen.getByTestId('share-btn-title')).toHaveStyle({ color: tokens.color.textDark });
-  });
-
-  it('démarre l’enregistrement', async () => {
-    const onStartRecording = jest.fn();
-    const onStopRecording = jest.fn();
-    await render(menu({ onStartRecording, onStopRecording }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('recording-toggle'));
-
-    expect(onStartRecording).toHaveBeenCalledTimes(1);
-    expect(onStopRecording).not.toHaveBeenCalled();
-  });
-
-  it('devient un arrêt dès le démarrage en cours', async () => {
-    const onStartRecording = jest.fn();
-    const onStopRecording = jest.fn();
-    await render(menu({ recording: STARTING, onStartRecording, onStopRecording }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
-    expect(screen.getByTestId('recording-toggle')).toHaveTextContent('recording.stop');
-    await fireEvent.press(screen.getByTestId('recording-toggle'));
-
-    expect(onStopRecording).toHaveBeenCalledTimes(1);
-    expect(onStartRecording).not.toHaveBeenCalled();
-  });
-
-  it('arrête un enregistrement en cours', async () => {
-    const onStopRecording = jest.fn();
-    await render(menu({ recording: RECORDING, onStopRecording }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('recording-toggle'));
-
-    expect(onStopRecording).toHaveBeenCalledTimes(1);
-  });
-
-  it('partage sans toucher à l’enregistrement', async () => {
-    // Les deux entrées du menu partent vers deux rappels distincts : les
-    // intervertir enverrait un appui sur « partager » démarrer un
-    // enregistrement.
-    const onShare = jest.fn();
-    const onStartRecording = jest.fn();
-    await render(menu({ onShare, onStartRecording }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('share-btn'));
-
-    expect(onShare).toHaveBeenCalledTimes(1);
-    expect(onStartRecording).not.toHaveBeenCalled();
-  });
-
-  it('ne propose aucune commande d’enregistrement sans le droit, mais garde le partage', async () => {
-    await render(menu({ canRecord: false }));
-
-    await open();
-
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    expect(screen.queryByTestId('recording-toggle')).toBe(null);
-  });
-
-  it('retire la commande pendant un appel en vol plutôt que de la griser', async () => {
-    await render(menu({ recordingBusy: true }));
-
-    await open();
-
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    expect(screen.queryByTestId('recording-toggle')).toBe(null);
-  });
-
-  it('referme le menu après un appui', async () => {
-    // Un menu qui reste ouvert masque la scène et invite au second appui, donc
-    // au 409.
-    await render(menu());
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('recording-toggle'));
-
-    await waitFor(() => expect(screen.queryByTestId('recording-toggle')).toBe(null));
-  });
-
   // Trouvé manquant par mutation : `RecordingControl` reçoit deux rappels
   // distincts, `onStart` et `onStop`, chacun avec son propre `setVisible(false)`
   // dans `moreMenu.tsx`. Le test ci-dessus ne presse que la branche `onStart`
   // (état `IDLE` par défaut) ; retirer le `setVisible(false)` du seul `onStop`
   // ne faisait rougir aucun des quinze tests existants. `STARTING` fait
   // basculer `stopping` à `true`, donc l'appui emprunte l'autre branche.
-  it('referme aussi le menu après un arrêt d’enregistrement', async () => {
-    await render(menu({ recording: STARTING }));
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('recording-toggle')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('recording-toggle'));
-
-    await waitFor(() => expect(screen.queryByTestId('recording-toggle')).toBe(null));
-  });
 
   // Le pendant du test ci-dessus, côté partage : rien ne garantit qu'une seule
   // des deux entrées referme le menu avant d'appeler son rappel. Sans ce test,
   // retirer le `setVisible(false)` du seul bouton de partage passerait la
   // suite entière — aucun des tests ci-dessus n'observe l'état du menu après
   // un appui sur `share-btn`, seulement l'appel de `onShare`.
-  it('referme aussi le menu après un partage', async () => {
-    await render(menu());
-
-    await open();
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('share-btn'));
-
-    await waitFor(() => expect(screen.queryByTestId('share-btn')).toBe(null));
-  });
 
   it('montre la file entière, la seconde entrée comprise', async () => {
     const bob: RaisedHand = {
@@ -250,16 +107,16 @@ describe('MoreMenu', () => {
 
     await open();
 
-    await waitFor(() => expect(screen.getByTestId('share-btn')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
     expect(screen.queryByTestId('hand-queue')).toBe(null);
   });
 
-  it('ouvre le chat et referme la feuille, comme ses trois voisines', async () => {
-    // Rien ne garantit qu'une entrée referme la feuille parce que ses voisines
-    // le font : le `setVisible(false)` est écrit une fois par entrée.
+  it('ouvre le chat et referme la feuille, comme sa voisine', async () => {
+    // Rien ne garantit qu'une entrée referme la feuille parce que sa voisine le
+    // fait : le `setVisible(false)` est écrit une fois par entrée.
     const onOpenChat = jest.fn();
-    const onShare = jest.fn();
-    await render(menu({ onOpenChat, onShare }));
+    const onOpenAudioOutput = jest.fn();
+    await render(menu({ onOpenChat, onOpenAudioOutput }));
 
     await open();
     await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
@@ -267,8 +124,22 @@ describe('MoreMenu', () => {
     await fireEvent.press(screen.getByTestId('chat-btn'));
 
     expect(onOpenChat).toHaveBeenCalledTimes(1);
-    expect(onShare).not.toHaveBeenCalled();
+    expect(onOpenAudioOutput).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByTestId('chat-btn')).toBe(null));
+  });
+
+  // Le menu a perdu DEUX entrées à la demande du propriétaire :
+  // l'enregistrement, qui ne fonctionne pas côté serveur, et le partage, qui a
+  // rejoint l'en-tête sous forme d'icône à côté du slug qu'il concerne. Ce test
+  // garde leur absence : une entrée qui revient sans qu'on l'ait voulu est
+  // exactement ce qu'un menu ne montre à personne avant la production.
+  it("ne montre plus l'enregistrement ni le partage", async () => {
+    await render(menu());
+
+    await open();
+    await waitFor(() => expect(screen.getByTestId('chat-btn')).toBeTruthy());
+    expect(screen.queryByTestId('share-btn')).toBe(null);
+    expect(screen.queryByTestId('recording-toggle')).toBe(null);
   });
 
   it('porte une couleur explicite sur le libellé du chat', async () => {

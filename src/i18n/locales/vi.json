@@ -33,6 +33,8 @@
   "lobby.denied": "Yêu cầu tham gia của bạn đã bị từ chối",
   "call.leave": "Rời khỏi",
   "call.share": "Chia sẻ liên kết",
+  "call.copyLink": "Sao chép liên kết",
+  "call.linkCopied": "Đã sao chép liên kết",
   "call.more": "Thêm",
   "call.muted": "Đã tắt tiếng",
   "call.pinned": "Đã ghim",

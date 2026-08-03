@@ -33,6 +33,8 @@
   "lobby.denied": "Ваш запрос на вход отклонён",
   "call.leave": "Покинуть",
   "call.share": "Поделиться ссылкой",
+  "call.copyLink": "Скопировать ссылку",
+  "call.linkCopied": "Ссылка скопирована",
   "call.more": "Ещё",
   "call.muted": "Микрофон выключен",
   "call.pinned": "Закреплено",

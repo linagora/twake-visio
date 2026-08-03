@@ -20,7 +20,9 @@ function header(
   return (
     <CallHeader
       elapsedSeconds={0}
+      onCopyLink={jest.fn()}
       onParticipantsPress={jest.fn()}
+      onShareLink={jest.fn()}
       participantCount={1}
       title="Revue produit"
       {...overrides}
@@ -178,5 +180,42 @@ describe('CallHeader', () => {
     expect(screen.getByTestId('call-header-participants-glyph')).toHaveStyle({
       color: tokens.color.textDark,
     });
+  });
+  // Copier et partager ont quitté le menu « Plus » pour l'en-tête, à la demande
+  // du propriétaire : le lien de la réunion, c'est ce titre, et la commande se
+  // lit mieux à côté de son objet. Une prop par icône, et une ligne par prop —
+  // deux boutons voisins qui appellent le même rappel est exactement l'erreur
+  // qu'un seul test ne verrait pas.
+  it('copie le lien sans partager', async () => {
+    const onCopyLink = jest.fn();
+    const onShareLink = jest.fn();
+
+    await render(header({ onCopyLink, onShareLink }));
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    expect(onCopyLink).toHaveBeenCalledTimes(1);
+    expect(onShareLink).not.toHaveBeenCalled();
+  });
+
+  it('partage le lien sans copier', async () => {
+    const onCopyLink = jest.fn();
+    const onShareLink = jest.fn();
+
+    await render(header({ onCopyLink, onShareLink }));
+    await fireEvent.press(screen.getByTestId('call-header-share'));
+
+    expect(onShareLink).toHaveBeenCalledTimes(1);
+    expect(onCopyLink).not.toHaveBeenCalled();
+  });
+
+  it('dessine un vrai glyphe pour chacune, jamais une cible vide', async () => {
+    // Une cible pressable sans glyphe serait invisible et parfaitement
+    // fonctionnelle : aucun test de comportement ne l'attraperait. Le glyphe
+    // porte ici son propre testID — contrairement à l'icône d'un `IconButton`
+    // de Paper, que rien n'atteint —, donc sa couleur est joignable.
+    await render(header());
+
+    expect(screen.getByTestId('call-header-copy-glyph')).toBeTruthy();
+    expect(screen.getByTestId('call-header-share-glyph')).toBeTruthy();
   });
 });
