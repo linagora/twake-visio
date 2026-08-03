@@ -85,15 +85,20 @@ export function UpcomingMeetings({ events, now, onJoin }: Props): React.ReactEle
 function whenLabel(
   startMs: number,
   now: number,
-): { readonly key: string; readonly params?: Record<string, number> } {
+): { readonly key: string; readonly params?: Record<string, number | string> } {
   const relative = relativeTo(startMs, now);
   if (relative.kind === 'ongoing') return { key: 'home.upcoming.ongoing' };
   if (relative.kind === 'minutes') {
+    // PAS de remplissage ici : « dans 9 min » se lit, « dans 09 min » non. Le
+    // gabarit porte son unité, ce n'est pas une lecture d'horloge.
     return { key: 'home.upcoming.inMinutes', params: { minutes: relative.minutes } };
   }
+  // Ici SI, et c'est l'inverse. Les sept langues disent « {{hours}} h {{minutes}} »,
+  // sans unité sur les minutes : une lecture d'horloge, où « 3 h 9 » n'existe pas.
+  // Mesuré sur appareil le 2026-08-03, le panneau affichait exactement cela.
   return {
     key: 'home.upcoming.inHours',
-    params: { hours: relative.hours, minutes: relative.minutes },
+    params: { hours: relative.hours, minutes: String(relative.minutes).padStart(2, '0') },
   };
 }
 
