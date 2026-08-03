@@ -146,61 +146,33 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     val scale = SEGMENTATION_WIDTH.toDouble() / width
     val segWidth = SEGMENTATION_WIDTH.coerceAtMost(width)
     val segHeight = if (segWidth == width) height else (height * scale).toInt().coerceAtLeast(1)
-    val small = conversion.toScaledBitmap(i420, segWidth, segHeight)
     val sameSize = segWidth == width && segHeight == height
-    val full = if (sameSize) small else conversion.toScaledBitmap(i420, width, height)
+    val full = conversion.toScaledBitmap(i420, width, height)
+    // La PREMIÈRE image segmente toujours, quel que soit le rythme : sans
+    // masque il n'y a rien à composer, et une condition écrite seulement sur le
+    // modulo laisserait passer les images 1 de chaque paire sans jamais rien
+    // afficher si la toute première tombait du mauvais côté.
+    val segmentNow = maskBitmap == null || frameCount % SEGMENT_EVERY == 0L
+    val small = when {
+      !segmentNow -> null
+      sameSize -> full
+      else -> conversion.toScaledBitmap(i420, segWidth, segHeight)
+    }
     convNanos += SystemClock.elapsedRealtimeNanos() - conversionStart
 
-    // 2. Le masque, à la définition de l'entrée réduite.
-    val segmentationStart = SystemClock.elapsedRealtimeNanos()
-    val mask = Tasks.await(
-      segmenter.process(InputImage.fromBitmap(small, 0)),
-      SEGMENTATION_TIMEOUT_MS,
-      TimeUnit.MILLISECONDS,
-    )
-    segNanos += SystemClock.elapsedRealtimeNanos() - segmentationStart
-    val maskStart = SystemClock.elapsedRealtimeNanos()
-    val confidences = mask.buffer
-    confidences.rewind()
-
-    // Un bitmap d'alpha : 255 là où la personne est, 0 ailleurs. C'est lui
-    // qu'on agrandit — pas le masque flottant, qu'il faudrait interpoler à la
-    // main.
-    // Les confiances lues en UN SEUL bloc, pas flottant par flottant.
-    //
-    // `confidences.float` traverse une barrière de bornes à chaque appel, et il
-    // y en a un par pixel : 307 200 pour une image 640x480, mesurés à 14,8 ms
-    // avec la construction du bitmap. `asFloatBuffer().get(tableau)` est un
-    // `memcpy`, après quoi la boucle ne touche que des tableaux.
-    val pixelCount = mask.width * mask.height
-    if (confidenceScratch.size < pixelCount) confidenceScratch = FloatArray(pixelCount)
-    if (alphaScratch.size < pixelCount) alphaScratch = IntArray(pixelCount)
-    confidences.asFloatBuffer().get(confidenceScratch, 0, pixelCount)
-    val alphaPixels = alphaScratch
-    for (index in 0 until pixelCount) {
-      val confidence = confidenceScratch[index]
-      // La confiance brute NE PEUT PAS servir d'alpha telle quelle, et c'est le
-      // défaut qui rendait le sujet translucide : MLKit rend souvent 0,6 ou 0,8
-      // à l'INTÉRIEUR de la personne, pas 1. « Probablement une personne »
-      // devenait donc « à moitié transparente ».
-      //
-      // On durcit : opaque au-dessus du seuil haut, transparent en dessous du
-      // seuil bas, et une rampe entre les deux. La rampe est ce qui garde un
-      // bord doux plutôt qu'un découpage à l'emporte-pièce — c'est elle qui
-      // évite l'aspect « autocollant » d'un masque binaire.
-      val alpha = when {
-        confidence >= OPAQUE_ABOVE -> 255
-        confidence <= CLEAR_BELOW -> 0
-        else -> (((confidence - CLEAR_BELOW) / (OPAQUE_ABOVE - CLEAR_BELOW)) * 255).toInt()
-      }
-      alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
+    // 2. Le masque, reconstruit une image sur deux et conservé entre-temps.
+    if (small != null) {
+      buildMask(small)
+      if (small !== full) small.recycle()
     }
-    // `setPixels` sur un bitmap neuf plutôt que `createBitmap(tableau, …)` : ce
-    // dernier exige un tableau de la taille EXACTE, ce qui interdirait de
-    // réutiliser un tampon dimensionné une fois pour toutes.
-    val maskSmall = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
-    maskSmall.setPixels(alphaPixels, 0, mask.width, 0, 0, mask.width, mask.height)
-    maskNanos += SystemClock.elapsedRealtimeNanos() - maskStart
+    // Le masque manque encore : la toute première segmentation a échoué ou
+    // expiré. On rend l'image d'origine plutôt qu'une composition sans découpe,
+    // qui montrerait le fond virtuel PAR-DESSUS la personne.
+    val maskSmall = maskBitmap
+    if (maskSmall == null) {
+      full.recycle()
+      return null
+    }
 
     // 3. Le fond : flou de l'image elle-même, ou l'image choisie.
     val backgroundStart = SystemClock.elapsedRealtimeNanos()
@@ -240,12 +212,10 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     val buffer = conversion.toI420Buffer(result)
     outNanos += SystemClock.elapsedRealtimeNanos() - outputStart
 
-    small.recycle()
-    maskSmall.recycle()
-    // `full` peut ÊTRE `small` — les recycler tous deux relâcherait deux fois le
-    // même bitmap. Inoffensif aujourd'hui, mais c'est exactement le genre
-    // d'alias qui devient un plantage le jour où quelqu'un lit le bitmap après.
-    if (!sameSize) full.recycle()
+    // `maskSmall` n'est PAS relâché ici : il est conservé pour l'image suivante,
+    // et `buildMask` relâchera le précédent au moment de le remplacer. Le
+    // recycler ici rendrait une image sur deux à partir d'un bitmap mort.
+    full.recycle()
     cutout.recycle()
     result.recycle()
     // `orientToFrame` et `cheapBlur` rendent tous deux une COPIE : on relâche
@@ -253,6 +223,70 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     background.recycle()
 
     return buffer
+  }
+
+  /**
+   * Segmente une image et remplace le masque conservé.
+   *
+   * Un bitmap d'alpha : 255 là où la personne est, 0 ailleurs. C'est LUI qu'on
+   * agrandit à la composition — pas le masque flottant, qu'il faudrait
+   * interpoler à la main.
+   *
+   * L'ancien masque est relâché ici, sur le fil de capture, le seul qui le
+   * touche. C'est ce qui rend la conservation entre deux images sûre sans
+   * verrou.
+   */
+  private fun buildMask(input: Bitmap) {
+    val segmentationStart = SystemClock.elapsedRealtimeNanos()
+    val mask = Tasks.await(
+      segmenter.process(InputImage.fromBitmap(input, 0)),
+      SEGMENTATION_TIMEOUT_MS,
+      TimeUnit.MILLISECONDS,
+    )
+    segNanos += SystemClock.elapsedRealtimeNanos() - segmentationStart
+
+    val maskStart = SystemClock.elapsedRealtimeNanos()
+    val confidences = mask.buffer
+    confidences.rewind()
+
+    // Les confiances lues en UN SEUL bloc, pas flottant par flottant.
+    //
+    // `confidences.float` traverse une barrière de bornes à chaque appel, et il
+    // y en a un par pixel : 307 200 pour une image 640x480, mesurés à 14,8 ms
+    // avec la construction du bitmap. `asFloatBuffer().get(tableau)` est un
+    // `memcpy`, après quoi la boucle ne touche que des tableaux.
+    val pixelCount = mask.width * mask.height
+    if (confidenceScratch.size < pixelCount) confidenceScratch = FloatArray(pixelCount)
+    if (alphaScratch.size < pixelCount) alphaScratch = IntArray(pixelCount)
+    confidences.asFloatBuffer().get(confidenceScratch, 0, pixelCount)
+    val alphaPixels = alphaScratch
+    for (index in 0 until pixelCount) {
+      val confidence = confidenceScratch[index]
+      // La confiance brute NE PEUT PAS servir d'alpha telle quelle, et c'est le
+      // défaut qui rendait le sujet translucide : MLKit rend souvent 0,6 ou 0,8
+      // à l'INTÉRIEUR de la personne, pas 1. « Probablement une personne »
+      // devenait donc « à moitié transparente ».
+      //
+      // On durcit : opaque au-dessus du seuil haut, transparent en dessous du
+      // seuil bas, et une rampe entre les deux. La rampe est ce qui garde un
+      // bord doux plutôt qu'un découpage à l'emporte-pièce — c'est elle qui
+      // évite l'aspect « autocollant » d'un masque binaire.
+      val alpha = when {
+        confidence >= OPAQUE_ABOVE -> 255
+        confidence <= CLEAR_BELOW -> 0
+        else -> (((confidence - CLEAR_BELOW) / (OPAQUE_ABOVE - CLEAR_BELOW)) * 255).toInt()
+      }
+      alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
+    }
+
+    // `setPixels` sur un bitmap neuf plutôt que `createBitmap(tableau, …)` : ce
+    // dernier exige un tableau de la taille EXACTE, ce qui interdirait de
+    // réutiliser un tampon dimensionné une fois pour toutes.
+    val next = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
+    next.setPixels(alphaPixels, 0, mask.width, 0, 0, mask.width, mask.height)
+    maskBitmap?.recycle()
+    maskBitmap = next
+    maskNanos += SystemClock.elapsedRealtimeNanos() - maskStart
   }
 
   /**
@@ -371,7 +405,36 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
   private companion object {
     const val TAG = "TwakeSegEffect"
     // La définition mesurée à l'étape 1 : 17,96 ms de médiane.
+    // **640, et 320 a été essayé puis abandonné sur mesure.** La spécification
+    // dit « segmenter à basse définition et agrandir le masque » ; à 640, avec
+    // une capture en 640x480, cette réduction ne réduit RIEN — la consigne est
+    // inerte, sans qu'aucune ligne soit fausse.
+    //
+    // La rendre effective à 320 a rapporté 5 %, pas les 4x qu'un quart de
+    // pixels laisse espérer : MLKit dépend peu de la taille de son entrée
+    // (15,3 unités à 640, 12,1 à 320), et ce que le masque gagne, la
+    // composition le rend en agrandissant ce masque (3,7 unités à 640, 6,0 à
+    // 320). Cinq pour cent ne paient pas un contour plus grossier.
+    //
+    // C'est le RYTHME de la segmentation qui est le vrai levier, pas sa
+    // définition — voir `SEGMENT_EVERY`.
     const val SEGMENTATION_WIDTH = 640
+
+    // Une segmentation toutes les DEUX images, le masque de l'image précédente
+    // servant pour l'autre.
+    //
+    // MLKit pesait 15,3 unités sur 34,6, soit 44 % du coût, pour redécouvrir
+    // une silhouette qui n'a pas bougé en 33 ms. Un masque vieux d'une image
+    // décale la frontière de quelques pixels sur un mouvement rapide ; c'est
+    // invisible à l'œil, et c'est le compromis que fait tout pipeline de ce
+    // genre.
+    //
+    // Tout reste sur le fil de capture : le masque est possédé par le
+    // processeur et remplacé au même endroit. Une segmentation ASYNCHRONE ferait
+    // mieux encore — elle sortirait MLKit du chemin critique — mais elle fait
+    // écrire un bitmap par un fil pendant qu'un autre le dessine, et ce n'est
+    // pas une course qu'on introduit sans mesure préalable.
+    const val SEGMENT_EVERY = 2L
     const val SEGMENTATION_TIMEOUT_MS = 200L
     // Quatre passes de moitié : un seizième de la définition, atteint par
     // moyennes successives plutôt que d'un seul saut.
