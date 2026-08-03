@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
@@ -14,6 +14,11 @@ import { UpcomingMeetings } from 'src/ui/upcomingMeetings';
 
 const styles = StyleSheet.create({
   content: { gap: 12, padding: 18 },
+  diagnostic: {
+    color: tokens.color.textMeta,
+    fontFamily: tokens.font.medium,
+    fontSize: 11,
+  },
   root: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
@@ -84,6 +89,17 @@ export function HomeScreen(): React.ReactElement {
             VIDE, elle, se rend : c'est la différence entre « rien de prévu » et
             « pas de calendrier », et les confondre ferait croire l'application
             cassée à qui n'a pas de réunion aujourd'hui. */}
+        {/* DIAGNOSTIC, développement seulement. Les logs JavaScript n'atteignent
+            pas logcat et le débogueur de Metro refuse les connexions : sans
+            cette ligne, « le panneau n'apparaît pas » est indiscernable de
+            « le service a refusé le jeton ». `__DEV__` est faux dans un build
+            de production, où l'écran reste silencieux comme prévu. */}
+        {__DEV__ && upcoming.status === 'unavailable' ? (
+          <Text style={styles.diagnostic} testID="upcoming-diagnostic">
+            agenda indisponible — {upcoming.reason}
+          </Text>
+        ) : null}
+
         {upcoming.status === 'ready' ? (
           <UpcomingMeetings
             events={upcoming.events}

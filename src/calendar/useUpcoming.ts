@@ -21,7 +21,12 @@ import { selectUpcoming } from 'src/calendar/upcoming';
  */
 export type UpcomingState =
   | { readonly status: 'loading' }
-  | { readonly status: 'unavailable' }
+  // `reason` n'est PAS décorative : sans elle, « pas de panneau » couvre quatre
+  // causes très différentes et aucune n'est observable depuis l'appareil — les
+  // logs JavaScript n'atteignent pas logcat, et le débogueur de Metro refuse
+  // les connexions. Mesuré le 2026-08-03 : le panneau était absent et rien ne
+  // permettait de dire pourquoi.
+  | { readonly status: 'unavailable'; readonly reason: string }
   | { readonly status: 'ready'; readonly events: readonly CalendarEvent[]; readonly now: number };
 
 // Une minute. Le widget web recharge à la même cadence et réaffiche à la
@@ -29,6 +34,20 @@ export type UpcomingState =
 // le fil JavaScript trois mille six cents fois par heure pour une information
 // que personne ne lit à ce grain.
 const REFRESH_MS = 60000;
+
+// La charge utile d'un JWT est du base64url, sans signature à vérifier ici :
+// on ne fait CONFIANCE à rien de ce qu'elle dit, on l'affiche pour diagnostiquer.
+function audienceOf(token: string): string {
+  try {
+    const payload = token.split('.')[1];
+    if (payload === undefined) return '(jeton non JWT)';
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json) as { aud?: unknown; client_id?: unknown };
+    return `aud=${JSON.stringify(claims.aud)} client_id=${String(claims.client_id)}`;
+  } catch {
+    return '(claims illisibles)';
+  }
+}
 
 export function useUpcomingMeetings(): UpcomingState {
   const [state, setState] = useState<UpcomingState>({ status: 'loading' });
@@ -39,19 +58,19 @@ export function useUpcomingMeetings(): UpcomingState {
     const load = async (): Promise<void> => {
       const account = getActiveAccount();
       if (account === null) {
-        if (!cancelled) setState({ status: 'unavailable' });
+        if (!cancelled) setState({ status: 'unavailable', reason: 'aucun compte' });
         return;
       }
 
       const base = sideServiceUrl(account.instance.serverUrl);
       if (base === null) {
-        if (!cancelled) setState({ status: 'unavailable' });
+        if (!cancelled) setState({ status: 'unavailable', reason: 'hôte indéductible' });
         return;
       }
 
       const outcome = await getAccessToken(account.id, account.instance);
       if (!outcome.ok) {
-        if (!cancelled) setState({ status: 'unavailable' });
+        if (!cancelled) setState({ status: 'unavailable', reason: `jeton: ${outcome.reason}` });
         return;
       }
 
@@ -60,11 +79,22 @@ export function useUpcomingMeetings(): UpcomingState {
         const all = await fetchUpcoming(base, outcome.token, now);
         if (cancelled) return;
         setState({ status: 'ready', events: selectUpcoming(all, now), now });
-      } catch {
+      } catch (error: unknown) {
+        // Un 401 ne dit pas POURQUOI. Les claims du jeton, si — et `aud` est le
+        // suspect nommé dans le document de conception : le jeton qui fonctionne
+        // porte `["visio-widget", "openpaas"]`, celui de l'application est
+        // frappé pour `livekit-meet`. Lire l'audience transforme une hypothèse
+        // en mesure. `__DEV__` seulement, et jamais le jeton lui-même.
+        const detail = __DEV__ ? ` ${audienceOf(outcome.token)}` : '';
         // Y COMPRIS le 401 d'audience. Voir le document de conception : le
         // service peut refuser un jeton frappé pour `livekit-meet`, et ce
         // refus se lit « pas de calendrier ici », jamais comme une panne.
-        if (!cancelled) setState({ status: 'unavailable' });
+        if (!cancelled) {
+          setState({
+            status: 'unavailable',
+            reason: `${error instanceof Error ? error.message : String(error)}${detail}`,
+          });
+        }
       }
     };
 

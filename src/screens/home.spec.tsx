@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -140,7 +140,9 @@ describe('HomeScreen', () => {
       // La seconde polarité, et c'est le contrat repris du widget web : toute
       // erreur masque le panneau, pour que l'accueil n'ait jamais l'air cassé.
       // Un `401` d'audience passe par ici.
-      jest.spyOn(upcoming, 'useUpcomingMeetings').mockReturnValue({ status: 'unavailable' });
+      jest
+        .spyOn(upcoming, 'useUpcomingMeetings')
+        .mockReturnValue({ status: 'unavailable', reason: 'test' });
       jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 
       await renderHome();
