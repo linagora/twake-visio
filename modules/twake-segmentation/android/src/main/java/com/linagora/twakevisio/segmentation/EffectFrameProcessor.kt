@@ -53,9 +53,15 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       .build(),
   )
 
+  // Une instance par processeur : elle garde des tampons, et deux capteurs
+  // simultanés qui les partageraient produiraient des images entrelacées.
+  private val conversion = FrameConversion()
+
   // Réutilisés d'une image à l'autre. Allouer un bitmap par image ferait passer
   // le ramasse-miettes plus souvent que la caméra ne produit d'images.
   private var maskBitmap: Bitmap? = null
+  private var confidenceScratch = FloatArray(0)
+  private var alphaScratch = IntArray(0)
   private var frameCount = 0L
   private var totalNanos = 0L
 
@@ -140,9 +146,9 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     val scale = SEGMENTATION_WIDTH.toDouble() / width
     val segWidth = SEGMENTATION_WIDTH.coerceAtMost(width)
     val segHeight = if (segWidth == width) height else (height * scale).toInt().coerceAtLeast(1)
-    val small = FrameConversion.toScaledBitmap(i420, segWidth, segHeight)
+    val small = conversion.toScaledBitmap(i420, segWidth, segHeight)
     val sameSize = segWidth == width && segHeight == height
-    val full = if (sameSize) small else FrameConversion.toScaledBitmap(i420, width, height)
+    val full = if (sameSize) small else conversion.toScaledBitmap(i420, width, height)
     convNanos += SystemClock.elapsedRealtimeNanos() - conversionStart
 
     // 2. Le masque, à la définition de l'entrée réduite.
@@ -160,9 +166,19 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     // Un bitmap d'alpha : 255 là où la personne est, 0 ailleurs. C'est lui
     // qu'on agrandit — pas le masque flottant, qu'il faudrait interpoler à la
     // main.
-    val alphaPixels = IntArray(mask.width * mask.height)
-    for (index in alphaPixels.indices) {
-      val confidence = confidences.float
+    // Les confiances lues en UN SEUL bloc, pas flottant par flottant.
+    //
+    // `confidences.float` traverse une barrière de bornes à chaque appel, et il
+    // y en a un par pixel : 307 200 pour une image 640x480, mesurés à 14,8 ms
+    // avec la construction du bitmap. `asFloatBuffer().get(tableau)` est un
+    // `memcpy`, après quoi la boucle ne touche que des tableaux.
+    val pixelCount = mask.width * mask.height
+    if (confidenceScratch.size < pixelCount) confidenceScratch = FloatArray(pixelCount)
+    if (alphaScratch.size < pixelCount) alphaScratch = IntArray(pixelCount)
+    confidences.asFloatBuffer().get(confidenceScratch, 0, pixelCount)
+    val alphaPixels = alphaScratch
+    for (index in 0 until pixelCount) {
+      val confidence = confidenceScratch[index]
       // La confiance brute NE PEUT PAS servir d'alpha telle quelle, et c'est le
       // défaut qui rendait le sujet translucide : MLKit rend souvent 0,6 ou 0,8
       // à l'INTÉRIEUR de la personne, pas 1. « Probablement une personne »
@@ -179,7 +195,11 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       }
       alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
     }
-    val maskSmall = Bitmap.createBitmap(alphaPixels, mask.width, mask.height, Bitmap.Config.ARGB_8888)
+    // `setPixels` sur un bitmap neuf plutôt que `createBitmap(tableau, …)` : ce
+    // dernier exige un tableau de la taille EXACTE, ce qui interdirait de
+    // réutiliser un tampon dimensionné une fois pour toutes.
+    val maskSmall = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
+    maskSmall.setPixels(alphaPixels, 0, mask.width, 0, 0, mask.width, mask.height)
     maskNanos += SystemClock.elapsedRealtimeNanos() - maskStart
 
     // 3. Le fond : flou de l'image elle-même, ou l'image choisie.
@@ -217,7 +237,7 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     compNanos += SystemClock.elapsedRealtimeNanos() - compositionStart
 
     val outputStart = SystemClock.elapsedRealtimeNanos()
-    val buffer = FrameConversion.toI420Buffer(result)
+    val buffer = conversion.toI420Buffer(result)
     outNanos += SystemClock.elapsedRealtimeNanos() - outputStart
 
     small.recycle()

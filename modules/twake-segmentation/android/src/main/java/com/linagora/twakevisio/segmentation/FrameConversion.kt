@@ -15,11 +15,29 @@ import java.nio.ByteBuffer
  * code : le reste (mise à l'échelle, masquage, flou) est délégué à `Canvas` et
  * `Bitmap`, qui sont natifs.
  *
- * **C'est donc ici que se joue le budget.** La mesure de l'étape 1 disait 17,96 ms
- * pour la seule segmentation à 480p, sur 33,33 ms disponibles. Ce qui reste doit
- * couvrir ces deux conversions plus la composition.
+ * **Une CLASSE et non un objet, parce qu'elle garde des tampons.** Réutiliser
+ * les tableaux d'une image à l'autre évite quelques mégaoctets d'allocation par
+ * seconde ; les partager entre deux capteurs simultanés les corromprait. Une
+ * instance par processeur, donc, et le partage devient impossible par
+ * construction plutôt que par convention.
+ *
+ * Ventilation mesurée sur Pixel 10 Pro Fold, 480 images, avant cette passe :
+ * `conv` 25,7 ms, `sortie` 1,2 ms. Le même nombre de pixels, vingt fois moins
+ * cher dans le sens que libyuv couvre — c'est la mesure qui a désigné cette
+ * boucle-ci comme le poste principal.
  */
-object FrameConversion {
+class FrameConversion {
+
+  // Les plans recopiés en tableaux natifs, réutilisés d'une image à l'autre.
+  //
+  // Lire un `ByteBuffer` direct par `get(index)` traverse une barrière de
+  // bornes à CHAQUE pixel — trois fois par pixel ici. Une recopie en masse est
+  // un seul `memcpy`, après quoi la boucle ne touche plus que des tableaux, que
+  // le compilateur à la volée sait traiter.
+  private var yBytes = ByteArray(0)
+  private var uBytes = ByteArray(0)
+  private var vBytes = ByteArray(0)
+  private var pixels = IntArray(0)
 
   /**
    * I420 → `Bitmap` ARGB, en RÉDUISANT au passage.
@@ -35,39 +53,76 @@ object FrameConversion {
   fun toScaledBitmap(buffer: VideoFrame.I420Buffer, targetWidth: Int, targetHeight: Int): Bitmap {
     val srcWidth = buffer.width
     val srcHeight = buffer.height
-    val pixels = IntArray(targetWidth * targetHeight)
-
-    val yPlane = buffer.dataY
-    val uPlane = buffer.dataU
-    val vPlane = buffer.dataV
     val strideY = buffer.strideY
     val strideU = buffer.strideU
     val strideV = buffer.strideV
+    val chromaHeight = (srcHeight + 1) / 2
+
+    yBytes = grownTo(yBytes, strideY * srcHeight)
+    uBytes = grownTo(uBytes, strideU * chromaHeight)
+    vBytes = grownTo(vBytes, strideV * chromaHeight)
+    copyPlane(buffer.dataY, yBytes)
+    copyPlane(buffer.dataU, uBytes)
+    copyPlane(buffer.dataV, vBytes)
+    val luma = yBytes
+    val chromaU = uBytes
+    val chromaV = vBytes
+
+    val count = targetWidth * targetHeight
+    if (pixels.size < count) pixels = IntArray(count)
+    val out = pixels
 
     for (targetY in 0 until targetHeight) {
       val sourceY = targetY * srcHeight / targetHeight
-      val chromaRow = (sourceY / 2)
+      val chromaRow = sourceY / 2
+      val lumaRow = sourceY * strideY
+      val uRow = chromaRow * strideU
+      val vRow = chromaRow * strideV
+      val outRow = targetY * targetWidth
       for (targetX in 0 until targetWidth) {
         val sourceX = targetX * srcWidth / targetWidth
-        val chromaCol = (sourceX / 2)
+        val chromaCol = sourceX / 2
 
-        val luma = (yPlane.get(sourceY * strideY + sourceX).toInt() and 0xFF)
-        val chromaU = (uPlane.get(chromaRow * strideU + chromaCol).toInt() and 0xFF) - 128
-        val chromaV = (vPlane.get(chromaRow * strideV + chromaCol).toInt() and 0xFF) - 128
+        val y = luma[lumaRow + sourceX].toInt() and 0xFF
+        val u = (chromaU[uRow + chromaCol].toInt() and 0xFF) - 128
+        val v = (chromaV[vRow + chromaCol].toInt() and 0xFF) - 128
 
         // BT.601, en arithmétique entière. Les constantes sont celles de la
         // norme, décalées de 10 bits pour éviter le flottant : une conversion
         // par pixel, c'est le seul endroit où la micro-optimisation se justifie.
-        val red = clamp8(luma + ((1436 * chromaV) shr 10))
-        val green = clamp8(luma - ((352 * chromaU + 731 * chromaV) shr 10))
-        val blue = clamp8(luma + ((1815 * chromaU) shr 10))
+        val red = clamp8(y + ((1436 * v) shr 10))
+        val green = clamp8(y - ((352 * u + 731 * v) shr 10))
+        val blue = clamp8(y + ((1815 * u) shr 10))
 
-        pixels[targetY * targetWidth + targetX] =
-          (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
+        out[outRow + targetX] = (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
       }
     }
 
-    return Bitmap.createBitmap(pixels, targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    // `setPixels` sur un bitmap neuf plutôt que `createBitmap(pixels, …)` : le
+    // second exige un tableau de la taille EXACTE, ce qui interdirait de
+    // réutiliser un tampon dimensionné pour la plus grande des deux images.
+    val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    bitmap.setPixels(out, 0, targetWidth, 0, 0, targetWidth, targetHeight)
+    return bitmap
+  }
+
+  /** Le tableau s'il suffit, un neuf sinon. Jamais de rétrécissement. */
+  private fun grownTo(array: ByteArray, length: Int): ByteArray =
+    if (array.size >= length) array else ByteArray(length)
+
+  /**
+   * Recopie un plan dans un tableau.
+   *
+   * `duplicate()` et non le tampon lui-même : lire déplace la position, et le
+   * même `I420Buffer` est lu plusieurs fois par image quand la segmentation
+   * tourne à une autre définition que la composition. Une lecture destructive
+   * rendrait la deuxième vide — sans erreur, avec une image noire pour seul
+   * symptôme.
+   */
+  private fun copyPlane(plane: ByteBuffer, into: ByteArray) {
+    val view = plane.duplicate()
+    view.rewind()
+    view.get(into, 0, minOf(into.size, view.remaining()))
   }
 
   /**
@@ -75,12 +130,13 @@ object FrameConversion {
    *
    * La version précédente parcourait les 307 200 pixels en Kotlin et calculait
    * la luminance et la chrominance à la main. Mesurée dans la chaîne complète,
-   * elle pesait avec sa jumelle près de 80 % des 105 ms par image.
+   * elle est passée de cette boucle à **1,2 ms** — vingt fois moins.
    *
-   * `YuvHelper.ABGRToI420` fait le même travail en SIMD natif — c'est libyuv,
+   * `YuvHelper.ABGRToI420` fait le même travail en SIMD natif : c'est libyuv,
    * déjà embarqué dans WebRTC, donc aucune dépendance ajoutée. Vérifié par
    * `javap` sur l'archive réellement liée, pas supposé d'après une
-   * documentation.
+   * documentation — et c'est ce même relevé qui dit qu'aucune conversion dans
+   * l'autre sens n'est exposée, d'où la boucle Kotlin qui subsiste ci-dessus.
    *
    * **`ABGR` et non `ARGB`, et ce n'est pas une coquille.** libyuv nomme ses
    * formats par l'ordre des OCTETS en mémoire ; Android nomme `ARGB_8888` par
