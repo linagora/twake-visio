@@ -27,6 +27,25 @@ import { tokens } from 'src/ui/tokens';
 // peuvent plus diverger au premier changement de gabarit.
 export const BAR_BUTTON_SIZE = 52;
 
+// Le caret du chevron caméra : une cible ÉTROITE, accolée au bouton qu'elle
+// prolonge, comme le fait le web sur son micro et sa caméra.
+//
+// **C'est ce qui a fait rentrer deux commandes de plus.** L'arithmétique ne
+// laissait aucun autre choix, et elle mérite d'être écrite ici parce qu'elle
+// se mesure sur le mauvais appareil : le Pixel 10 Pro Fold fait 443 dp de large
+// (1080 px à 390 ppp, relevé le 2026-08-03), donc HUIT boutons de 52 dp y
+// tiennent — 416 dp. Sur un téléphone ordinaire de 360 dp, il n'en tient que
+// six, et même à 44 dp — le minimum tactile — huit débordent (352 > 344).
+//
+// Vérifier sur le Fold seul aurait donc validé une barre cassée partout
+// ailleurs. Le compte qui gouverne est celui de 360 dp.
+//
+//     5 × 52 (boutons) + 28 (caret) = 288 dp
+//
+// La cible garde sa HAUTEUR de 52 dp : c'est la largeur qu'on rabote, et un
+// doigt vise plus mal en largeur qu'en hauteur sur une rangée horizontale.
+export const BAR_CARET_WIDTH = 28;
+
 // Le rembourrage de la rangée, de part et d'autre. Nommé et EXPORTÉ pour la
 // même raison que la taille du bouton : `callControlBar.tsx` le pose sur
 // `styles.controls`, et `BAR_HEIGHT` juste dessous en dépend. Écrit deux fois,
@@ -94,6 +113,17 @@ export const barStyles = StyleSheet.create({
   // `backgroundDark`, au-dessus des 3:1 qu'un objet graphique demande pour se
   // détacher de son fond.
   danger: { backgroundColor: tokens.color.danger },
+  // Le caret, POSÉ PAR-DESSUS `button` : il n'écrase que la largeur et les
+  // coins, tout le reste du gabarit vient de là.
+  //
+  // Les coins ne sont plus circulaires mais arrondis d'un côté seulement — un
+  // demi-cercle de 14 dp de rayon sur une cible de 28 de large donnerait une
+  // pastille, pas le prolongement d'un bouton voisin.
+  caret: {
+    borderBottomLeftRadius: 0,
+    borderTopLeftRadius: 0,
+    width: BAR_CARET_WIDTH,
+  },
   // L'ancre du menu « plus » : un conteneur SANS dimension propre, dont le
   // seul rôle est de donner à la pastille un parent positionné. La cible reste
   // 52 dp et la pastille est hors flux, donc la rangée vaut toujours 353 dp —

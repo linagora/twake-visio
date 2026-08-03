@@ -486,4 +486,40 @@ describe('CameraMenu', () => {
       expect(title).toHaveStyle({ color: tokens.color.textDark });
     });
   });
+  // Le caret est ce qui a libéré la place des deux nouvelles commandes. Sa
+  // forme est donc une DÉCISION, pas un détail de style.
+  //
+  // **Mais sa LARGEUR n'est pas assertible, et il ne faut pas fabriquer un
+  // test qui prétendrait le contraire.** Mesuré par une sonde le 2026-08-03 :
+  // `IconButton` pose bien le style de l'appelant sur `${testID}-container`
+  // (`IconButton.js:93-98`), mais ce conteneur est une `Surface`, qui SÉPARE
+  // ses styles — les propriétés de disposition (`width`, `height`) partent sur
+  // un parent que rien ne nomme, et seul le reste survit sur le nœud portant le
+  // testID. Interrogé pour sa largeur, il rend un « Received » vide, ce qui se
+  // lit d'abord comme une erreur de valeur alors que c'est une propriété
+  // partie ailleurs.
+  //
+  // Ce qui RESTE atteignable, ce sont les deux rayons : ils suffisent à prouver
+  // que `barStyles.caret` est bien appliqué, donc qu'un retour au bouton plein
+  // rougirait. C'est la cause qu'on garde, pas la mesure qu'on ne peut pas
+  // prendre.
+  it('applique le gabarit du caret au chevron, pas celui d’un bouton plein', async () => {
+    await render(
+      withPaper(
+        <CameraMenu
+          cameras={[FRONT, BACK]}
+          activeDeviceId={null}
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId('camera-menu-btn-container')).toHaveStyle({
+      borderBottomLeftRadius: 0,
+      borderTopLeftRadius: 0,
+    });
+  });
 });

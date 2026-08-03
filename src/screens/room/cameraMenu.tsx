@@ -54,7 +54,14 @@ export function CameraMenu({
         icon="chevron-up"
         iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        // ACCOLÉ au bouton caméra et deux fois moins large, comme le web :
+        // c'est ce qui a libéré la place de la main levée et des réactions.
+        // Voir `BAR_CARET_WIDTH` pour l'arithmétique, et pour la raison de ne
+        // jamais la vérifier sur un écran pliable seul.
+        style={[barStyles.button, barStyles.caret]}
+        size={18}
+        // La cible tactile reste pleine grâce au `hitSlop` : c'est la surface
+        // PEINTE qui rétrécit, pas la zone qui répond au doigt.
         hitSlop={BAR_HIT_SLOP}
         onPress={() => {
           setVisible(true);
