@@ -13,7 +13,12 @@ import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
-import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
+import {
+  applyEffect,
+  areEffectsSupported,
+  useEffectCameraPreview,
+  type BackgroundEffect,
+} from 'src/call/backgroundEffect';
 import { EffectsSheet } from 'src/screens/room/effectsSheet';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { readPreferences } from 'src/settings/preferences';
@@ -136,7 +141,19 @@ export function PrejoinScreen(): React.ReactElement {
   // L'aperçu suit la bascule caméra : la couper relâche la caméra, la rallumer
   // la réacquiert. Le module possède ce cycle, y compris le flux qui arrive
   // après le démontage.
-  const previewUrl = useCameraPreview(!cameraOff);
+  // DEUX aperçus, et un seul est monté à la fois.
+  //
+  // Là où le natif existe, la caméra passe par le décorateur d'effets — c'est
+  // la seule façon de VOIR le flou avant d'entrer. Ailleurs (iOS aujourd'hui),
+  // on garde la voie `getUserMedia` d'origine.
+  //
+  // Les deux crochets sont appelés inconditionnellement, jamais dans un `if` :
+  // `react-hooks/rules-of-hooks` l'exige, et c'est le drapeau `enabled` qui
+  // décide lequel acquiert réellement une caméra.
+  const effectsOn = areEffectsSupported();
+  const plainPreviewUrl = useCameraPreview(!cameraOff && !effectsOn);
+  const effectPreviewUrl = useEffectCameraPreview(!cameraOff && effectsOn);
+  const previewUrl = effectsOn ? effectPreviewUrl : plainPreviewUrl;
 
   // L'effet choisi AVANT d'entrer. Il est appliqué au natif dès la sélection,
   // donc l'aperçu au-dessus le montre — c'est le seul aperçu qui vaille, les
@@ -265,7 +282,7 @@ export function PrejoinScreen(): React.ReactElement {
           {/* Masqué là où le natif n'existe pas — iOS attend son pendant
               Vision. Une commande qu'on ne peut pas honorer coûte plus cher que
               son absence. */}
-          {areEffectsSupported() ? (
+          {effectsOn ? (
             <Pressable
               accessibilityLabel={t('effects.open')}
               accessibilityRole="button"

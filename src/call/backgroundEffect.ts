@@ -1,6 +1,7 @@
-import { MediaStreamTrack } from '@livekit/react-native-webrtc';
+import { MediaStream, MediaStreamTrack } from '@livekit/react-native-webrtc';
 import { Track, type Room } from 'livekit-client';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import { useEffect, useState } from 'react';
 
 // Les effets d'arrière-plan : flou et fonds virtuels.
 //
@@ -87,4 +88,92 @@ export async function publishEffectCamera(
     source: Track.Source.Camera,
   });
   return track;
+}
+
+/**
+ * L'aperçu du pré-join, alimenté par la piste À EFFET.
+ *
+ * Sans ceci, l'aperçu passait par `getUserMedia` et ne montrait donc AUCUN
+ * effet : on choisissait un fond sans le voir. Le panneau existait, le natif
+ * recevait bien `setEffect`, et pas une image ne traversait le décorateur —
+ * un défaut invisible à la lecture, trouvé en pilotant l'application.
+ *
+ * Rend l'URL du flux à passer à `RTCView`, ou `null` — natif absent, caméra
+ * coupée, ou acquisition en cours.
+ */
+export function createEffectPreviewStream(track: MediaStreamTrack): {
+  readonly url: string;
+  readonly stop: () => void;
+} {
+  const stream = new MediaStream([track]);
+  return {
+    url: stream.toURL(),
+    // La piste est arrêtée explicitement : une caméra acquise et jamais
+    // relâchée reste ALLUMÉE, témoin compris, après qu'on a quitté l'écran.
+    // C'est le risque que `cameraPreview.ts` documente déjà.
+    stop: () => {
+      track.stop();
+    },
+  };
+}
+
+/**
+ * L'aperçu du pré-join, à effet, avec son CYCLE DE VIE.
+ *
+ * Même exigence que `useCameraPreview`, et pour la même raison : une caméra
+ * acquise et jamais relâchée reste allumée, témoin compris, après qu'on a
+ * quitté l'écran — et cela ne se voit sur aucune capture.
+ *
+ * Le cas qui fuit est l'asynchrone : quitter l'écran pendant que
+ * `createCameraTrack` résout laisserait une piste vivante que plus personne ne
+ * référence. Le nettoyage ne peut pas l'arrêter, il ne la connaît pas encore ;
+ * c'est donc la résolution elle-même qui doit le faire.
+ */
+export function useEffectCameraPreview(enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || nativeModule === null) return;
+    let cancelled = false;
+    let acquired: { stop: () => void } | null = null;
+
+    createEffectCameraTrack()
+      .then((track) => {
+        if (track === null) return;
+        const preview = createEffectPreviewStream(track);
+        if (cancelled) {
+          preview.stop();
+          return;
+        }
+        acquired = preview;
+        setUrl(preview.url);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+      acquired?.stop();
+      setUrl(null);
+    };
+  }, [enabled]);
+
+  return url;
+}
+
+/** La piste caméra à effet, SANS publication — pour l'aperçu. */
+export async function createEffectCameraTrack(
+  width = 640,
+  height = 480,
+  fps = 30,
+  facingMode = 'user',
+): Promise<MediaStreamTrack | null> {
+  if (nativeModule === null) return null;
+  const descriptor = await nativeModule.createCameraTrack(width, height, fps, facingMode);
+  return new MediaStreamTrack({
+    ...descriptor,
+    constraints: {},
+    settings: { deviceId: descriptor.deviceId, frameRate: fps, height, width },
+  });
 }

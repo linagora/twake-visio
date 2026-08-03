@@ -231,6 +231,38 @@ n'autorise que des sources nommées. Il faut donc
 déclarations de types ne l'imposait — `source` y est optionnel — et aucune
 relecture ne l'aurait trouvé : c'est le serveur qui l'a dit.
 
+### Le coût RÉEL de la chaîne complète : 83,97 ms **[V]**
+
+Mesuré le 2026-08-03 sur émulateur, 240 images passées par le pipeline entier
+— conversion, segmentation, composition, reconversion :
+
+```
+TwakeSegEffect: coût moyen 83.97 ms sur 240 images
+```
+
+**Soit ~12 images par seconde, contre les 33,33 ms qu'exigent 30 i/s.** Deux
+fois et demie le budget.
+
+**Ce que ce chiffre corrige, et c'est le plus important :** les 17,96 ms de la
+mesure n° 1 ne représentaient que **21 %** du coût réel. Mesurer MLKit seul
+avait donné un feu vert que la chaîne complète retire.
+
+L'endroit est identifié, et il était annoncé dans `FrameConversion` sans que
+j'en tire la conséquence : **les deux conversions I420 ↔ ARGB**, écrites en
+boucles Kotlin sur 307 200 pixels dans chaque sens. La spec disait « le reste
+est délégué à `Canvas`, qui est natif » — vrai pour la composition, insuffisant
+pour le total : ce sont les conversions qui coûtent, pas la composition.
+
+**La sortie est connue et bornée** : `libyuv` est déjà embarqué dans WebRTC, et
+`org.webrtc.YuvHelper` expose ses conversions en SIMD natif. Remplacer les deux
+boucles par ces appels est une correction ciblée, pas une refonte.
+
+> **La leçon de méthode.** L'étape 1 mesurait la brique la plus incertaine, et
+> c'était juste — mais son verdict a été lu comme un verdict sur le CHANTIER.
+> Une mesure partielle ne borne que ce qu'elle mesure. La règle qui aurait
+> évité l'écart : *mesurer la brique pour décider si elle est possible, mesurer
+> la chaîne pour décider si elle est livrable.*
+
 ### Mesure n° 3 — un module tiers maintenu : **NON, mais l'architecture est éprouvée** **[V]**
 
 Aucun paquet publié ne fait cela pour React Native + LiveKit. Ce qui existe est
