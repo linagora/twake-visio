@@ -1,6 +1,9 @@
 {
-  "platforms": ["android"],
+  "platforms": ["android", "ios"],
   "android": {
     "modules": ["com.linagora.twakevisio.segmentation.TwakeSegmentationModule"]
+  },
+  "ios": {
+    "modules": ["TwakeSegmentationModule"]
   }
 }

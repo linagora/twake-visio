@@ -31,6 +31,7 @@ import {
 import type { ReactionKey } from 'src/call/reactions';
 import type { RecordingState } from 'src/call/recording';
 import { AudioOutputControl } from 'src/screens/room/audioOutputControl';
+import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
 import {
   BAR_HIT_SLOP,
@@ -125,7 +126,13 @@ export type CallControlBarProps = {
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
   // Traversée jusqu'à `MoreMenu`, qui porte l'entrée. `null` = pas de natif.
-  readonly onOpenEffects: (() => void) | null;
+  // `null` quand la plateforme n'a pas le module natif — iOS tant que son
+  // pendant Vision n'a pas tourné sur appareil. Le sélecteur vit dans le MENU
+  // DE LA CAMÉRA depuis que le propriétaire a demandé ce rapprochement :
+  // l'objectif et l'arrière-plan règlent la même chose, ce que la caméra
+  // envoie. Il était auparavant une ligne du menu « Plus ».
+  readonly effect: BackgroundEffect | null;
+  readonly onEffectSelect: (effect: BackgroundEffect) => void;
 
   readonly onLeave: () => void;
 };
@@ -157,7 +164,8 @@ export function CallControlBar({
   onToggleHand,
   onSendReaction,
   onOpenChat,
-  onOpenEffects,
+  effect,
+  onEffectSelect,
   onLeave,
 }: CallControlBarProps): React.ReactElement | null {
   const { t } = useTranslation();
@@ -390,6 +398,8 @@ export function CallControlBar({
           activeDeviceId={activeCameraId}
           onOpen={handleOpenCameraMenu}
           onSelect={handleSelectCamera}
+          effect={effect}
+          onEffectSelect={onEffectSelect}
         />
       </View>
       <AudioOutputControl
@@ -426,7 +436,6 @@ export function CallControlBar({
         onToggleHand={onToggleHand}
         onSendReaction={onSendReaction}
         onOpenChat={onOpenChat}
-        onOpenEffects={onOpenEffects}
       />
       <IconButton
         testID="leave-btn"

@@ -1,11 +1,9 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { backgroundCount, type BackgroundEffect } from 'src/call/backgroundEffect';
+import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import { BottomSheet } from 'src/screens/room/bottomSheet';
-import { tokens } from 'src/ui/tokens';
+import { EffectsPicker } from 'src/screens/room/effectsPicker';
 
 type Props = {
   readonly visible: boolean;
@@ -17,53 +15,13 @@ type Props = {
   readonly testID: string;
 };
 
-// Les vignettes du sélecteur, 320 px de large — 228 Ko pour les huit.
-//
-// Elles sont EN PLUS des images natives, pas à leur place : le natif compose en
-// 1280, le sélecteur montre en 320. Une seule taille ne peut pas servir les
-// deux — c'est d'ailleurs l'erreur qui a produit des fonds en 107 x 60, quand
-// j'avais pris les vignettes de la DINUM pour des images de composition.
-//
-// `require` statique et non calculé : Metro résout les chemins à la
-// compilation, et `require(\`…/\${index}.jpg\`)` ne compile pas.
-//
-// **Chemin RELATIF, et ce n'est pas un choix de style.** `assets/…` est un
-// spécificateur non relatif : `tsconfig.json` n'en fait un chemin que pour
-// `src/*`, et Metro n'a aucune autre raison de le résoudre. Écrit ainsi, il
-// rendait un 500 sur le serveur de développement — donc AUCUN bundle, donc pas
-// d'écran du tout, et pas seulement pas de vignettes. Jest, lui, passait : sa
-// correspondance `moduleNameMapper` couvrait le trou et masquait la panne.
-const THUMBNAILS: Readonly<Record<number, number>> = {
-  1: require('../../../assets/backgrounds/1.jpg'),
-  2: require('../../../assets/backgrounds/2.jpg'),
-  3: require('../../../assets/backgrounds/3.jpg'),
-  4: require('../../../assets/backgrounds/4.jpg'),
-  5: require('../../../assets/backgrounds/5.jpg'),
-  6: require('../../../assets/backgrounds/6.jpg'),
-  7: require('../../../assets/backgrounds/7.jpg'),
-  8: require('../../../assets/backgrounds/8.jpg'),
-};
-
-// L'index 0 n'est pas un fond : c'est « aucun ». Les fonds DINUM sont numérotés
-// de 1 à 8 dans les ressources du module natif, et on garde cette numérotation
-// plutôt que de décaler — un décalage silencieux entre JavaScript et natif est
-// exactement ce qui produit un fond de travers sans message d'erreur.
-function backgroundIndexes(): readonly number[] {
-  return Array.from({ length: backgroundCount() }, (_, offset) => offset + 1);
-}
-
-function isSame(a: BackgroundEffect, b: BackgroundEffect): boolean {
-  if (a.kind !== b.kind) return false;
-  return a.kind !== 'image' || b.kind !== 'image' || a.index === b.index;
-}
-
 /**
- * Le choix de l'effet d'arrière-plan.
+ * Le choix de l'effet d'arrière-plan, dans sa propre feuille.
  *
- * Chaque fond est montré par sa VIGNETTE. Une première version n'affichait
- * qu'un numéro, pour ne pas embarquer les images deux fois ; le propriétaire a
- * signalé qu'un sélecteur de fonds sans image ne se choisit pas. 228 Ko pour
- * les huit est le prix, et il est juste.
+ * Utilisé par le PRÉ-JOIN seulement. En séance, le même contenu est monté dans
+ * le menu de la caméra — le propriétaire a demandé ce rapprochement, et il est
+ * juste : l'objectif et l'arrière-plan règlent la même chose. C'est pourquoi le
+ * contenu vit dans `effectsPicker.tsx` et non ici.
  */
 export function EffectsSheet({
   visible,
@@ -74,11 +32,6 @@ export function EffectsSheet({
 }: Props): React.ReactElement {
   const { t } = useTranslation();
 
-  const choose = (effect: BackgroundEffect): void => {
-    onEffectSelect(effect);
-    onSheetDismiss();
-  };
-
   return (
     <BottomSheet
       testID={testID}
@@ -86,106 +39,18 @@ export function EffectsSheet({
       title={t('effects.title')}
       onDismiss={onSheetDismiss}
     >
-      <View style={styles.row}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => choose({ kind: 'none' })}
-          style={[styles.tile, isSame(current, { kind: 'none' }) ? styles.tileActive : null]}
-          testID={`${testID}-none`}
-        >
-          <MaterialCommunityIcons color={tokens.color.textDark} name="cancel" size={22} />
-          <Text style={styles.label} testID={`${testID}-none-label`}>
-            {t('effects.none')}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => choose({ kind: 'blur' })}
-          style={[styles.tile, isSame(current, { kind: 'blur' }) ? styles.tileActive : null]}
-          testID={`${testID}-blur`}
-        >
-          <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={22} />
-          <Text style={styles.label} testID={`${testID}-blur-label`}>
-            {t('effects.blur')}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.grid}>
-        {backgroundIndexes().map((index) => (
-          <Pressable
-            accessibilityRole="button"
-            key={index}
-            onPress={() => choose({ index, kind: 'image' })}
-            style={styles.cell}
-            testID={`${testID}-image-${index}`}
-          >
-            <View
-              style={[
-                styles.thumbFrame,
-                isSame(current, { index, kind: 'image' }) ? styles.tileActive : null,
-              ]}
-              testID={`${testID}-image-${index}-frame`}
-            >
-              <Image
-                source={THUMBNAILS[index]}
-                style={styles.thumbnail}
-                testID={`${testID}-image-${index}-thumb`}
-              />
-            </View>
-          </Pressable>
-        ))}
-      </View>
+      <EffectsPicker
+        current={current}
+        // Les DEUX instructions comptent : annoncer le choix, et refermer. Un
+        // gestionnaire à deux instructions n'a aucune conditionnelle, donc un
+        // recensement des branches ne le voit pas — c'est la forme qui a laissé
+        // trois feuilles ouvertes après un choix ailleurs dans ce dépôt.
+        onEffectSelect={(effect) => {
+          onEffectSelect(effect);
+          onSheetDismiss();
+        }}
+        testID={testID}
+      />
     </BottomSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  // Une CELLULE au quart de la largeur, et c'est ce qui produit exactement deux
-  // lignes pour huit fonds — sans ascenseur, donc sans rien qui se cache hors
-  // de l'écran.
-  //
-  // `width: '25%'` et un écart porté par le `padding` de la cellule, jamais par
-  // `gap` : `gap` s'exprime en points, la largeur en pourcentage. Les additionner
-  // dépasse 100 % sur les écrans étroits et renvoie la quatrième tuile à la
-  // ligne — donc trois lignes au lieu de deux, sur les seuls appareils qu'on ne
-  // regarde pas.
-  cell: { padding: 4, width: '25%' },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingBottom: tokens.spacing.md,
-    paddingHorizontal: tokens.spacing.md - 4,
-  },
-  // Une couleur EXPLICITE, comme tout ce qui est posé sur cet écran : le thème
-  // est toujours clair depuis le Lot 1, et Paper retomberait sur un quasi-noir
-  // au-dessus d'un fond sombre.
-  label: { color: tokens.color.textDark, fontFamily: tokens.font.semiBold, fontSize: 12 },
-  row: { flexDirection: 'row', gap: tokens.spacing.sm, padding: tokens.spacing.md },
-  // La vignette remplit sa monture, dont le rapport est fixé plutôt que la
-  // hauteur : la largeur vient d'un pourcentage, une hauteur en points la
-  // déformerait sur les écrans larges.
-  thumbFrame: {
-    aspectRatio: 4 / 3,
-    borderColor: tokens.color.controlOutline,
-    borderRadius: tokens.radius.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  thumbnail: { height: '100%', width: '100%' },
-  tile: {
-    alignItems: 'center',
-    borderColor: tokens.color.controlOutline,
-    borderRadius: tokens.radius.md,
-    borderWidth: 1,
-    gap: 4,
-    justifyContent: 'center',
-    minHeight: 64,
-    width: 72,
-  },
-  // 3,85:1 sur `backgroundDark` — au-dessus des 3:1 qu'un objet graphique
-  // demande pour se détacher de son fond.
-  tileActive: { backgroundColor: tokens.color.brandStrong, borderColor: tokens.color.brand },
-});

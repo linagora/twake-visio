@@ -41,11 +41,6 @@ export type MoreMenuProps = {
   // optionnelle rendrait un site d'appel oublié silencieusement inerte.
   readonly onSendReaction: (key: ReactionKey) => void;
   readonly onOpenChat: () => void;
-  // `null` là où le natif n'existe pas — iOS attend son pendant Vision. Une
-  // entrée qu'on ne peut pas honorer n'est pas RENDUE, elle n'est pas grisée :
-  // `IconButton/utils.ts:88-93` rendrait un quasi-noir sur fond sombre, et
-  // `participantsPanel.tsx` a déjà fixé ce précédent.
-  readonly onOpenEffects: (() => void) | null;
 };
 
 // Ce menu prend la place du bouton de partage et porte trois commandes : le
@@ -79,7 +74,6 @@ export function MoreMenu({
   onToggleHand,
   onSendReaction,
   onOpenChat,
-  onOpenEffects,
 }: MoreMenuProps): React.ReactElement {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
@@ -155,17 +149,6 @@ export function MoreMenu({
             onOpenChat();
           }}
         />
-        {onOpenEffects === null ? null : (
-          <SheetRow
-            testID="effects-btn"
-            title={t('effects.title')}
-            accessibilityLabel={t('effects.open')}
-            onPress={() => {
-              setVisible(false);
-              onOpenEffects();
-            }}
-          />
-        )}
         <HandControl
           raised={handRaised}
           busy={handBusy}

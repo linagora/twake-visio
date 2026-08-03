@@ -21,7 +21,6 @@ import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
 import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
-import { EffectsSheet } from 'src/screens/room/effectsSheet';
 import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
@@ -598,7 +597,6 @@ export function CallScreen(): React.ReactElement {
   // la piste : le décorateur natif change de mode, donc aucune renégociation
   // avec le serveur et aucune coupure chez les autres participants.
   const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
-  const [effectsOpen, setEffectsOpen] = useState(false);
 
   const handleEffectSelect = (next: BackgroundEffect): void => {
     setEffect(next);
@@ -1169,7 +1167,8 @@ export function CallScreen(): React.ReactElement {
         onToggleHand={handleToggleHand}
         onSendReaction={handleSendReaction}
         onOpenChat={handleOpenChat}
-        onOpenEffects={areEffectsSupported() ? () => setEffectsOpen(true) : null}
+        effect={areEffectsSupported() ? effect : null}
+        onEffectSelect={handleEffectSelect}
         onLeave={handleLeave}
       />
 
@@ -1194,16 +1193,6 @@ export function CallScreen(): React.ReactElement {
           seul `visible` bascule. Une seule case pour cinq actions — modération
           et changement de caméra — qui ne partent qu'un geste à la fois. Deux
           Snackbars se superposeraient au même endroit de l'écran. */}
-      {areEffectsSupported() ? (
-        <EffectsSheet
-          current={effect}
-          onEffectSelect={handleEffectSelect}
-          onSheetDismiss={() => setEffectsOpen(false)}
-          testID="call-effects"
-          visible={effectsOpen}
-        />
-      ) : null}
-
       <Snackbar testID="call-notice" visible={notice !== null} onDismiss={() => setNotice(null)}>
         {notice !== null ? t(notice.key) : ''}
       </Snackbar>

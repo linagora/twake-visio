@@ -75,7 +75,6 @@ function menu(overrides: Overrides = {}): React.ReactElement {
       onStopRecording={overrides.onStopRecording ?? jest.fn()}
       onToggleHand={overrides.onToggleHand ?? jest.fn()}
       onSendReaction={overrides.onSendReaction ?? jest.fn()}
-      onOpenEffects={null}
       onOpenChat={overrides.onOpenChat ?? jest.fn()}
     />,
   );

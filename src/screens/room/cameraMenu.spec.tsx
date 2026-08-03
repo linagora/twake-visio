@@ -4,6 +4,7 @@ import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
 import type { CameraChoice } from 'src/call/devices';
+import { tokens } from 'src/ui/tokens';
 import { SHEET_CHECK_COLOR } from 'src/screens/room/sheetCheck';
 import { ROW_REST_COLOR, ROW_SELECTED_COLOR } from 'src/screens/room/sheetRow';
 import { CameraMenu } from './cameraMenu';
@@ -20,6 +21,12 @@ const mockT = jest.fn((key: string, options?: { name?: string; index?: number })
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mockT }),
+}));
+
+// Le compte de fonds vient du module natif, absent sous Jest — il rendrait 0,
+// donc AUCUNE vignette, et « les huit fonds sont rendus » passerait à vide.
+jest.mock('src/call/backgroundEffect', () => ({
+  backgroundCount: () => 8,
 }));
 
 // `BottomSheet` monte sa feuille dans un `Portal`, et `Modal` (react-native-paper)
@@ -81,6 +88,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={onOpen}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -99,6 +108,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={onOpen}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -120,6 +131,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={jest.fn()}
           onSelect={onSelect}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -149,6 +162,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -168,6 +183,8 @@ describe('CameraMenu', () => {
           activeDeviceId="cam-back"
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -192,6 +209,8 @@ describe('CameraMenu', () => {
           activeDeviceId="cam-back"
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -218,6 +237,8 @@ describe('CameraMenu', () => {
           activeDeviceId="cam-back"
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -240,6 +261,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -257,7 +280,14 @@ describe('CameraMenu', () => {
     // personne à agir.
     await render(
       withPaper(
-        <CameraMenu cameras={[]} activeDeviceId={null} onOpen={jest.fn()} onSelect={jest.fn()} />,
+        <CameraMenu
+          cameras={[]}
+          activeDeviceId={null}
+          onOpen={jest.fn()}
+          onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
+        />,
       ),
     );
 
@@ -279,6 +309,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -304,6 +336,8 @@ describe('CameraMenu', () => {
           activeDeviceId={null}
           onOpen={jest.fn()}
           onSelect={jest.fn()}
+          effect={null}
+          onEffectSelect={jest.fn()}
         />,
       ),
     );
@@ -311,5 +345,145 @@ describe('CameraMenu', () => {
 
     await waitFor(() => expect(screen.getByText('call.cameraBack')).toBeTruthy());
     expect(screen.queryByText('call.cameraNumbered')).toBeNull();
+  });
+  // Le sélecteur d'arrière-plan a rejoint CE menu à la demande du propriétaire :
+  // l'objectif et l'arrière-plan règlent la même chose, ce que la caméra envoie.
+  // Il vivait avant dans le menu « Plus », où AUCUN test ne le rendait jamais —
+  // `moreMenu.spec.tsx` passait `onOpenEffects={null}` partout, donc la ligne
+  // était couverte par zéro assertion. C'est ce trou qu'on ne rouvre pas.
+  describe("l'arrière-plan", () => {
+    it("ne rend rien quand la plateforme n'a pas le module natif", async () => {
+      // `effect === null` : iOS tant que son pendant Vision n'a pas tourné. On
+      // MASQUE plutôt que de griser — un bouton `disabled` sur cet écran
+      // redevient noir sur noir (`IconButton/utils.ts:88-93`).
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={null}
+            onEffectSelect={jest.fn()}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+      expect(screen.queryByTestId('camera-sheet-effects-blur')).toBeNull();
+      expect(screen.queryByTestId('camera-sheet-effects-title')).toBeNull();
+    });
+
+    it('rend le sélecteur quand la plateforme le porte', async () => {
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={{ kind: 'none' }}
+            onEffectSelect={jest.fn()}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+
+      await waitFor(() => expect(screen.getByTestId('camera-sheet-effects-blur')).toBeTruthy());
+      expect(screen.getByTestId('camera-sheet-effects-image-8')).toBeTruthy();
+    });
+
+    // Les DEUX instructions du gestionnaire, une ligne chacune. Un
+    // `onPress={() => { setVisible(false); onEffectSelect(x); }}` n'a aucune
+    // conditionnelle : un recensement des branches ne le voit pas.
+    it('annonce le choix', async () => {
+      const onEffectSelect = jest.fn();
+
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={{ kind: 'none' }}
+            onEffectSelect={onEffectSelect}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-sheet-effects-blur')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-sheet-effects-blur'));
+
+      expect(onEffectSelect).toHaveBeenCalledWith({ kind: 'blur' });
+    });
+
+    it('referme la feuille après un choix', async () => {
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={{ kind: 'none' }}
+            onEffectSelect={jest.fn()}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-sheet-effects-blur')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-sheet-effects-blur'));
+
+      await waitFor(() => expect(screen.queryByTestId('camera-sheet-effects-blur')).toBeNull());
+    });
+
+    // Le fond CINQ, jamais le premier : avec l'index 1, « transmet la vignette
+    // pressée » et « renvoie toujours la première » seraient indiscernables.
+    it('annonce l’index du fond pressé', async () => {
+      const onEffectSelect = jest.fn();
+
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={{ kind: 'none' }}
+            onEffectSelect={onEffectSelect}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-sheet-effects-image-5')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-sheet-effects-image-5'));
+
+      expect(onEffectSelect).toHaveBeenCalledWith({ index: 5, kind: 'image' });
+      expect(onEffectSelect).not.toHaveBeenCalledWith({ index: 1, kind: 'image' });
+    });
+
+    it("force la couleur de l'intertitre", async () => {
+      await render(
+        withPaper(
+          <CameraMenu
+            cameras={[FRONT, BACK]}
+            activeDeviceId={null}
+            onOpen={jest.fn()}
+            onSelect={jest.fn()}
+            effect={{ kind: 'none' }}
+            onEffectSelect={jest.fn()}
+          />,
+        ),
+      );
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+
+      const title = await waitFor(() => screen.getByTestId('camera-sheet-effects-title'));
+      expect(title).toHaveStyle({ color: tokens.color.textDark });
+    });
   });
 });
