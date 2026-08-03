@@ -59,6 +59,17 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
   private var frameCount = 0L
   private var totalNanos = 0L
 
+  // Le coût de chaque étape, cumulé. Une moyenne globale ne dit PAS où passe le
+  // temps : elle a coûté une correction inutile. libyuv sur la conversion de
+  // sortie devait rendre 40 ms d'après mon estimation ; la mesure en a rendu 15.
+  // L'estimation portait sur une répartition jamais mesurée.
+  private var convNanos = 0L
+  private var segNanos = 0L
+  private var maskNanos = 0L
+  private var bgNanos = 0L
+  private var compNanos = 0L
+  private var outNanos = 0L
+
   fun setEffect(next: BackgroundEffect) {
     effect.set(next)
   }
@@ -98,6 +109,11 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       if (frameCount % 120 == 0L) {
         Log.i(TAG, "coût moyen ${"%.2f".format(totalNanos / frameCount / 1_000_000.0)} ms " +
           "sur $frameCount images")
+        Log.i(
+          TAG,
+          "détail — conv:${avg(convNanos)} seg:${avg(segNanos)} masque:${avg(maskNanos)} " +
+            "fond:${avg(bgNanos)} compo:${avg(compNanos)} sortie:${avg(outNanos)}",
+        )
       }
     }
   }
@@ -112,17 +128,32 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
 
     // 1. L'image réduite pour MLKit. `SEGMENTATION_WIDTH` est la définition à
     //    laquelle l'étape 1 a mesuré 17,96 ms.
+    //
+    // **Et la même image sert à la composition quand les tailles coïncident.**
+    // La capture est en 640x480 et `SEGMENTATION_WIDTH` vaut 640 : les deux
+    // appels convertissaient donc les MÊMES 307 200 pixels, deux fois par image,
+    // par la boucle Kotlin la plus chère du fichier. Le second était invisible à
+    // la lecture parce que les deux lignes sont éloignées de quarante lignes et
+    // que leurs variables portent des noms qui suggèrent des tailles
+    // différentes.
+    val conversionStart = SystemClock.elapsedRealtimeNanos()
     val scale = SEGMENTATION_WIDTH.toDouble() / width
-    val segWidth = SEGMENTATION_WIDTH
-    val segHeight = (height * scale).toInt().coerceAtLeast(1)
+    val segWidth = SEGMENTATION_WIDTH.coerceAtMost(width)
+    val segHeight = if (segWidth == width) height else (height * scale).toInt().coerceAtLeast(1)
     val small = FrameConversion.toScaledBitmap(i420, segWidth, segHeight)
+    val sameSize = segWidth == width && segHeight == height
+    val full = if (sameSize) small else FrameConversion.toScaledBitmap(i420, width, height)
+    convNanos += SystemClock.elapsedRealtimeNanos() - conversionStart
 
     // 2. Le masque, à la définition de l'entrée réduite.
+    val segmentationStart = SystemClock.elapsedRealtimeNanos()
     val mask = Tasks.await(
       segmenter.process(InputImage.fromBitmap(small, 0)),
       SEGMENTATION_TIMEOUT_MS,
       TimeUnit.MILLISECONDS,
     )
+    segNanos += SystemClock.elapsedRealtimeNanos() - segmentationStart
+    val maskStart = SystemClock.elapsedRealtimeNanos()
     val confidences = mask.buffer
     confidences.rewind()
 
@@ -149,11 +180,10 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
     }
     val maskSmall = Bitmap.createBitmap(alphaPixels, mask.width, mask.height, Bitmap.Config.ARGB_8888)
+    maskNanos += SystemClock.elapsedRealtimeNanos() - maskStart
 
-    // 3. L'image PLEINE, celle qu'on publie.
-    val full = FrameConversion.toScaledBitmap(i420, width, height)
-
-    // 4. Le fond : flou de l'image elle-même, ou l'image choisie.
+    // 3. Le fond : flou de l'image elle-même, ou l'image choisie.
+    val backgroundStart = SystemClock.elapsedRealtimeNanos()
     val background = when (current) {
       is BackgroundEffect.Blur -> cheapBlur(full)
       // PIVOTÉ, et c'est le défaut que le propriétaire a vu : la composition se
@@ -167,10 +197,12 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       is BackgroundEffect.Image -> orientToFrame(current.bitmap, width, height, rotation)
       BackgroundEffect.None -> return null
     }
+    bgNanos += SystemClock.elapsedRealtimeNanos() - backgroundStart
 
-    // 5. La composition. `DST_IN` garde la personne là où le masque est opaque ;
+    // 4. La composition. `DST_IN` garde la personne là où le masque est opaque ;
     //    le fond est dessiné d'abord, la personne découpée par-dessus. Tout est
     //    fait par `Canvas`, donc en natif — c'est ce qui rend le coût tenable.
+    val compositionStart = SystemClock.elapsedRealtimeNanos()
     val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
     val destination = Rect(0, 0, width, height)
@@ -182,12 +214,18 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     val maskPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) }
     cutoutCanvas.drawBitmap(maskSmall, null, destination, maskPaint)
     canvas.drawBitmap(cutout, 0f, 0f, null)
+    compNanos += SystemClock.elapsedRealtimeNanos() - compositionStart
 
+    val outputStart = SystemClock.elapsedRealtimeNanos()
     val buffer = FrameConversion.toI420Buffer(result)
+    outNanos += SystemClock.elapsedRealtimeNanos() - outputStart
 
     small.recycle()
     maskSmall.recycle()
-    full.recycle()
+    // `full` peut ÊTRE `small` — les recycler tous deux relâcherait deux fois le
+    // même bitmap. Inoffensif aujourd'hui, mais c'est exactement le genre
+    // d'alias qui devient un plantage le jour où quelqu'un lit le bitmap après.
+    if (!sameSize) full.recycle()
     cutout.recycle()
     result.recycle()
     // `orientToFrame` et `cheapBlur` rendent tous deux une COPIE : on relâche
@@ -305,6 +343,10 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
       exact
     }
   }
+
+  /** La moyenne d'une étape, en millisecondes, sur les images déjà traitées. */
+  private fun avg(nanos: Long): String =
+    if (frameCount == 0L) "—" else "%.1f".format(nanos / frameCount / 1_000_000.0)
 
   private companion object {
     const val TAG = "TwakeSegEffect"

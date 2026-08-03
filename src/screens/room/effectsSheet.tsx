@@ -1,7 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { backgroundCount, type BackgroundEffect } from 'src/call/backgroundEffect';
 import { BottomSheet } from 'src/screens/room/bottomSheet';
@@ -26,15 +26,22 @@ type Props = {
 //
 // `require` statique et non calculé : Metro résout les chemins à la
 // compilation, et `require(\`…/\${index}.jpg\`)` ne compile pas.
+//
+// **Chemin RELATIF, et ce n'est pas un choix de style.** `assets/…` est un
+// spécificateur non relatif : `tsconfig.json` n'en fait un chemin que pour
+// `src/*`, et Metro n'a aucune autre raison de le résoudre. Écrit ainsi, il
+// rendait un 500 sur le serveur de développement — donc AUCUN bundle, donc pas
+// d'écran du tout, et pas seulement pas de vignettes. Jest, lui, passait : sa
+// correspondance `moduleNameMapper` couvrait le trou et masquait la panne.
 const THUMBNAILS: Readonly<Record<number, number>> = {
-  1: require('assets/backgrounds/1.jpg'),
-  2: require('assets/backgrounds/2.jpg'),
-  3: require('assets/backgrounds/3.jpg'),
-  4: require('assets/backgrounds/4.jpg'),
-  5: require('assets/backgrounds/5.jpg'),
-  6: require('assets/backgrounds/6.jpg'),
-  7: require('assets/backgrounds/7.jpg'),
-  8: require('assets/backgrounds/8.jpg'),
+  1: require('../../../assets/backgrounds/1.jpg'),
+  2: require('../../../assets/backgrounds/2.jpg'),
+  3: require('../../../assets/backgrounds/3.jpg'),
+  4: require('../../../assets/backgrounds/4.jpg'),
+  5: require('../../../assets/backgrounds/5.jpg'),
+  6: require('../../../assets/backgrounds/6.jpg'),
+  7: require('../../../assets/backgrounds/7.jpg'),
+  8: require('../../../assets/backgrounds/8.jpg'),
 };
 
 // L'index 0 n'est pas un fond : c'est « aucun ». Les fonds DINUM sont numérotés
@@ -105,40 +112,69 @@ export function EffectsSheet({
         </Pressable>
       </View>
 
-      <ScrollView
-        horizontal
-        contentContainerStyle={styles.row}
-        showsHorizontalScrollIndicator={false}
-      >
+      <View style={styles.grid}>
         {backgroundIndexes().map((index) => (
           <Pressable
             accessibilityRole="button"
             key={index}
             onPress={() => choose({ index, kind: 'image' })}
-            style={[
-              styles.tile,
-              isSame(current, { index, kind: 'image' }) ? styles.tileActive : null,
-            ]}
+            style={styles.cell}
             testID={`${testID}-image-${index}`}
           >
-            <Image
-              source={THUMBNAILS[index]}
-              style={styles.thumbnail}
-              testID={`${testID}-image-${index}-thumb`}
-            />
+            <View
+              style={[
+                styles.thumbFrame,
+                isSame(current, { index, kind: 'image' }) ? styles.tileActive : null,
+              ]}
+              testID={`${testID}-image-${index}-frame`}
+            >
+              <Image
+                source={THUMBNAILS[index]}
+                style={styles.thumbnail}
+                testID={`${testID}-image-${index}-thumb`}
+              />
+            </View>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  // Une CELLULE au quart de la largeur, et c'est ce qui produit exactement deux
+  // lignes pour huit fonds — sans ascenseur, donc sans rien qui se cache hors
+  // de l'écran.
+  //
+  // `width: '25%'` et un écart porté par le `padding` de la cellule, jamais par
+  // `gap` : `gap` s'exprime en points, la largeur en pourcentage. Les additionner
+  // dépasse 100 % sur les écrans étroits et renvoie la quatrième tuile à la
+  // ligne — donc trois lignes au lieu de deux, sur les seuls appareils qu'on ne
+  // regarde pas.
+  cell: { padding: 4, width: '25%' },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingBottom: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.md - 4,
+  },
   // Une couleur EXPLICITE, comme tout ce qui est posé sur cet écran : le thème
   // est toujours clair depuis le Lot 1, et Paper retomberait sur un quasi-noir
   // au-dessus d'un fond sombre.
   label: { color: tokens.color.textDark, fontFamily: tokens.font.semiBold, fontSize: 12 },
   row: { flexDirection: 'row', gap: tokens.spacing.sm, padding: tokens.spacing.md },
+  // La vignette remplit sa monture, dont le rapport est fixé plutôt que la
+  // hauteur : la largeur vient d'un pourcentage, une hauteur en points la
+  // déformerait sur les écrans larges.
+  thumbFrame: {
+    aspectRatio: 4 / 3,
+    borderColor: tokens.color.controlOutline,
+    borderRadius: tokens.radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  thumbnail: { height: '100%', width: '100%' },
   tile: {
     alignItems: 'center',
     borderColor: tokens.color.controlOutline,
@@ -152,7 +188,4 @@ const styles = StyleSheet.create({
   // 3,85:1 sur `backgroundDark` — au-dessus des 3:1 qu'un objet graphique
   // demande pour se détacher de son fond.
   tileActive: { backgroundColor: tokens.color.brandStrong, borderColor: tokens.color.brand },
-  // La vignette remplit la tuile : c'est l'image qu'on choisit, pas une icône
-  // à côté d'un libellé.
-  thumbnail: { borderRadius: tokens.radius.sm, height: 56, width: 64 },
 });

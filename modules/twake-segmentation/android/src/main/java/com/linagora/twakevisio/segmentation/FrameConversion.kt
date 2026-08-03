@@ -2,6 +2,7 @@ package com.linagora.twakevisio.segmentation
 
 import android.graphics.Bitmap
 import org.webrtc.JavaI420Buffer
+import org.webrtc.YuvHelper
 import org.webrtc.VideoFrame
 import java.nio.ByteBuffer
 
@@ -70,53 +71,50 @@ object FrameConversion {
   }
 
   /**
-   * `Bitmap` ARGB → tampon I420, à la définition du bitmap.
+   * `Bitmap` ARGB → tampon I420, par **libyuv**.
    *
-   * La chrominance est écrite une fois sur quatre pixels — c'est ce que veut
-   * dire « 4:2:0 ». Écrire les quatre donnerait le même résultat visuel pour
-   * quatre fois le travail.
+   * La version précédente parcourait les 307 200 pixels en Kotlin et calculait
+   * la luminance et la chrominance à la main. Mesurée dans la chaîne complète,
+   * elle pesait avec sa jumelle près de 80 % des 105 ms par image.
+   *
+   * `YuvHelper.ABGRToI420` fait le même travail en SIMD natif — c'est libyuv,
+   * déjà embarqué dans WebRTC, donc aucune dépendance ajoutée. Vérifié par
+   * `javap` sur l'archive réellement liée, pas supposé d'après une
+   * documentation.
+   *
+   * **`ABGR` et non `ARGB`, et ce n'est pas une coquille.** libyuv nomme ses
+   * formats par l'ordre des OCTETS en mémoire ; Android nomme `ARGB_8888` par
+   * l'ordre des composantes dans un entier. Sur une machine petit-boutiste, les
+   * deux désignent la même disposition. Prendre le nom d'Android au pied de la
+   * lettre donnerait des couleurs inversées.
    */
   fun toI420Buffer(bitmap: Bitmap): VideoFrame.I420Buffer {
     val width = bitmap.width
     val height = bitmap.height
-    val pixels = IntArray(width * height)
-    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
     val chromaWidth = (width + 1) / 2
     val chromaHeight = (height + 1) / 2
+
+    val argb = ByteBuffer.allocateDirect(width * height * 4)
+    bitmap.copyPixelsToBuffer(argb)
+    argb.rewind()
+
     val yBuffer = ByteBuffer.allocateDirect(width * height)
     val uBuffer = ByteBuffer.allocateDirect(chromaWidth * chromaHeight)
     val vBuffer = ByteBuffer.allocateDirect(chromaWidth * chromaHeight)
 
-    for (row in 0 until height) {
-      for (col in 0 until width) {
-        val pixel = pixels[row * width + col]
-        val red = (pixel shr 16) and 0xFF
-        val green = (pixel shr 8) and 0xFF
-        val blue = pixel and 0xFF
-
-        val luma = ((66 * red + 129 * green + 25 * blue + 128) shr 8) + 16
-        yBuffer.put(row * width + col, clamp8(luma).toByte())
-
-        if (row % 2 == 0 && col % 2 == 0) {
-          val chromaU = ((-38 * red - 74 * green + 112 * blue + 128) shr 8) + 128
-          val chromaV = ((112 * red - 94 * green - 18 * blue + 128) shr 8) + 128
-          val index = (row / 2) * chromaWidth + (col / 2)
-          uBuffer.put(index, clamp8(chromaU).toByte())
-          vBuffer.put(index, clamp8(chromaV).toByte())
-        }
-      }
-    }
+    YuvHelper.ABGRToI420(
+      argb, width * 4,
+      yBuffer, width,
+      uBuffer, chromaWidth,
+      vBuffer, chromaWidth,
+      width, height,
+    )
 
     return JavaI420Buffer.wrap(
-      width,
-      height,
-      yBuffer,
-      width,
-      uBuffer,
-      chromaWidth,
-      vBuffer,
-      chromaWidth,
+      width, height,
+      yBuffer, width,
+      uBuffer, chromaWidth,
+      vBuffer, chromaWidth,
       null,
     )
   }
