@@ -282,17 +282,6 @@ export function PrejoinScreen(): React.ReactElement {
           {/* Masqué là où le natif n'existe pas — iOS attend son pendant
               Vision. Une commande qu'on ne peut pas honorer coûte plus cher que
               son absence. */}
-          {effectsOn ? (
-            <Pressable
-              accessibilityLabel={t('effects.open')}
-              accessibilityRole="button"
-              onPress={() => setEffectsOpen(true)}
-              style={styles.control}
-              testID="prejoin-effects-btn"
-            >
-              <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
-            </Pressable>
-          ) : null}
           <Pressable
             accessibilityLabel={t('call.muted')}
             accessibilityRole="switch"
@@ -321,6 +310,17 @@ export function PrejoinScreen(): React.ReactElement {
               size={24}
             />
           </Pressable>
+          {effectsOn ? (
+            <Pressable
+              accessibilityLabel={t('effects.open')}
+              accessibilityRole="button"
+              onPress={() => setEffectsOpen(true)}
+              style={styles.control}
+              testID="prejoin-effects-btn"
+            >
+              <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 

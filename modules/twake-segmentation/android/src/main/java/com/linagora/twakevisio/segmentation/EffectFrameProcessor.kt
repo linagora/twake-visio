@@ -2,6 +2,7 @@ package com.linagora.twakevisio.segmentation
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
@@ -78,7 +79,7 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     return try {
       val i420 = frame.buffer.toI420() ?: return frame
       try {
-        val output = composite(i420, current) ?: return frame
+        val output = composite(i420, current, frame.rotation) ?: return frame
         VideoFrame(output, frame.rotation, frame.timestampNs)
       } finally {
         i420.release()
@@ -104,6 +105,7 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
   private fun composite(
     i420: VideoFrame.I420Buffer,
     current: BackgroundEffect,
+    rotation: Int,
   ): VideoFrame.Buffer? {
     val width = i420.width
     val height = i420.height
@@ -130,8 +132,21 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     val alphaPixels = IntArray(mask.width * mask.height)
     for (index in alphaPixels.indices) {
       val confidence = confidences.float
-      val alpha = (confidence * 255).toInt().coerceIn(0, 255)
-      alphaPixels[index] = alpha shl 24
+      // La confiance brute NE PEUT PAS servir d'alpha telle quelle, et c'est le
+      // défaut qui rendait le sujet translucide : MLKit rend souvent 0,6 ou 0,8
+      // à l'INTÉRIEUR de la personne, pas 1. « Probablement une personne »
+      // devenait donc « à moitié transparente ».
+      //
+      // On durcit : opaque au-dessus du seuil haut, transparent en dessous du
+      // seuil bas, et une rampe entre les deux. La rampe est ce qui garde un
+      // bord doux plutôt qu'un découpage à l'emporte-pièce — c'est elle qui
+      // évite l'aspect « autocollant » d'un masque binaire.
+      val alpha = when {
+        confidence >= OPAQUE_ABOVE -> 255
+        confidence <= CLEAR_BELOW -> 0
+        else -> (((confidence - CLEAR_BELOW) / (OPAQUE_ABOVE - CLEAR_BELOW)) * 255).toInt()
+      }
+      alphaPixels[index] = alpha.coerceIn(0, 255) shl 24
     }
     val maskSmall = Bitmap.createBitmap(alphaPixels, mask.width, mask.height, Bitmap.Config.ARGB_8888)
 
@@ -141,7 +156,15 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     // 4. Le fond : flou de l'image elle-même, ou l'image choisie.
     val background = when (current) {
       is BackgroundEffect.Blur -> cheapBlur(full)
-      is BackgroundEffect.Image -> current.bitmap
+      // PIVOTÉ, et c'est le défaut que le propriétaire a vu : la composition se
+      // fait dans l'orientation NATIVE du capteur — 640x480 paysage — puis
+      // `VideoFrame(…, rotation, …)` fait pivoter le tout à l'affichage. Un
+      // fond dessiné tel quel arrivait donc couché. Le pivoter à contresens ici
+      // le redresse une fois la rotation d'affichage appliquée.
+      //
+      // La personne, elle, n'a jamais eu ce problème : elle vient de la même
+      // image paysage et subit la même rotation.
+      is BackgroundEffect.Image -> orientToFrame(current.bitmap, width, height, rotation)
       BackgroundEffect.None -> return null
     }
 
@@ -167,27 +190,120 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     full.recycle()
     cutout.recycle()
     result.recycle()
-    if (background !== (current as? BackgroundEffect.Image)?.bitmap) background.recycle()
+    // `orientToFrame` et `cheapBlur` rendent tous deux une COPIE : on relâche
+    // toujours, et jamais le bitmap d'origine gardé en cache.
+    background.recycle()
 
     return buffer
   }
 
   /**
-   * Un flou par RÉDUCTION puis agrandissement, et non un vrai noyau gaussien.
+   * Redresse et cadre un fond pour la composition.
    *
-   * `RenderEffect.createBlurEffect` existe depuis l'API 31 et serait plus beau,
-   * mais il s'applique à une vue, pas à un bitmap hors écran. `RenderScript` est
-   * déprimé depuis l'API 31. Réduire d'un facteur 12 puis réétirer avec
-   * filtrage bilinéaire donne un flou convaincant pour trois opérations
-   * natives — et c'est le coût qui gouverne ici, pas la finesse.
+   * Deux opérations, dans cet ordre : pivoter de `-rotation` pour annuler la
+   * rotation que l'affichage appliquera, puis RECADRER en conservant les
+   * proportions. Un `drawBitmap` sur un rectangle plein étirerait l'image —
+   * c'est ce que faisait la version précédente, et sur une vignette 107x60
+   * étirée en 640x480 le résultat était méconnaissable.
+   */
+  private fun orientToFrame(source: Bitmap, width: Int, height: Int, rotation: Int): Bitmap {
+
+    // Recadrage « couvrir », sur le rapport de l'image AFFICHÉE — pas celui du
+    // tampon.
+    //
+    // Le tampon est en 640x480 paysage, mais la rotation de 90° le présente en
+    // 480x640 portrait. Découper sur 640/480 revenait à cadrer pour un écran
+    // couché : on prenait une bande horizontale du fond redressé, d'où l'effet
+    // de zoom que le propriétaire a signalé.
+    //
+    // Une rotation de 90 ou 270 ÉCHANGE les côtés vus. C'est ce rapport-là qu'il
+    // faut viser.
+    val swapped = rotation % 180 != 0
+    val displayWidth = if (swapped) height else width
+    val displayHeight = if (swapped) width else height
+    val targetRatio = displayWidth.toFloat() / displayHeight
+    val sourceRatio = source.width.toFloat() / source.height
+    val cropWidth: Int
+    val cropHeight: Int
+    if (sourceRatio > targetRatio) {
+      cropHeight = source.height
+      cropWidth = (cropHeight * targetRatio).toInt().coerceAtMost(source.width)
+    } else {
+      cropWidth = source.width
+      cropHeight = (cropWidth / targetRatio).toInt().coerceAtMost(source.height)
+    }
+    // On découpe d'ABORD, à la bonne proportion d'affichage, PUIS on redresse.
+    // L'ordre inverse — redresser puis découper — cadrait sur une image déjà
+    // pivotée et reprenait le mauvais rapport.
+    val cropped = Bitmap.createBitmap(
+      source,
+      (source.width - cropWidth) / 2,
+      (source.height - cropHeight) / 2,
+      cropWidth,
+      cropHeight,
+    )
+    val matrix = Matrix().apply { postRotate(-rotation.toFloat()) }
+    val upright = if (rotation % 360 == 0) cropped else Bitmap.createBitmap(
+      cropped, 0, 0, cropped.width, cropped.height, matrix, true,
+    )
+    val scaled = Bitmap.createScaledBitmap(upright, width, height, true)
+    if (upright !== cropped) upright.recycle()
+    if (cropped !== source) cropped.recycle()
+    return scaled
+  }
+
+  /**
+   * Un flou par réductions et agrandissements SUCCESSIFS.
+   *
+   * La version précédente réduisait d'un coup d'un facteur 12 puis réétirait :
+   * le résultat n'était pas un flou, c'étaient de gros carrés. Le propriétaire
+   * l'a vu immédiatement sur appareil, et le commentaire qui promettait « un
+   * flou convaincant » était faux.
+   *
+   * La correction tient à l'arithmétique du filtrage bilinéaire : il n'échantillonne
+   * que les QUATRE voisins immédiats. Réduire d'un facteur 12 en une passe jette
+   * donc 143 pixels sur 144 sans les moyenner — d'où les blocs. Enchaîner des
+   * réductions de moitié fait entrer chaque pixel dans la moyenne à chaque
+   * passe, ce qui approche un vrai noyau gaussien.
+   *
+   * Quatre allers-retours de moitié coûtent quelques opérations natives, là où
+   * un noyau gaussien à la main coûterait la surface de l'image par le carré du
+   * rayon.
    */
   private fun cheapBlur(source: Bitmap): Bitmap {
-    val tinyWidth = (source.width / BLUR_FACTOR).coerceAtLeast(1)
-    val tinyHeight = (source.height / BLUR_FACTOR).coerceAtLeast(1)
-    val tiny = Bitmap.createScaledBitmap(source, tinyWidth, tinyHeight, true)
-    val blurred = Bitmap.createScaledBitmap(tiny, source.width, source.height, true)
-    tiny.recycle()
-    return blurred
+    var current = source
+    var owned = false
+    // Descente : quatre passes de moitié, soit un seizième de la définition.
+    repeat(BLUR_PASSES) {
+      val next = Bitmap.createScaledBitmap(
+        current,
+        (current.width / 2).coerceAtLeast(1),
+        (current.height / 2).coerceAtLeast(1),
+        true,
+      )
+      if (owned) current.recycle()
+      current = next
+      owned = true
+    }
+    // Remontée : on repasse par les mêmes paliers plutôt que d'étirer d'un
+    // coup. Chaque palier remoyenne, et c'est ce qui efface les arêtes.
+    repeat(BLUR_PASSES) {
+      val next = Bitmap.createScaledBitmap(
+        current,
+        (current.width * 2).coerceAtMost(source.width),
+        (current.height * 2).coerceAtMost(source.height),
+        true,
+      )
+      current.recycle()
+      current = next
+    }
+    return if (current.width == source.width && current.height == source.height) {
+      current
+    } else {
+      val exact = Bitmap.createScaledBitmap(current, source.width, source.height, true)
+      current.recycle()
+      exact
+    }
   }
 
   private companion object {
@@ -195,6 +311,12 @@ class EffectFrameProcessor : SegmentingCapturer.FrameProcessor {
     // La définition mesurée à l'étape 1 : 17,96 ms de médiane.
     const val SEGMENTATION_WIDTH = 640
     const val SEGMENTATION_TIMEOUT_MS = 200L
-    const val BLUR_FACTOR = 12
+    // Quatre passes de moitié : un seizième de la définition, atteint par
+    // moyennes successives plutôt que d'un seul saut.
+    const val BLUR_PASSES = 4
+    // Au-dessus : franchement la personne. En dessous : franchement le fond.
+    // Entre les deux, une rampe de 0,25 de large, qui fait le bord doux.
+    const val OPAQUE_ABOVE = 0.55f
+    const val CLEAR_BELOW = 0.30f
   }
 }

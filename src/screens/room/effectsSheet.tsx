@@ -1,7 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { backgroundCount, type BackgroundEffect } from 'src/call/backgroundEffect';
 import { BottomSheet } from 'src/screens/room/bottomSheet';
@@ -15,6 +15,26 @@ type Props = {
   readonly onEffectSelect: (effect: BackgroundEffect) => void;
   readonly onSheetDismiss: () => void;
   readonly testID: string;
+};
+
+// Les vignettes du sélecteur, 320 px de large — 228 Ko pour les huit.
+//
+// Elles sont EN PLUS des images natives, pas à leur place : le natif compose en
+// 1280, le sélecteur montre en 320. Une seule taille ne peut pas servir les
+// deux — c'est d'ailleurs l'erreur qui a produit des fonds en 107 x 60, quand
+// j'avais pris les vignettes de la DINUM pour des images de composition.
+//
+// `require` statique et non calculé : Metro résout les chemins à la
+// compilation, et `require(\`…/\${index}.jpg\`)` ne compile pas.
+const THUMBNAILS: Readonly<Record<number, number>> = {
+  1: require('assets/backgrounds/1.jpg'),
+  2: require('assets/backgrounds/2.jpg'),
+  3: require('assets/backgrounds/3.jpg'),
+  4: require('assets/backgrounds/4.jpg'),
+  5: require('assets/backgrounds/5.jpg'),
+  6: require('assets/backgrounds/6.jpg'),
+  7: require('assets/backgrounds/7.jpg'),
+  8: require('assets/backgrounds/8.jpg'),
 };
 
 // L'index 0 n'est pas un fond : c'est « aucun ». Les fonds DINUM sont numérotés
@@ -33,11 +53,10 @@ function isSame(a: BackgroundEffect, b: BackgroundEffect): boolean {
 /**
  * Le choix de l'effet d'arrière-plan.
  *
- * Les vignettes ne sont PAS affichées : les huit images vivent dans les
- * ressources du module natif, pas dans le bundle JavaScript, et les dupliquer
- * pour un aperçu doublerait leur poids. Chaque fond est donc un numéro et une
- * pastille — l'aperçu réel, c'est la caméra juste au-dessus, qui change dès la
- * sélection.
+ * Chaque fond est montré par sa VIGNETTE. Une première version n'affichait
+ * qu'un numéro, pour ne pas embarquer les images deux fois ; le propriétaire a
+ * signalé qu'un sélecteur de fonds sans image ne se choisit pas. 228 Ko pour
+ * les huit est le prix, et il est juste.
  */
 export function EffectsSheet({
   visible,
@@ -102,10 +121,11 @@ export function EffectsSheet({
             ]}
             testID={`${testID}-image-${index}`}
           >
-            <MaterialCommunityIcons color={tokens.color.textDark} name="image" size={22} />
-            <Text style={styles.label} testID={`${testID}-image-${index}-label`}>
-              {String(index)}
-            </Text>
+            <Image
+              source={THUMBNAILS[index]}
+              style={styles.thumbnail}
+              testID={`${testID}-image-${index}-thumb`}
+            />
           </Pressable>
         ))}
       </ScrollView>
@@ -132,4 +152,7 @@ const styles = StyleSheet.create({
   // 3,85:1 sur `backgroundDark` — au-dessus des 3:1 qu'un objet graphique
   // demande pour se détacher de son fond.
   tileActive: { backgroundColor: tokens.color.brandStrong, borderColor: tokens.color.brand },
+  // La vignette remplit la tuile : c'est l'image qu'on choisit, pas une icône
+  // à côté d'un libellé.
+  thumbnail: { borderRadius: tokens.radius.sm, height: 56, width: 64 },
 });
