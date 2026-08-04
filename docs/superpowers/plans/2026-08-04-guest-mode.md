@@ -657,9 +657,16 @@ git add -A && git commit -m "feat(welcome): Offrir de rejoindre une réunion san
 ## Task 7 : le pré-join nomme l'invité
 
 **Files:**
-- Modify: `src/screens/room/prejoin.tsx:115-180` et `:286-305`
+- Modify: `src/screens/room/prejoin.tsx` — `getActiveAccount()` en **deux** endroits
+  (`:134` au montage, `:184` dans l'effet), l'encart « VOTRE NOM » (`:387-390`),
+  et `rememberVisit` (`:220`)
 - Modify: `src/screens/room/prejoin.spec.tsx`
 - Modify: `src/i18n/locales/*.json`
+
+> **Numéros de ligne revérifiés le 2026-08-04 APRÈS la fusion d'`origin/main`**,
+> qui a réécrit ce fichier de 159 lignes. Ceux du plan d'origine (`:115-180`,
+> `:286-305`) étaient périmés. Vérifie quand même par `grep` avant d'éditer :
+> une autre fusion peut être passée depuis.
 
 - [ ] **Step 1 : clés i18n — UNE seule**
 
@@ -816,8 +823,24 @@ git add -A && git commit -m "feat(prejoin): Laisser un invité se nommer avant d
 ## Task 8 : salle d'attente, séance, sortie
 
 **Files:**
-- Modify: `src/screens/room/lobby.tsx:54-121`, `src/screens/room/lobby.spec.tsx`
-- Modify: `src/screens/room/call.tsx:224,425,633,708`, `call.spec.tsx`
+- Modify: `src/screens/room/lobby.tsx` — `getActiveAccount()` en **trois** endroits
+  (`:62` état de départ, `:68` première demande, `:85` scrutation) et la sortie
+  `:182`. `requestEntry` y est déjà enveloppé en `{ kind: 'account', account }`
+  par la Task 4 : remplacer cette enveloppe par le vrai visiteur.
+- Modify: `src/screens/room/lobby.spec.tsx`
+- Modify: `src/screens/room/call.tsx` — **SIX** sites, pas quatre :
+  `:245` (état de départ), `:446` (lecture par rendu), `:576` (`account ?? NO_ACCOUNT`),
+  `:652` (effet de connexion), `:763` (`handleCopyLink`), `:773` (`handleShare`)
+- Modify: `src/screens/room/call.spec.tsx`
+
+> **RECENSEMENT REFAIT le 2026-08-04 APRÈS la fusion d'`origin/main`.** Le plan
+> d'origine citait quatre sites dans `call.tsx` ; il y en a six, et le sixième
+> est **nouveau** : `handleCopyLink` (`:762-767`) est arrivé en amont pendant ce
+> lot. Il construit `${activeAccount.instance.serverUrl}/${slug}` et **sort tôt
+> si le compte est nul** — donc, tel quel, **la copie de lien est morte pour un
+> invité**, silencieusement. Elle veut le même traitement que `handleShare`.
+> Vérifie par `grep -n "getActiveAccount" src/screens/room/call.tsx` avant
+> d'éditer : le compte peut avoir encore changé.
 
 - [ ] **Step 1a : la salle d'attente d'abord**
 
@@ -899,6 +922,17 @@ Expected: « ramène un invité » rougit, et le test équivalent du compte rest
 
 - [ ] **Step 1b : écrire les tests de la séance**
 
+> **Les `testID` ci-dessous ont été RELEVÉS DANS LA SOURCE le 2026-08-04**, pas
+> écrits de mémoire — `call-header-copy` et `call-header-share`
+> (`callHeader.tsx:189` et `:204`). Une première rédaction de ce plan citait
+> `copy-link-btn` et `share-btn` : **aucun des deux n'existe**, et un
+> `getByTestId` sur un identifiant absent jette au lieu d'échouer proprement,
+> ce qui se lit comme un test cassé plutôt que comme une garde qui manque.
+> Le bouton de sortie a plusieurs identifiants selon l'état rendu
+> (`error-leave-btn`, `connecting-leave-btn`, celui de la barre) : **choisis
+> celui que ta fixture atteint réellement**, et vérifie-le par `grep` avant de
+> l'écrire.
+
 ```ts
 describe('la sortie de séance', () => {
   it("ramène un COMPTE à l'accueil", async () => {
@@ -936,11 +970,40 @@ describe('le partage du lien', () => {
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
 
-    await fireEvent.press(screen.getByTestId('share-btn'));
+    await fireEvent.press(screen.getByTestId('call-header-share'));
 
     expect(share).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://meet.acme.com/reunion' }),
     );
+  });
+});
+
+// LA COMMANDE QUE LE PLAN D'ORIGINE AVAIT MANQUÉE. `handleCopyLink` est arrivé
+// en amont pendant ce lot et sort tôt sur un compte nul : sans ce test, un
+// invité appuie sur « Copier le lien » et il ne se passe RIEN — pas même la
+// Snackbar, dont le commentaire de `call.tsx` dit pourtant qu'elle EST la
+// commande. Un échec silencieux, donc le pire des deux.
+describe('la copie du lien', () => {
+  it("copie le lien avec le serveur de l'INVITÉ", async () => {
+    const copy = jest.spyOn(Clipboard, 'setStringAsync').mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    expect(copy).toHaveBeenCalledWith('https://meet.acme.com/reunion');
+  });
+
+  // Deuxième INSTRUCTION du même gestionnaire : le recensement par instructions
+  // l'exige, et c'est elle qui rend la commande visible.
+  it("annonce la copie à l'invité, comme à un compte", async () => {
+    jest.spyOn(Clipboard, 'setStringAsync').mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    await waitFor(() => expect(screen.getByText('call.linkCopied')).toBeOnTheScreen());
   });
 });
 ```
