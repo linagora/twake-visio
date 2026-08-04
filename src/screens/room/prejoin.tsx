@@ -20,7 +20,9 @@ import {
   useEffectCameraPreview,
   type BackgroundEffect,
 } from 'src/call/backgroundEffect';
+import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
 import { EffectsSheet } from 'src/screens/room/effectsSheet';
+import { useAudioOutput } from 'src/screens/room/useAudioOutput';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
@@ -161,6 +163,13 @@ export function PrejoinScreen(): React.ReactElement {
   // vignettes du panneau ne sont que des numéros.
   const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
   const [effectsOpen, setEffectsOpen] = useState(false);
+
+  // Cet écran n'a pas de Snackbar : un échec de routage y serait muet. Le
+  // signaler demanderait une surface que le pré-join n'a pas, et l'inventer
+  // pour un cas que personne n'a rencontré serait prématuré — la feuille, elle,
+  // montre l'appareil CONSTATÉ, donc un routage refusé se voit à la coche qui
+  // ne bouge pas.
+  const audio = useAudioOutput(() => undefined);
 
   const handleEffectSelect = (next: BackgroundEffect): void => {
     setEffect(next);
@@ -324,8 +333,36 @@ export function PrejoinScreen(): React.ReactElement {
               <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
             </Pressable>
           ) : null}
+          {/* La sortie audio, ici comme dans la barre. Le propriétaire a branché
+              son casque Bluetooth SUR CET ÉCRAN et n'avait aucun moyen d'y
+              choisir la destination du son : le réglage n'existait qu'une fois
+              la séance ouverte, c'est-à-dire trop tard pour la seule personne
+              qui voulait le vérifier avant d'entrer. */}
+          <Pressable
+            accessibilityLabel={t('call.audioOutput')}
+            accessibilityRole="button"
+            onPress={audio.onOpen}
+            style={styles.control}
+            testID="prejoin-audio-btn"
+          >
+            <MaterialCommunityIcons color={tokens.color.textDark} name="volume-high" size={20} />
+          </Pressable>
         </View>
       </View>
+
+      <AudioOutputSheet
+        visible={audio.open}
+        onDismiss={audio.onDismiss}
+        mode={audio.mode}
+        outputs={audio.outputs}
+        chosen={audio.chosen}
+        devices={audio.devices}
+        currentDeviceId={audio.currentDeviceId}
+        manual={audio.manual}
+        onSelect={audio.onSelect}
+        onSelectDevice={audio.onSelectDevice}
+        onAutomatic={audio.onAutomatic}
+      />
 
       <EffectsSheet
         current={effect}

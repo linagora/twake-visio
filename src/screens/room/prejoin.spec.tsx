@@ -5,6 +5,7 @@ import { PaperProvider } from 'react-native-paper';
 import { mediaDevices } from '@livekit/react-native-webrtc';
 
 import * as rooms from 'src/api/rooms';
+import * as audioRoute from 'src/call/audioRoute';
 import * as accounts from 'src/auth/accounts';
 import { tokens } from 'src/ui/tokens';
 import { PrejoinScreen } from './prejoin';
@@ -401,5 +402,60 @@ describe("PrejoinScreen — barre d'état", () => {
     await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
 
     expect(statusBarStyles()).toContain('light');
+  });
+});
+
+// Le propriétaire a branché son casque Bluetooth SUR CET ÉCRAN et n'avait aucun
+// moyen d'y choisir la destination du son. Le réglage n'existait qu'une fois la
+// séance ouverte — trop tard pour la seule personne qui voulait le vérifier
+// avant d'entrer.
+describe('PrejoinScreen — sortie audio', () => {
+  it('offre le réglage avant même d’être entré', async () => {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+  });
+
+  it('ouvre la feuille sur un appui, là où il y a une feuille', async () => {
+    // `audioRouteControl` est espionné parce que le préréglage Jest fixe
+    // `Platform.OS` à `'ios'`, où le mode vaut `'system'` : il n'y a alors
+    // AUCUNE feuille à ouvrir, seulement le sélecteur de la plateforme. Sans
+    // cet espion, le test attendrait une surface qui n'existe pas sur la
+    // plateforme qu'il simule — et son échec se lirait comme un bouton mal
+    // câblé.
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('devices');
+    jest.spyOn(audioRoute, 'listAudioDevices').mockResolvedValue([]);
+    jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(null);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+    // « Rendu ou pas rendu » plutôt qu'une prop : une prop consommée par un
+    // composant n'atteint jamais l'élément hôte, et l'assertion serait verte
+    // dans les deux états.
+    expect(screen.queryByTestId('audio-output-note')).toBe(null);
+
+    await fireEvent.press(screen.getByTestId('prejoin-audio-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
+  });
+
+  // L'autre chemin, celui d'iOS : aucune feuille, le sélecteur de la
+  // plateforme. Sans ce test, un composant qui n'ouvrirait JAMAIS rien
+  // passerait celui du dessus dès qu'on retire l'espion.
+  it('ouvre le sélecteur de la plateforme là où il n’y a pas de feuille', async () => {
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('system');
+    const picker = jest.spyOn(audioRoute, 'openSystemRoutePicker').mockResolvedValue();
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('prejoin-audio-btn'));
+
+    expect(picker).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('audio-output-note')).toBe(null);
   });
 });

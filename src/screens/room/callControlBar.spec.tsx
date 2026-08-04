@@ -46,6 +46,13 @@ function withPaper(node: React.ReactElement): React.ReactElement {
 // fonctions de `src/call/media`, bouchonnées ci-dessus.
 const ROOM = {} as unknown as Room;
 
+const FRONT_CAMERA: CameraChoice = {
+  deviceId: 'cam-front',
+  facing: 'user',
+  nameKey: 'call.cameraFront',
+  ordinal: null,
+};
+
 const BACK_CAMERA: CameraChoice = {
   deviceId: 'cam-back',
   facing: 'environment',
@@ -63,8 +70,15 @@ type Overrides = {
   onToggleHand?: () => void;
   onSendReaction?: (key: ReactionKey) => void;
   effect?: BackgroundEffect | null;
+  onEffectSelect?: (effect: BackgroundEffect) => void;
 };
 
+// **Toute prop dont un test a besoin doit passer par `overrides`.** Trois fois
+// dans ce seul fichier, une valeur FIGÉE ici a rendu une branche entière
+// inatteignable — `effect`, `onEffectSelect`, et `handRaised` avant elles — et
+// la suite restait verte. Une aide de test qui ignore son argument ment plus
+// silencieusement qu'un test absent : celui-ci s'écrit, se lit, et ne prouve
+// rien.
 function bar(overrides: Overrides = {}): React.ReactElement {
   return withPaper(
     <CallControlBar
@@ -82,7 +96,7 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       onSendReaction={overrides.onSendReaction ?? jest.fn()}
       onOpenChat={jest.fn()}
       effect={overrides.effect ?? null}
-      onEffectSelect={jest.fn()}
+      onEffectSelect={overrides.onEffectSelect ?? jest.fn()}
       onLeave={jest.fn()}
     />,
   );
@@ -297,6 +311,42 @@ describe('CallControlBar', () => {
       // Et SURTOUT pas `selectCamera` : il passe par `switchActiveDevice`, qui
       // remplace la piste par une piste sans le décorateur de segmentation.
       expect(select).not.toHaveBeenCalled();
+    });
+
+    // La caméra arrière ne porte aucun effet : le segmenteur y cherche un buste
+    // qui n'existe pas, et le fond masquerait ce qu'on veut montrer.
+    it("retire l'effet en passant sur la caméra arrière", async () => {
+      jest.mocked(media.listCameras).mockResolvedValue([BACK_CAMERA]);
+      jest.spyOn(effects, 'republishEffectCamera').mockResolvedValue({} as never);
+      const onEffectSelect = jest.fn();
+
+      await render(bar({ effect: { kind: 'blur' }, onEffectSelect }));
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+
+      await waitFor(() => expect(onEffectSelect).toHaveBeenCalledWith({ kind: 'none' }));
+    });
+
+    // L'autre moitié, et c'est celle qui compte à l'usage : sans elle, chaque
+    // aller-retour d'objectif ferait refaire le choix de fond.
+    it("rend l'effet en revenant sur la caméra avant", async () => {
+      jest.mocked(media.listCameras).mockResolvedValue([BACK_CAMERA, FRONT_CAMERA]);
+      jest.spyOn(effects, 'republishEffectCamera').mockResolvedValue({} as never);
+      const onEffectSelect = jest.fn();
+
+      await render(bar({ effect: { kind: 'blur' }, onEffectSelect }));
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+      await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+      await waitFor(() => expect(onEffectSelect).toHaveBeenCalledWith({ kind: 'none' }));
+
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-front')).toBeTruthy());
+      await fireEvent.press(screen.getByTestId('camera-option-cam-front'));
+
+      await waitFor(() => expect(onEffectSelect).toHaveBeenCalledWith({ kind: 'blur' }));
     });
 
     it("garde le chemin ordinaire quand aucun effet n'est actif", async () => {
