@@ -1,0 +1,14 @@
+# Les issues vides restent possibles : un rapport hors gabarit vaut mieux qu'un
+# rapport jamais écrit. Les liens ci-dessous aiguillent ce qui ne relève pas de
+# ce dépôt — le client mobile ne porte ni salon, ni compte, ni droit d'accès.
+blank_issues_enabled: true
+contact_links:
+  - name: Faille de sécurité
+    url: https://github.com/linagora/twake-visio/blob/main/SECURITY.md
+    about: N'ouvrez pas d'issue publique — écrivez à info@linagora.com.
+  - name: Le serveur, pas le mobile
+    url: https://github.com/suitenumerique/meet/issues
+    about: Salons, droits d'accès, enregistrement, API — cela se passe dans suitenumerique/meet.
+  - name: Audio, vidéo, connexion temps réel
+    url: https://github.com/livekit/livekit/issues
+    about: Si le flux lui-même est en cause plutôt que l'interface, c'est chez LiveKit.

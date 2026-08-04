@@ -137,20 +137,32 @@ l'IPA sont attachés à la Release GitHub. Le runbook complet — secrets, keyst
 
 ## Contribuer
 
-Les contributions sont bienvenues. Avant d'ouvrir une pull request :
+Les contributions sont bienvenues. Tout est dans
+[`CONTRIBUTING.md`](CONTRIBUTING.md) : monter l'environnement, ce que la
+relecture attend, et les pièges déjà payés ici — plusieurs sont invisibles à la
+lecture et ne se voient qu'à l'exécution.
 
-1. Lisez [`AGENTS.md`](AGENTS.md). Ce fichier est la **source de vérité** des
-   conventions de ce dépôt, et il consigne les erreurs déjà payées — plusieurs
-   sont invisibles à la relecture et ne se voient qu'à l'exécution.
-2. Gardez `npm test`, `npm run typecheck` et `npm run lint` verts.
+L'essentiel en quatre points :
+
+1. Lisez [`AGENTS.md`](AGENTS.md), source de vérité des conventions du dépôt.
+2. Gardez `npm test`, `npm run typecheck` et `npm run lint` verts. Le hook de
+   pre-commit **ne lance pas les tests** : lancez-les vous-même.
 3. Aucune chaîne visible par une personne utilisatrice en dur : les **sept**
    locales sont remplies avant la fusion, et `src/i18n/index.spec.ts` échoue si
    une clé manque quelque part.
 4. Sujets de commit en
    [Conventional Commits](https://www.conventionalcommits.org), à l'impératif.
-   `commitlint` les vérifie.
 
 Les tests sont colocalisés en `*.spec.ts(x)`, sans instantanés.
+
+La participation vaut acceptation du
+[code de conduite](CODE_OF_CONDUCT.md).
+
+## Sécurité
+
+Pour une faille, **n'ouvrez pas d'issue publique** : écrivez à
+`info@linagora.com`. La procédure, le périmètre et ce qui relève du serveur
+plutôt que du client sont dans [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 

@@ -1,0 +1,89 @@
+name: Signaler un défaut
+description: Quelque chose ne fonctionne pas comme attendu dans l'application mobile
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps. **Pour une faille de sécurité, n'utilisez pas ce
+        formulaire** : écrivez à info@linagora.com — voir
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: resume
+    attributes:
+      label: Ce qui se passe
+      description: Ce que vous obtenez, et ce que vous attendiez à la place.
+      placeholder: |
+        Quand je rejoins un salon depuis le pré-accueil, l'arrière-plan choisi
+        n'est pas appliqué : je m'attendais à retrouver le flou.
+    validations:
+      required: true
+
+  - type: textarea
+    id: etapes
+    attributes:
+      label: Comment le reproduire
+      description: Numérotez les étapes. Précisez si cela arrive à chaque fois.
+      placeholder: |
+        1. Ouvrir un salon, écran de pré-accueil
+        2. Choisir le flou dans le menu de la caméra
+        3. Rejoindre
+        4. L'arrière-plan est net — à chaque fois, 5 essais sur 5
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version de l'application
+      description: L'écran **Réglages** l'affiche en bas.
+      placeholder: '0.8.0'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: plateforme
+    attributes:
+      label: Plateforme
+      options:
+        - Android
+        - iOS
+        - les deux
+    validations:
+      required: true
+
+  - type: input
+    id: appareil
+    attributes:
+      label: Appareil et version du système
+      placeholder: 'Pixel 8, Android 15'
+    validations:
+      required: true
+
+  - type: input
+    id: instance
+    attributes:
+      label: Instance meet
+      description: Seulement si elle est publique. Laissez vide sinon.
+      placeholder: 'meet.linagora.com'
+
+  - type: textarea
+    id: journaux
+    attributes:
+      label: Journaux, captures, vidéo
+      description: |
+        Tout ce qui montre le défaut. `adb logcat` côté Android, la console
+        Xcode côté iOS. **Retirez jetons, adresses et noms de participants**
+        avant de coller.
+      render: text
+
+  - type: checkboxes
+    id: prealables
+    attributes:
+      label: Avant d'envoyer
+      options:
+        - label: J'ai cherché si le défaut était déjà signalé
+          required: true
+        - label: Mes journaux ne contiennent ni jeton ni donnée personnelle
+          required: true
