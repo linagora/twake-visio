@@ -23,6 +23,14 @@ jest.mock('src/instance/knownInstances', () => ({
 
 const clipboard = jest.requireMock('expo-clipboard') as { getStringAsync: jest.Mock };
 
+// L'`URL` que React Native installe sur l'APPAREIL, chargée telle quelle
+// depuis le paquet — Jest, lui, tourne sur celle de Node, et les deux ne
+// refusent pas les mêmes chaînes. La mesure complète est dans `pasted.spec.ts` ;
+// ici, elle sert à faire rougir un test qui serait vert pour la mauvaise
+// raison. `require` parce que ce module est en Flow et n'expose aucun type.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { URL: ReactNativeURL } = require('react-native/Libraries/Blob/URL') as { URL: typeof URL };
+
 function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
 }
@@ -299,7 +307,7 @@ describe('JoinSheet', () => {
       expect(screen.queryByTestId('join-host-input')).toBe(null);
     });
 
-    // `trimmed.includes('://')` n'était exercé nulle part côté VRAI : les cinq
+    // Le schéma déjà présent n'était exercé nulle part côté VRAI : les cinq
     // tests ci-dessus ne collent jamais de schéma. Sans ce test, une mutation
     // qui préfixerait toujours `https://` — cassant toute saisie qui porte déjà
     // un schéma — passerait inaperçue.
@@ -314,17 +322,155 @@ describe('JoinSheet', () => {
       expect(onHostChange).toHaveBeenCalledWith('meet.acme.com');
     });
 
+    // L'ASYMÉTRIE que ce correctif referme : `parsePastedMeeting` conserve le
+    // port (`deepLinks.ts:109` lit `parsed.host`), la saisie manuelle le
+    // jetait (`hostname`). Quelqu'un qui s'héberge sur `:8443` marchait donc
+    // en COLLANT son lien et atterrissait sur `:443`, sans un mot, en TAPANT
+    // la même adresse.
+    it("conserve le port d'une adresse saisie, comme le fait un lien collé", async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com:8443');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(onHostChange).toHaveBeenCalledWith('meet.acme.com:8443');
+    });
+
+    // La casse ne vient plus de `URL` : le polyfill de React Native ne
+    // normalise rien, `new URL('https://MEET.ACME.com/x').hostname` y rend
+    // « MEET.ACME.com ». Ce test-ci rougit bien si le `.toLowerCase()` part —
+    // ce que son jumeau de `pasted.spec.ts` ne peut pas faire, Node
+    // normalisant déjà pour lui.
+    it("abaisse la casse de l'adresse saisie", async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'MEET.ACME.com');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(onHostChange).toHaveBeenCalledWith('meet.acme.com');
+    });
+
+    // Un chemin était accepté et jeté en silence. La conception le refuse, et
+    // c'est aussi ce qui distingue « une adresse » de « une URL ».
+    it('refuse une adresse qui porte un chemin', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com/salon');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
+    });
+
+    // Le schéma est COMPARÉ, pas seulement retiré : le retirer aveuglément
+    // ferait de `twakevisio://room` l'hôte « room », qui passe pourtant le
+    // prédicat sans broncher.
+    it('refuse un schéma autre que https', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'twakevisio://room');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
+    });
+
+    // Les trois formes que la classe de caractères laisse passer et qui ne
+    // forment aucun nom de domaine. Une seule table, trois fixtures : c'est la
+    // même conditionnelle, et elle a trois façons d'être vraie.
+    it.each([['.meet.acme.com'], ['meet.acme.com.'], ['meet..acme.com']])(
+      'refuse « %s », qui passe pourtant le jeu de caractères',
+      async (typed) => {
+        const onHostChange = jest.fn();
+        await render(sheet({ onHostChange }));
+        await fireEvent.press(screen.getByTestId('join-host-change'));
+        await fireEvent.changeText(screen.getByTestId('join-host-input'), typed);
+
+        await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+        expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+        expect(onHostChange).not.toHaveBeenCalled();
+      },
+    );
+
     // Le champ VIDÉ : garde le rejet d'une entrée vide, quel que soit le
-    // mécanisme qui le produit. `normalizeHostInput` n'a PAS de garde dédiée à
-    // ce cas — mesurée redondante avec le `catch` sur `new URL('https://')`,
-    // qui lève déjà (voir le commentaire de la fonction) — donc ce test ne
-    // cible pas une ligne précise : il fixe le comportement OBSERVABLE, qui ne
-    // doit pas régresser si le mécanisme interne change à nouveau.
+    // mécanisme qui le produit. `normalizeHostInput` n'a toujours PAS de garde
+    // dédiée à ce cas — le prédicat d'hôte exige au moins un caractère, donc
+    // la chaîne vide tombe dans le même `null` que le reste — et ce test ne
+    // cible donc aucune ligne précise : il fixe le comportement OBSERVABLE,
+    // qui ne doit pas régresser si le mécanisme interne change à nouveau. Il a
+    // déjà changé une fois : le `catch` sur `new URL('https://')` qu'il visait
+    // à l'origine n'existe plus.
     it('refuse un champ vidé, comme une saisie qui ne forme pas une adresse', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
       await fireEvent.press(screen.getByTestId('join-host-change'));
       await fireEvent.changeText(screen.getByTestId('join-host-input'), '');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
+    });
+  });
+
+  // ————————————————————————————————————————————————————————————————————
+  // LE test de ce correctif, et il ne veut RIEN dire sous le `URL` de Node.
+  //
+  // La validation d'avant ne refusait une saisie que parce que le `URL` de
+  // **Node** lève. Celui que React Native installe sur l'appareil
+  // (`polyfillGlobal('URL', …)`, `Libraries/Core/setUpXHR.js:35`) ne lève pas,
+  // et sa regex d'hôte (`Libraries/Blob/URL.js:130-140`) accepte les espaces —
+  // mesure complète dans `pasted.spec.ts`. Sur un téléphone, la feuille
+  // ACCEPTAIT donc « mon serveur », `welcome.tsx:128` ouvrait une session
+  // invité dessus, et la personne lisait « connexion impossible » alors que
+  // c'était son ADRESSE qui était fausse.
+  //
+  // Écrit sous le `URL` de Node, ce test serait vert contre la version
+  // fautive : c'est le moteur, pas le code, qui refusait. On installe donc
+  // celui de l'appareil le temps du test — la seule façon de le faire rougir.
+  describe("l'adresse saisie, sous l'URL de l'APPAREIL", () => {
+    let nodeUrl: typeof URL;
+
+    beforeEach(() => {
+      nodeUrl = globalThis.URL;
+      globalThis.URL = ReactNativeURL;
+    });
+
+    afterEach(() => {
+      globalThis.URL = nodeUrl;
+    });
+
+    it("REFUSE « mon serveur », que l'URL de React Native rendrait pour un hôte", async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'mon serveur');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
+    });
+
+    // La même chose avec l'apostrophe et les espaces de la fixture historique,
+    // qui n'a jamais rien prouvé non plus sur appareil.
+    it("REFUSE « ceci n'est pas une adresse », pour la même raison", async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(
+        screen.getByTestId('join-host-input'),
+        'ceci n’est pas une adresse',
+      );
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
 

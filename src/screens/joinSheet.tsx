@@ -43,28 +43,63 @@ const SEPARATOR_AFTER = CODE_GROUPS.reduce<readonly number[]>((marks, size) => {
 
 const TOTAL_CELLS = CODE_GROUPS.reduce((total, size) => total + size, 0);
 
+// Un schéma en tête, quel qu'il soit. Capturé pour être COMPARÉ, pas seulement
+// retiré : la conception ne veut que `https` (« un scheme autre que https ou un
+// chemin sont refusés »), et retirer aveuglément ferait accepter
+// `twakevisio://room` comme l'hôte « room ».
+const SCHEME_PREFIX = /^([a-z][a-z\d+\-.]*):\/\//i;
+
+// Ce qu'est un hôte, port compris. Volontairement étroit : lettres, chiffres,
+// points et tirets, puis un port décimal. Ni IPv6 entre crochets, ni IDN
+// non-ASCII — aucune instance meet connue n'en porte, et l'élargir demanderait
+// de savoir ce qu'on en ferait ensuite.
+const HOST_WITH_PORT = /^[a-z0-9.-]+(:\d+)?$/i;
+
 // Valide une adresse saisie À LA MAIN dans la rangée de serveur, quand on
-// appuie sur « Changer ». Repris de `normalizeServerUrl` (`server.tsx`) : un
-// schéma manquant est ajouté avant analyse, et c'est `URL` qui tranche ce qui
-// forme un hôte — pas une regex maison, qui laisserait toujours passer un cas
-// auquel on n'a pas pensé.
+// appuie sur « Changer ».
 //
-// PAS de garde dédiée à une entrée vide : `https://` seul est un URL INVALIDE
-// pour un schéma spécial — mesuré, `new URL('https://')` lève —, donc le
-// `catch` ci-dessous rejette déjà ce cas. Une garde `trimmed.length === 0`
-// existait ici ; retirée après l'avoir mutée en `if (false)` sans qu'aucun
-// test ne rougisse : les deux chemins mènent au même `null`, et rien ne peut
-// jamais les distinguer. Ne pas la remettre sans une entrée qui, elle, sépare
-// les deux — il n'y en a pas.
+// Un PRÉDICAT explicite, et surtout PAS `new URL()` dans un `try`/`catch`
+// comme avant : **`URL` n'est pas le même objet sous Jest et sur l'appareil.**
+// React Native installe le sien (`polyfillGlobal('URL', …)`,
+// `Libraries/Core/setUpXHR.js:35`), un jeu de regex qui NE JETTE JAMAIS pour
+// une chaîne sans schéma et dont la classe de caractères de l'hôte
+// (`/^https?:\/\/(?:[^@]+@)?([^:\/?#]+)/`, `Libraries/Blob/URL.js:130-140`)
+// ACCEPTE LES ESPACES. Mesuré le 2026-08-05 en chargeant ce polyfill sous
+// Jest : `new URL('https://mon serveur').hostname` rend « mon serveur » sur
+// appareil, et lève sous Node.
+//
+// La version d'avant ne refusait donc RIEN sur un téléphone : quelqu'un tapait
+// « mon serveur », la feuille l'acceptait, `welcome.tsx:128` ouvrait une
+// session invité dessus, et tout appel réseau ultérieur échouait en disant
+// « connexion impossible » à une personne dont c'était l'ADRESSE qui était
+// fausse. Elle ne rejetait que ce que Node rejette — c'est-à-dire rien de ce
+// que voit l'utilisateur.
+//
+// Le PORT est CONSERVÉ, comme le fait déjà le collage (`deepLinks.ts:109` lit
+// `parsed.host`, jamais `hostname`) : sans cela, la même personne qui héberge
+// son instance sur `:8443` marchait en COLLANT un lien et se retrouvait
+// silencieusement sur `:443` en TAPANT la même adresse.
+//
+// Conséquence assumée : un chemin n'est plus toléré. `https://meet.acme.com/x`
+// était accepté et son `/x` jeté sans un mot ; il est désormais refusé, ce que
+// demande la conception.
 function normalizeHostInput(raw: string): string | null {
   const trimmed = raw.trim();
-  const withScheme = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
-  try {
-    const { hostname } = new URL(withScheme);
-    return hostname.length > 0 ? hostname.toLowerCase() : null;
-  } catch {
-    return null;
-  }
+
+  const scheme = SCHEME_PREFIX.exec(trimmed);
+  if (scheme !== null && scheme[1]?.toLowerCase() !== 'https') return null;
+  const host = scheme === null ? trimmed : trimmed.slice(scheme[0].length);
+
+  if (!HOST_WITH_PORT.test(host)) return null;
+  // Un point en tête, en queue, ou deux à la suite passent la classe de
+  // caractères ci-dessus et ne forment pourtant aucun nom de domaine.
+  const name = host.split(':')[0] ?? '';
+  if (name.startsWith('.') || name.endsWith('.') || name.includes('..')) return null;
+
+  // Explicite, et non plus offert par `URL` : le polyfill de React Native ne
+  // normalise PAS la casse — `new URL('https://MEET.ACME.com/x').hostname`
+  // rend « MEET.ACME.com » sur appareil là où Node rend « meet.acme.com ».
+  return host.toLowerCase();
 }
 
 export function JoinSheet({
