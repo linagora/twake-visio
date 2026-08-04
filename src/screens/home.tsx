@@ -21,6 +21,26 @@ const styles = StyleSheet.create({
   root: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
+// L'hôte à montrer dans la feuille « Rejoindre ». `new URL` GARDÉ, comme
+// `agendaHosts` (`deepLinks.ts`) et `toSamePath` le font déjà : cet appel se
+// produit à CHAQUE rendu de l'écran principal, et il jetterait pour une valeur
+// que l'écran n'utilise même pas — `home.tsx` ne passe pas `onHostChange`,
+// donc la rangée de serveur ne se rend pas ici. Faire tomber tout l'accueil
+// sur une URL de compte illisible serait le pire échange possible.
+//
+// Le repli est le NOM D'HÔTE par défaut, pas la chaîne fautive : la feuille
+// affiche un hôte, jamais un URL.
+function hostLabel(serverUrl: string): string {
+  try {
+    return new URL(serverUrl).hostname;
+  } catch {
+    // Un simple retrait de schéma, PAS un second `new URL` : celui-là
+    // demanderait à son tour un garde-fou, et un repli qui peut échouer n'en
+    // est pas un.
+    return DEFAULT_SERVER_URL.replace(/^https?:\/\//, '');
+  }
+}
+
 /**
  * L'accueil : deux actions, et les prochaines visioconférences.
  *
@@ -136,7 +156,7 @@ export function HomeScreen(): React.ReactElement {
           serveur de la feuille ne se rend donc pas ici — c'est le cas invité,
           hors de cet écran, qui la fait apparaître. */}
       <JoinSheet
-        host={new URL(account?.instance.serverUrl ?? DEFAULT_SERVER_URL).hostname}
+        host={hostLabel(account?.instance.serverUrl ?? DEFAULT_SERVER_URL)}
         onJoinRoom={({ slug }) => {
           setJoinOpen(false);
           router.push(`/room/${slug}/prejoin`);

@@ -121,6 +121,22 @@ describe('HomeScreen', () => {
     expect(screen.queryByTestId('home-join-sheet-host')).toBe(null);
   });
 
+  // `new URL` sur une valeur qui vient du magasin de comptes, à CHAQUE rendu
+  // de l'écran principal, et pour un hôte que cet écran n'affiche même pas —
+  // il ne passe pas `onHostChange`, donc la rangée de serveur ne s'y rend pas.
+  // Sans garde-fou, un `serverUrl` illisible faisait tomber tout l'accueil : le
+  // pire échange possible. Le dépôt garde déjà ses autres `new URL`
+  // (`agendaHosts`, `toSamePath`).
+  it('rend quand même l’accueil si le serveur du compte est illisible', async () => {
+    jest
+      .spyOn(accounts, 'getActiveAccount')
+      .mockReturnValue({ ...ACCOUNT, instance: { ...ACCOUNT.instance, serverUrl: '' } } as never);
+
+    await renderHome();
+
+    expect(screen.getByTestId('home-join')).toBeOnTheScreen();
+  });
+
   // La conditionnelle prend ses deux valeurs : fermée au départ.
   it('ne monte pas la feuille tant qu’on ne l’ouvre pas', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
