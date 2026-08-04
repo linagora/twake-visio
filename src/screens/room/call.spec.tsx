@@ -2141,6 +2141,51 @@ describe('CallScreen, main levée', () => {
     );
   });
 
+  // L'AUTRE polarité de celui du dessus, et le défaut qu'elle referme.
+  //
+  // `handleToggleHand` gardait `account === null`, alors que `toggleHand` ne
+  // prend aucun compte et que `callControlBar.tsx:389-402` rend `hand-toggle`
+  // sans condition : un invité appuyait sur la commande et il ne se passait
+  // RIEN — ni état, ni message. La conception range pourtant la main levée
+  // parmi ce qu'un invité GARDE.
+  //
+  // `getActiveAccount` est rendu NUL ici, contrairement aux autres tests
+  // invité de ce fichier : c'est l'état réel d'un téléphone sans compte, et
+  // c'est le seul qui reproduise l'échec — avec le compte du `beforeEach`, la
+  // version fautive appelait bien `toggleHand`, seulement sur le mauvais
+  // serveur.
+  it("lève la main d'un INVITÉ, sur le serveur de sa session", async () => {
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith('https://meet.acme.com', 'r-7', 'jwt-de-salle', true),
+    );
+  });
+
+  // La clause de garde qu'un test PEUT atteindre. `current === null` n'en est
+  // pas une : sans visiteur, `failure` vaut `error.unauthorized` dès le
+  // premier rendu et la barre n'est jamais montée, donc rien à presser.
+  // `access === null`, lui, se produit avec la barre à l'écran — la réponse du
+  // serveur n'est pas encore arrivée — et c'est la même sortie anticipée.
+  it("ne demande rien tant que le serveur n'a pas rendu l'accès", async () => {
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    // Jamais résolue : `access` reste nul pendant tout le test.
+    jest.spyOn(rooms, 'fetchRoomAccess').mockReturnValue(new Promise(() => undefined));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    expect(toggle).not.toHaveBeenCalled();
+  });
+
   it('propose de BAISSER dans la barre quand sa propre main est levée', async () => {
     // La commande est passée du menu à la BARRE, en un appui : c'est un signal
     // qu'on donne pendant que quelqu'un parle, donc au moment précis où l'on ne

@@ -821,11 +821,27 @@ export function CallScreen(): React.ReactElement {
   //
   // La garde porte sur `handBusy` par *valeur* : `disabled` est interdit sur
   // cet écran, Paper le teste avant toute couleur explicite.
+  //
+  // `getVisitor()` et non `account`, comme `handleShare` et `handleCopyLink`
+  // juste au-dessus : `toggleHand` ne prend AUCUN compte — son seul secret est
+  // le jeton de salle (`src/api/hand.ts`) —, `callControlBar.tsx:389-402` rend
+  // `hand-toggle` sans condition, et la conception range la main levée parmi
+  // ce qu'un invité GARDE. Avec `account === null`, un invité appuyait donc
+  // sur le bouton et il ne se passait RIEN : pas d'état, pas de message. Le
+  // même échec silencieux que `handleCopyLink` avait déjà payé, une commande
+  // plus à gauche.
+  //
+  // La branche `current === null` n'est pas atteignable depuis l'écran : sans
+  // visiteur, `failure` vaut `error.unauthorized` dès le premier rendu et la
+  // barre n'est jamais montée. Elle reste pour le typage, et aucun test ne
+  // peut la distinguer — c'est `access === null` qui garde vraiment la même
+  // sortie, et lui a le sien.
   const handleToggleHand = (): void => {
-    if (account === null || access === null || handBusy) return;
+    const current = getVisitor();
+    if (current === null || access === null || handBusy) return;
     setHandBusy(true);
     toggleHand(
-      account.instance.serverUrl,
+      visitorServerUrl(current),
       // `RoomViewSet.get_object()` tente l'UUID puis retombe sur le slug : les
       // deux formes résolvent le même objet, et le repli supprime purement et
       // simplement le cas `room.id === null`.
