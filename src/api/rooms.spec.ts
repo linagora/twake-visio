@@ -131,6 +131,28 @@ describe('fetchRoomAccess, avec un compte', () => {
 
     expect(anonSpy).not.toHaveBeenCalled();
   });
+
+  // meet tire le nom du jeton porteur sur ce chemin : lui en passer un autre
+  // le laisserait choisir lequel croire, et une requête authentifiée porterait
+  // en plus le nom affiché en clair jusque dans les journaux d'accès et les
+  // proxys. Rien d'autre dans ce fichier n'inspectait le chemin réellement
+  // envoyé à authedFetch : une régression réintroduisant `?username=` sur ce
+  // chemin passait inaperçue.
+  it("n'ajoute jamais le nom en paramètre de requête", async () => {
+    const authedSpy = jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'abc',
+        access_level: 'public',
+        livekit: { url: 'https://lk', room: 'r-1', token: 'tok' },
+      },
+    });
+
+    await fetchRoomAccess(AS_ACCOUNT, 'abc');
+
+    expect(authedSpy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/abc/');
+  });
 });
 
 describe('createRoom', () => {

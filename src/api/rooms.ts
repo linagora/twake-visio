@@ -25,11 +25,9 @@ function toRoom(raw: RawRoom): Room {
   };
 }
 
-// Le branchement compte / invité, en UN seul endroit du dépôt.
-//
-// `username` ne part QUE pour un invité : sur le chemin authentifié, meet tire
-// le nom du jeton porteur, et lui en passer un autre le laisserait choisir
-// lequel croire.
+// Le branchement compte / invité, en UN seul endroit du dépôt. Générique : il
+// ignore tout du contenu de `path` et `init`, donc rien n'est dit ici sur CE
+// QUE porte telle ou telle requête — voir chaque appelant pour ça.
 async function visitorFetch<T>(
   visitor: Visitor,
   path: string,
@@ -43,6 +41,13 @@ export async function fetchRoomAccess(
   visitor: Visitor,
   slug: string,
 ): Promise<ApiResult<RoomAccess>> {
+  // Le paramètre `?username=` ne part QUE pour un invité : sur le chemin
+  // authentifié, meet tire le nom du jeton porteur, et lui en passer un autre
+  // dans l'URL le laisserait choisir lequel croire — en clair, en plus, dans
+  // les journaux d'accès et les proxys, ce qui aggrave l'erreur d'un simple
+  // doublon. (`requestEntry`, plus bas, poste le nom dans le corps sur les
+  // DEUX chemins : c'est un contrat d'API différent, pas une incohérence.)
+  //
   // Le nom vide n'ajoute AUCUN paramètre plutôt qu'un paramètre vide : meet
   // retomberait alors sur « Anonymous », ce qu'il fait déjà sans le paramètre,
   // mais une chaîne vide dans l'URL se lirait comme un nom choisi.
