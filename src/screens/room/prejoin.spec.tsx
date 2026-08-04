@@ -598,6 +598,23 @@ describe('le pré-join en invité', () => {
     expect(remember).toHaveBeenCalledWith('Camille');
   });
 
+  // Le bouton se rend sur `name.trim()`, mais c'est `name` BRUT qui partait
+  // dans le magasin — puis, de là, dans le `?username=` que `fetchRoomAccess`
+  // envoie à meet, qui en fait le `name` du jeton LiveKit. « ␣Camille␣ » se
+  // serait affiché tel quel sur la vignette de tous les autres participants.
+  it('détoure le nom avant de le mémoriser', async () => {
+    const remember = jest.spyOn(guest, 'rememberGuestName');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+    await fireEvent.changeText(screen.getByTestId('prejoin-name-input'), '  Camille  ');
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(remember).toHaveBeenCalledWith('Camille');
+  });
+
   it("n'écrit RIEN dans l'historique pour un invité", async () => {
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
@@ -707,6 +724,37 @@ describe('le pré-join avec un compte', () => {
 // n'est pas le sien et un onglet Réglages qui propose de se déconnecter —
 // pendant que la session invité restait ouverte dans MMKV. `call.tsx` et
 // `lobby.tsx` branchaient déjà, le pré-join non.
+// LE sablier éternel, sur l'écran même que ce lot dit en débarrasser.
+//
+// `lobby.tsx:63-67` et `call.tsx:252-254` posent tous deux `error.unauthorized`
+// comme état de DÉPART quand `getVisitor()` rend `null` ; le pré-join ne le
+// faisait pas. Son effet sortait alors sans rien poser, `access` restait nul,
+// et le rendu tombait sur l'`ActivityIndicator` — sans message, sans sortie,
+// sans retour.
+describe('le pré-join sans aucun visiteur', () => {
+  it('dit pourquoi, au lieu de tourner à jamais', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    expect(screen.getByTestId('prejoin-error')).toHaveTextContent('error.unauthorized');
+    expect(screen.queryByTestId('prejoin-loading')).toBe(null);
+    // Et rien n'est parti sur le réseau : il n'y avait personne à annoncer.
+    expect(fetchAccess).not.toHaveBeenCalled();
+  });
+
+  it('laisse une sortie, comme les autres états terminaux', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    await render(prejoin());
+
+    await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+});
+
 describe('les sorties du pré-join', () => {
   // `endGuestSession` est espionné SANS bouchon : le vrai écrit dans le faux
   // MMKV du dépôt, donc l'appel est sûr. Motif hérité de `lobby.spec.tsx`.

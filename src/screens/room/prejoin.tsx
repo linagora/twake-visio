@@ -147,7 +147,19 @@ export function PrejoinScreen(): React.ReactElement {
   // deux ensemble donnent les trois états de cet écran — on attend, on est
   // entré, on est refusé — là où `access` seul n'en distinguait que deux et
   // laissait le troisième se confondre avec l'attente.
-  const [failure, setFailure] = useState<MessageKey | null>(null);
+  //
+  // Sans visiteur — ni compte ni session invité —, il n'y a aucun accès à
+  // demander : l'état de DÉPART le dit, comme le font `lobby.tsx:63-67` et
+  // `call.tsx:252-254`. Le poser depuis l'effet appellerait `setState` de
+  // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
+  //
+  // Ce garde-fou manquait ICI, et c'est l'écran qui donne son nom au défaut :
+  // l'effet sortait sans rien poser, `access` restait nul, et le rendu tombait
+  // sur l'`ActivityIndicator` du bas — le sablier éternel que tout ce lot dit
+  // refermer.
+  const [failure, setFailure] = useState<MessageKey | null>(() =>
+    visitor === null ? 'error.unauthorized' : null,
+  );
   // Les deux interrupteurs portent l'état *coupé* et non l'état actif : leurs
   // libellés sont « Caméra désactivée » et « Micro coupé ». Un interrupteur
   // dont la position haute contredit son libellé se lit à l'envers.
@@ -231,8 +243,15 @@ export function PrejoinScreen(): React.ReactElement {
     // Un invité n'a PAS d'historique : rien ne l'authentifie d'une visite à
     // l'autre, donc aucun compte ne pourrait jamais relire une ligne écrite
     // ici. Il mémorise son nom pour la PROCHAINE fois à la place.
+    //
+    // DÉTOURÉ à l'écriture, et c'est le seul endroit où le faire : le bouton
+    // qui déclenche ce geste se rend sur `name.trim()`, mais c'est `name` brut
+    // qui partait dans le magasin — puis, de là, dans le `?username=` que
+    // `fetchRoomAccess` construit pour meet, qui en fait le `name` du jeton
+    // LiveKit. « ␣Camille␣ » se serait donc affiché tel quel sur la vignette
+    // de tous les autres participants.
     if (visitor?.kind === 'guest') {
-      rememberGuestName(name);
+      rememberGuestName(name.trim());
     } else if (slug !== undefined && access !== null) {
       rememberVisit(slug, access.room.name, Date.now());
     }
