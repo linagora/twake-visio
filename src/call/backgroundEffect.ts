@@ -3,6 +3,10 @@ import { Track, type Room } from 'livekit-client';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useEffect, useState } from 'react';
 
+// `'user'` ou `'environment'`, le vocabulaire de `getUserMedia` — celui que le
+// contrôleur natif attend, et non le `'front'`/`'back'` d'AndroidX.
+type FacingMode = 'user' | 'environment';
+
 // Les effets d'arrière-plan : flou et fonds virtuels.
 //
 // Ce module est la SEULE porte entre l'application et le natif. Les écrans
@@ -88,6 +92,37 @@ export async function publishEffectCamera(
     source: Track.Source.Camera,
   });
   return track;
+}
+
+/**
+ * Rechange d'objectif SANS perdre l'effet.
+ *
+ * **`switchActiveDevice` de LiveKit ne peut pas servir ici, et c'est mesuré :**
+ * il remplace la piste publiée par une piste qu'il fabrique lui-même, où le
+ * décorateur de segmentation n'est pas. Le propriétaire est passé en caméra
+ * arrière, est revenu à l'avant, et son fond avait disparu — sans possibilité
+ * d'en remettre un, puisque `setEffect` pilote un processeur dont plus aucune
+ * piste publiée ne dépendait.
+ *
+ * On dépublie donc, et on republie une piste à effet sur le bon objectif. Le
+ * fond, lui, n'a pas à être redemandé : le processeur natif est unique et garde
+ * le dernier `setEffect`.
+ *
+ * `stopOnUnpublish` à `true` : sans lui la caméra précédente reste ACQUISE,
+ * témoin allumé, et deux objectifs ouverts en même temps se disputent le
+ * capteur sur certains appareils.
+ */
+export async function republishEffectCamera(
+  room: Room,
+  facingMode: FacingMode,
+): Promise<MediaStreamTrack | null> {
+  if (nativeModule === null) return null;
+  const publication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+  const published = publication?.track;
+  if (published !== undefined && published !== null) {
+    await room.localParticipant.unpublishTrack(published, true);
+  }
+  return publishEffectCamera(room, 640, 480, 30, facingMode);
 }
 
 /**

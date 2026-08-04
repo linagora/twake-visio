@@ -1,9 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import type { Room } from 'livekit-client';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
+import type { BackgroundEffect } from 'src/call/backgroundEffect';
+import * as effects from 'src/call/backgroundEffect';
+import type { CameraChoice } from 'src/call/devices';
 import type { RaisedHand } from 'src/call/hands';
+import * as media from 'src/call/media';
 import type { ReactionKey } from 'src/call/reactions';
 import { BAR_SURFACE_COLOR } from 'src/screens/room/controlBar';
 import { tokens } from 'src/ui/tokens';
@@ -42,6 +46,13 @@ function withPaper(node: React.ReactElement): React.ReactElement {
 // fonctions de `src/call/media`, bouchonnées ci-dessus.
 const ROOM = {} as unknown as Room;
 
+const BACK_CAMERA: CameraChoice = {
+  deviceId: 'cam-back',
+  facing: 'environment',
+  nameKey: 'call.cameraBack',
+  ordinal: null,
+};
+
 type Overrides = {
   defaultMicOn?: boolean;
   defaultCameraOn?: boolean;
@@ -51,6 +62,7 @@ type Overrides = {
   handBusy?: boolean;
   onToggleHand?: () => void;
   onSendReaction?: (key: ReactionKey) => void;
+  effect?: BackgroundEffect | null;
 };
 
 function bar(overrides: Overrides = {}): React.ReactElement {
@@ -69,7 +81,7 @@ function bar(overrides: Overrides = {}): React.ReactElement {
       onToggleHand={overrides.onToggleHand ?? jest.fn()}
       onSendReaction={overrides.onSendReaction ?? jest.fn()}
       onOpenChat={jest.fn()}
-      effect={null}
+      effect={overrides.effect ?? null}
       onEffectSelect={jest.fn()}
       onLeave={jest.fn()}
     />,
@@ -92,6 +104,15 @@ function fill(testID: string): ReturnType<typeof screen.getByTestId> {
 }
 
 describe('CallControlBar', () => {
+  // Ce fichier espionne `src/call/backgroundEffect`, un objet de MODULE partagé
+  // entre les tests. Sans cette restauration, le dernier espion fuit vers les
+  // suivants — mesuré ici : un `republishEffectCamera` espionné dans un test
+  // gardait son compte d'appels et faisait échouer le test voisin, qui vérifie
+  // justement qu'il n'est PAS appelé. Dix-huit specs de ce dépôt le font déjà.
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('pose le voile translucide de la barre sur chaque commande neutre', async () => {
     // Les cinq, et pas seulement celles que ce fichier rend lui-même :
     // `audio-output-btn` vient d'`audioOutputControl.tsx` et `more-btn` de
@@ -250,5 +271,48 @@ describe('CallControlBar', () => {
     //
     // Ce qui EST observable, c'est l'état que la couleur accompagne — et il est
     // gardé par les deux libellés ci-dessus.
+  });
+  // Les DEUX polarités, et il les faut : `effect` vaut `null` dans toutes les
+  // fixtures de ce fichier, donc la branche à effet n'était empruntée par
+  // aucun test. C'est exactement ce qui a laissé passer le défaut — le
+  // propriétaire est passé en caméra arrière, est revenu à l'avant, et son
+  // fond avait disparu sans possibilité d'en remettre un.
+  describe("le changement d'objectif", () => {
+    it('REPUBLIE la piste à effet quand un effet est actif', async () => {
+      // La liste est vide par défaut dans ce fichier : sans caméra à choisir,
+      // le test presserait un élément absent et passerait pour la mauvaise
+      // raison.
+      jest.mocked(media.listCameras).mockResolvedValue([BACK_CAMERA]);
+      const republish = jest.spyOn(effects, 'republishEffectCamera').mockResolvedValue({} as never);
+      const select = jest.mocked(media.selectCamera);
+      select.mockClear();
+
+      await render(bar({ effect: { kind: 'blur' } }));
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+
+      expect(republish).toHaveBeenCalledWith(ROOM, 'environment');
+      // Et SURTOUT pas `selectCamera` : il passe par `switchActiveDevice`, qui
+      // remplace la piste par une piste sans le décorateur de segmentation.
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it("garde le chemin ordinaire quand aucun effet n'est actif", async () => {
+      jest.mocked(media.listCameras).mockResolvedValue([BACK_CAMERA]);
+      const republish = jest.spyOn(effects, 'republishEffectCamera');
+      const select = jest.mocked(media.selectCamera);
+      select.mockClear();
+
+      await render(bar({ effect: null }));
+      await fireEvent.press(screen.getByTestId('camera-menu-btn'));
+      await waitFor(() => expect(screen.getByTestId('camera-option-cam-back')).toBeTruthy());
+
+      await fireEvent.press(screen.getByTestId('camera-option-cam-back'));
+
+      expect(select).toHaveBeenCalled();
+      expect(republish).not.toHaveBeenCalled();
+    });
   });
 });

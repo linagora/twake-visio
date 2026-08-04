@@ -31,6 +31,7 @@ import {
 import type { ReactionKey } from 'src/call/reactions';
 import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
 import type { BackgroundEffect } from 'src/call/backgroundEffect';
+import { republishEffectCamera } from 'src/call/backgroundEffect';
 import { CameraMenu } from 'src/screens/room/cameraMenu';
 import { HAND_SIGNAL_TEXT } from 'src/screens/room/handBanner';
 import { ReactionRow } from 'src/screens/room/reactionRow';
@@ -244,6 +245,34 @@ export function CallControlBar({
   // la préférence est enregistrée et le prochain `setCameraEnabled(true)` la
   // prendra. Rien à distinguer côté écran.
   const handleSelectCamera = (choice: CameraChoice): void => {
+    // **Avec un effet, on REPUBLIE plutôt que de changer d'objectif.**
+    //
+    // `selectCamera` passe par `switchActiveDevice`, qui remplace la piste par
+    // une piste que LiveKit fabrique — sans le décorateur de segmentation. Le
+    // propriétaire est passé en caméra arrière, est revenu à l'avant, et son
+    // fond avait disparu, sans possibilité d'en remettre un : `setEffect`
+    // pilotait un processeur dont plus aucune piste publiée ne dépendait.
+    //
+    // `'unknown'` retombe sur le chemin ordinaire : republier demande une face,
+    // et en inventer une filmerait dans la mauvaise direction.
+    // Capturée AVANT la promesse : le rétrécissement de type ne survit pas au
+    // passage dans la fermeture, et `'unknown'` y redeviendrait possible.
+    const facing = choice.facing;
+    if (effect !== null && facing !== 'unknown') {
+      republishEffectCamera(room, facing)
+        .then((track) => {
+          if (track === null) {
+            onNotice('call.deviceSwitchFailed');
+            return;
+          }
+          setActiveCameraId(choice.deviceId);
+          onFacingChange(facing);
+          onNotice(null);
+        })
+        .catch(() => onNotice('call.deviceSwitchFailed'));
+      return;
+    }
+
     selectCamera(room, choice.deviceId)
       .then((switched) => {
         if (!switched) {
