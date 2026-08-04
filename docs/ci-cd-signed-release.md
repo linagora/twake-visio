@@ -176,17 +176,33 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 
 ---
 
+## Ce qui a tourné, et comment on le sait
+
+`v0.8.0`, le 2026-08-04. **Un workflow vert ne prouve pas qu'un binaire est
+signé** : il prouve qu'aucune commande n'a rendu un code non nul. Ce dépôt a
+déjà livré un `release` resté en clé de debug sous une chaîne verte. Ce qui
+suit a donc été vérifié **sur les binaires publiés**, téléchargés depuis la
+Release GitHub.
+
+|                   | iOS                                                                         | Android                                                                     |
+| ----------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| signature         | `Apple Distribution: Linagora (KUT463DS29)`                                 | notre keystore — SHA-256 identique à celui de `keytool -list -v`, schéma v2 |
+| profil            | `match AppStore com.linagora.twakevisio`, type App Store, expire 2027-07-04 | —                                                                           |
+| version embarquée | `CFBundleShortVersionString` 0.8.0, build 4                                 | `versionName` 0.8.0, `versionCode` 3                                        |
+| destination       | TestFlight, état `VALID`, `ITSAppUsesNonExemptEncryption=false`             | Firebase App Distribution                                                   |
+
+L'APK universel pèse **199 Mo** : `reactNativeArchitectures` vaut les quatre ABI
+(`armeabi-v7a,arm64-v8a,x86,x86_64`), lu dans le `gradle.properties` que
+`prebuild` génère. Play redécoupe l'AAB par architecture, donc un appareil ne
+télécharge qu'une fraction ; c'est l'APK de test qui est lourd, pas
+l'application.
+
 ## Ce qui n'est pas fait
 
-- **Android est vérifié de bout en bout** sur un runner GitHub, le 2026-08-03 :
-  `prebuild`, keystore décodé, `assembleRelease` en 1661 s, APK signé livré à
-  Firebase App Distribution en 14 s.
-- **iOS ne l'est pas encore.** Deux causes ont été levées — le profil de
-  provisionnement absent du projet régénéré, puis l'Xcode trop ancien de
-  `macos-15` — mais aucune exécution n'est allée jusqu'à `pilot`. La première
-  qui ira demandera d'être lue en entier plutôt que crue sur son seul état
-  vert : le tronçon `gym` → TestFlight n'a jamais été emprunté ici.
 - **Le premier dépôt Play n'a pas eu lieu.** La fiche existe, le nom de paquet
-  n'est donc pas encore fixé côté Play.
+  n'est donc pas encore fixé côté Play. Voir la note sur le dépôt manuel plus
+  haut.
+- **TestFlight externe** : l'envoi est interne, aucun groupe externe n'est
+  câblé. `distribute_external` demande que le premier build passe la revue Beta.
 - Les métadonnées App Store et Play (descriptions, captures) ne sont pas
   reprises : elles décrivent Drive. La lane `deliver` n'est donc pas câblée ici.
