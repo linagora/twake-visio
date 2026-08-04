@@ -81,11 +81,16 @@ aucune procédure de récupération.
 
 - Enregistrer l'application Android `com.linagora.twakevisio` dans Firebase, et
   relever son **App ID** (`FIREBASE_APP_ID`).
-- Le compte de service GCP doit avoir _Firebase App Distribution Admin_, et
-  l'accès Play Console pour les envois AAB. Le même que Drive si le projet est
-  partagé.
-- Play seulement : créer la fiche, et **déposer le premier AAB à la main**. Play
-  l'exige ; `supply` prend la suite ensuite.
+- **Le compte de service a besoin de DEUX autorisations, et un seul fichier ne
+  les donne pas.** _Firebase App Distribution Admin_ côté GCP pour la
+  distribution de test, **et** une invitation dans la Play Console
+  (_Utilisateurs et autorisations_, au minimum _Gérer les versions de test_)
+  pour les envois AAB. Celui de ce projet n'avait que la première le
+  2026-08-04 : Firebase marchait, l'API Play répondait « The caller does not
+  have permission ». Voir la section des pièges.
+- Play seulement : créer la fiche, et **déposer le premier AAB à la main** —
+  c'est ce dépôt qui fixe le nom de paquet. `supply` ne prend la suite qu'une
+  fois l'invitation ci-dessus accordée.
 
 ---
 
