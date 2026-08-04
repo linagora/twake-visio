@@ -28,9 +28,21 @@ export function startGuestSession(serverUrl: string): void {
   store.set(SERVER_KEY, serverUrl);
 }
 
+// PAS de garde sur la chaîne VIDE, et c'est une mesure, pas un oubli. MMKV rend
+// `undefined` — jamais `''` — pour une clé absente ou retirée
+// (`MMKV.nitro.d.ts:45-62`, un getter par type), et les trois appelants de
+// `startGuestSession` passent une chaîne non vide : `welcome.tsx` construit
+// `https://${hôte}`, `openMeeting.ts` rend `DEFAULT_SERVER_URL` ou
+// `https://${host}`. `serverUrl.length === 0` n'avait donc aucune valeur
+// d'entrée capable de la rendre vraie — le même faux garde-fou que celui déjà
+// retiré de `normalizeHostInput` (Tâche 5), et aucun test ne peut distinguer
+// les deux chemins puisqu'ils mènent au même `null`.
+//
+// Ne pas la remettre sans un appelant qui, lui, sépare les deux. Il n'y en a
+// pas aujourd'hui.
 export function getGuestSession(): GuestSession | null {
   const serverUrl = store.getString(SERVER_KEY);
-  if (serverUrl === undefined || serverUrl.length === 0) return null;
+  if (serverUrl === undefined) return null;
   return { serverUrl, displayName: readRememberedGuestName() };
 }
 
