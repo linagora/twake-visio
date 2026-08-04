@@ -46,6 +46,21 @@ export function parseMeetingLink(url: string, allowedHosts: readonly string[]): 
 
   if (parsed.protocol === `${APP_SCHEME}:`) {
     // twakevisio://room/<slug> — l'hôte porte « room ».
+    //
+    // **MORT SUR APPAREIL, et ses tests unitaires y sont donc vides de sens.**
+    // Cette comparaison n'est vraie que sous le `URL` WHATWG de Node, celui de
+    // Jest. Celui que React Native installe (`polyfillGlobal('URL', …)`,
+    // `Libraries/Core/setUpXHR.js:35`) tire son hôte d'une regex ancrée sur
+    // `^https?://` (`Libraries/Blob/URL.js:130-140`) : pour `twakevisio://`
+    // elle ne correspond à rien, `parsed.host` vaut la CHAÎNE VIDE, et la
+    // fonction rend `null`. Un lien profond `twakevisio://room/<slug>` ne
+    // s'ouvre donc pas sur un téléphone. Mesuré le 2026-08-05, relevé dans
+    // `pasted.spec.ts` (bloc « sous l'URL de l'APPAREIL »), qui garde ce fait
+    // par un test.
+    //
+    // PRÉ-EXISTANT et hors du périmètre du mode invité — consigné plutôt que
+    // corrigé, par décision explicite. Un chemin mort que personne ne sait
+    // mort est pire qu'un chemin mort.
     if (parsed.host !== 'room') return null;
     const candidate = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
     if (candidate === undefined) return null;
@@ -94,6 +109,9 @@ function fromUrl(candidate: string): PastedTarget | null {
   }
 
   if (parsed.protocol === `${APP_SCHEME}:`) {
+    // MÊME CHEMIN MORT sur appareil que dans `parseMeetingLink` ci-dessus, et
+    // pour la même raison : lire son commentaire, qui porte la mesure. Coller
+    // un `twakevisio://` ne remplit donc pas les cases sur un téléphone.
     if (parsed.host !== 'room') return null;
     const segment = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
     if (segment === undefined) return null;
