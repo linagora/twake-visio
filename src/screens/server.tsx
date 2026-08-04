@@ -16,6 +16,24 @@ const styles = StyleSheet.create({
   screen: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
+// ATTENTION : ce `catch` ne refuse presque rien SUR L'APPAREIL, et ses tests
+// le laissent croire. React Native installe son propre `URL`
+// (`polyfillGlobal('URL', …)`, `Libraries/Core/setUpXHR.js:35`), un jeu de
+// regex qui ne jette pas et dont le getter `origin`
+// (`/^(https?:\/\/[^/]+)/`, `Libraries/Blob/URL.js:147-150`) accepte les
+// espaces. Mesuré le 2026-08-05 en chargeant ce polyfill sous Jest :
+//
+//   new URL('https://mon serveur').origin  →  Node : lève
+//                                          →  RN   : 'https://mon serveur'
+//
+// C'est le MÊME défaut que celui corrigé dans `joinSheet.tsx` pour la rangée
+// de serveur du mode invité, qui repose désormais sur un prédicat explicite
+// plutôt que sur `URL` — voir son commentaire, et le bloc « sous l'URL de
+// l'APPAREIL » de `pasted.spec.ts`, qui porte la mesure complète.
+//
+// PRÉ-EXISTANT sur le chemin de CONNEXION, hors du périmètre du mode invité :
+// consigné plutôt que corrigé, pour que la prochaine personne qui touche cette
+// fonction sache que son `catch` ne la protège pas.
 function normalizeServerUrl(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed.length === 0) return null;
