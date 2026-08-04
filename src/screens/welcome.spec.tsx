@@ -26,6 +26,8 @@ jest.mock('react-i18next', () => ({
 // `joinSheet.spec.tsx` et `home.spec.tsx`.
 jest.mock('expo-clipboard', () => ({ getStringAsync: jest.fn(async () => '') }));
 
+const clipboard = jest.requireMock('expo-clipboard') as { getStringAsync: jest.Mock };
+
 // L'écran monte désormais `JoinSheet`, qui vit dans un `Portal` : sans
 // `PaperProvider` ancêtre le rendu jette un `AggregateError` peu bavard, que
 // la feuille soit ouverte ou non — `Portal` lui-même a besoin du manager,
@@ -45,6 +47,9 @@ beforeEach(() => {
   jest.restoreAllMocks();
   mockPush.mockClear();
   mockReplace.mockClear();
+  // Le double vit à côté de `node_modules` et échappe à `restoreAllMocks` :
+  // sans cette remise à zéro, l'hôte collé par un test fuirait vers le suivant.
+  clipboard.getStringAsync.mockReset().mockResolvedValue('');
 });
 
 describe('WelcomeScreen', () => {
@@ -151,6 +156,51 @@ describe("l'entrée invité", () => {
     await fireEvent.press(screen.getByTestId('welcome-join-sheet-submit'));
 
     expect(mockPush).toHaveBeenCalledWith('/room/abc-defg-hij/prejoin');
+  });
+
+  // La QUATRIÈME chose que fait cet écran, et la seule qu'aucun test ne
+  // tenait : le câblage `onHostChange={setHost}`.
+  //
+  // Le supprimer était une mutation VERTE — les trois tests ci-dessus passent
+  // tous par l'hôte par défaut, que le collage ne fait pas bouger. Sur
+  // appareil, la conséquence est entière : quelqu'un colle un lien
+  // `meet.acme.com`, la feuille continue d'afficher `meet.linagora.com`, la
+  // session invité s'ouvre sur l'instance par défaut, et le salon y est
+  // « introuvable ». La Décision 4 du partenaire humain — « un lien collé
+  // garde toujours SON hôte » — est exactement ce que ce test garde.
+  //
+  // L'assertion porte sur la SESSION ouverte, pas sur ce que la feuille
+  // affiche : c'est elle qui décide quel serveur sera interrogé ensuite.
+  it("ouvre la session sur l'hôte du lien COLLÉ, pas sur celui par défaut", async () => {
+    const start = jest.spyOn(guest, 'startGuestSession');
+    clipboard.getStringAsync.mockResolvedValue('https://meet.acme.com/abc-defg-hij');
+    await renderWelcome();
+    await fireEvent.press(screen.getByTestId('join-as-guest-btn'));
+
+    await fireEvent.press(screen.getByTestId('welcome-join-sheet-paste'));
+    // Le collage remplit les dix cases ET remonte l'hôte : attendre le premier
+    // prouve que le second est arrivé, les deux venant du même gestionnaire.
+    await waitFor(() =>
+      expect(screen.getByTestId('welcome-join-sheet-cell-0')).toHaveTextContent('a'),
+    );
+    await fireEvent.press(screen.getByTestId('welcome-join-sheet-submit'));
+
+    expect(start).toHaveBeenCalledWith('https://meet.acme.com');
+  });
+
+  // La conséquence VISIBLE du même câblage : la rangée de serveur montre
+  // l'hôte adopté. Sans elle, on aurait la session juste et l'affichage
+  // menteur — deux instructions, deux assertions.
+  it("montre l'hôte adopté dans la rangée de serveur", async () => {
+    clipboard.getStringAsync.mockResolvedValue('https://meet.acme.com/abc-defg-hij');
+    await renderWelcome();
+    await fireEvent.press(screen.getByTestId('join-as-guest-btn'));
+
+    await fireEvent.press(screen.getByTestId('welcome-join-sheet-paste'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('welcome-join-sheet-host')).toHaveTextContent('meet.acme.com'),
+    );
   });
 
   // La TROISIÈME instruction du même gestionnaire — fermer la feuille — est
