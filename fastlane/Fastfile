@@ -37,9 +37,23 @@ platform :android do
     )
   end
 
+  # **Le tout PREMIER dépôt sur Google Play se fait à la main**, et cette lane
+  # existe pour ça : Play refuse `supply` tant qu'aucun binaire n'a été déposé
+  # par la console, parce que c'est ce dépôt-là qui FIXE le nom de paquet de la
+  # fiche. Tant qu'il n'a pas eu lieu, `com.linagora.twakevisio` n'existe pour
+  # Play que dans notre `app.json`.
+  #
+  # Elle construit donc l'AAB et s'arrête ; le workflow le publie en artefact,
+  # et on le dépose depuis la console. Ensuite seulement `release` prend la
+  # suite, à chaque tag.
+  desc "AAB signé, SANS envoi — pour le premier dépôt manuel sur Google Play"
+  lane :aab do
+    gradle(task: "bundle", build_type: "Release", project_dir: "android")
+  end
+
   desc "AAB signé, envoyé sur la piste interne de Google Play"
   lane :release do
-    gradle(task: "bundle", build_type: "Release", project_dir: "android")
+    aab
     supply(
       track: "internal",
       aab: "android/app/build/outputs/bundle/release/app-release.aab",

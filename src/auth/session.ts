@@ -1,5 +1,5 @@
 import { refreshTokens } from 'src/auth/oidc';
-import { loadTokens, saveTokens } from 'src/auth/storage';
+import { clearTokens, loadTokens, saveTokens } from 'src/auth/storage';
 import type { InstanceConfig } from 'src/instance/types';
 
 // Trois issues, parce que l'appelant doit pouvoir dire trois choses
@@ -14,6 +14,18 @@ export type RefreshOutcome =
 const REFRESH_GUARD_MS = 30_000;
 
 const inFlight = new Map<string, Promise<RefreshOutcome>>();
+
+// Le refus d'un rafraîchissement est le SEUL moment où l'application apprend
+// que la session est morte. Aucun écran ne peut le déduire de son côté : celui
+// qui reçoit « aucune session » ne sait pas s'il n'y en a jamais eu — au
+// démarrage, avant connexion — ou si celle qu'il avait vient d'être perdue.
+// D'où ce signal, émis une fois, à l'endroit qui sait.
+const sessionLostListeners = new Set<() => void>();
+
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => sessionLostListeners.delete(listener);
+}
 
 export async function getAccessToken(
   accountId: string,
@@ -46,8 +58,40 @@ export async function forceRefresh(
       const result = await refreshTokens(config, tokens.refreshToken);
       if (!result.ok) {
         // Une panne du SSO ou du réseau n'est pas un refus : la session est
-        // peut-être parfaitement valide, seul le service manque.
+        // peut-être parfaitement valide, seul le service manque. Écarter les
+        // jetons ici déconnecterait quelqu'un pour un Wi-Fi qui a hoqueté.
         const transient = result.error === 'server' || result.error === 'network';
+        if (!transient) {
+          // Un REFUS, lui, est définitif : le jeton de rafraîchissement ne
+          // redeviendra pas valide. Mesuré le 2026-08-03 — la session OIDC
+          // avait disparu du magasin du SSO (« Unable to find OIDC session »)
+          // et le client est déclaré sans accès hors ligne, donc le jeton est
+          // mort avec elle. Le garder faisait rejouer le même refus toutes
+          // les minutes : six `POST /oauth2/token` en `400` dans les journaux
+          // du SSO, sans aucune chance d'aboutir.
+          //
+          // Une écriture qui échoue ne doit pas masquer le refus : l'appelant
+          // doit l'apprendre dans tous les cas.
+          try {
+            await clearTokens(accountId);
+          } catch {
+            // Jetons non effacés, session tout de même perdue.
+          }
+          // Après l'effacement, jamais avant : un écouteur qui renvoie vers la
+          // connexion doit trouver un stockage déjà vide, sans quoi l'écran
+          // d'entrée le renverrait aussitôt vers l'accueil.
+          //
+          // Un écouteur qui jette ne doit pas emporter les autres, ni faire
+          // passer un refus pour une indisponibilité — c'est ce que ferait le
+          // `catch` global de cette fonction.
+          for (const listener of sessionLostListeners) {
+            try {
+              listener();
+            } catch {
+              // Un écouteur défaillant ne change rien au sort de la session.
+            }
+          }
+        }
         return { ok: false, reason: transient ? 'unavailable' : 'refused' };
       }
 

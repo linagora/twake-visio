@@ -1,12 +1,26 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { PaperProvider } from 'react-native-paper';
 
 import { mediaDevices } from '@livekit/react-native-webrtc';
 
 import * as rooms from 'src/api/rooms';
+import * as audioRoute from 'src/call/audioRoute';
+import * as effectsModule from 'src/call/backgroundEffect';
 import * as accounts from 'src/auth/accounts';
 import { tokens } from 'src/ui/tokens';
 import { PrejoinScreen } from './prejoin';
+
+// Le pré-join héberge désormais la feuille des effets, donc un `Portal` : sans
+// `PaperProvider` ancêtre, le rendu jette un `AggregateError` peu bavard. Même
+// préambule que `home.spec.tsx`, qui a rencontré ceci au Lot 2.
+function prejoin(): React.ReactElement {
+  return (
+    <PaperProvider theme={{ animation: { scale: 0 } }}>
+      <PrejoinScreen />
+    </PaperProvider>
+  );
+}
 
 const getUserMedia = mediaDevices.getUserMedia as unknown as jest.Mock;
 
@@ -97,7 +111,7 @@ describe('PrejoinScreen', () => {
   it("affiche le bouton de jonction quand l'accès est accordé", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-    await render(<PrejoinScreen />);
+    await render(prejoin());
 
     await waitFor(() => {
       expect(screen.getByTestId('join-call-btn')).toBeTruthy();
@@ -110,7 +124,7 @@ describe('PrejoinScreen', () => {
       error: { kind: 'lobby', participantId: '' },
     });
 
-    await render(<PrejoinScreen />);
+    await render(prejoin());
 
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/room/reunion/lobby');
@@ -130,7 +144,7 @@ describe('PrejoinScreen', () => {
       .spyOn(rooms, 'fetchRoomAccess')
       .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
 
-    await render(<PrejoinScreen />);
+    await render(prejoin());
 
     await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
     expect(screen.getByTestId('prejoin-error')).toHaveTextContent('error.unauthorized');
@@ -142,7 +156,7 @@ describe('PrejoinScreen', () => {
   it("porte l'état des périphériques dans l'URL de l'appel", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-    await render(<PrejoinScreen />);
+    await render(prejoin());
     await waitFor(() => {
       expect(screen.getByTestId('camera-switch')).toBeTruthy();
     });
@@ -168,7 +182,7 @@ describe('PrejoinScreen', () => {
   describe('l’aperçu caméra', () => {
     async function ready(): Promise<void> {
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -204,7 +218,7 @@ describe('PrejoinScreen', () => {
   describe('les deux commandes', () => {
     async function ready(): Promise<void> {
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -256,7 +270,7 @@ describe('PrejoinScreen', () => {
   describe('les couleurs explicites', () => {
     async function ready(): Promise<void> {
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -295,7 +309,7 @@ describe('PrejoinScreen', () => {
       preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, micOffOnJoin });
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -313,7 +327,7 @@ describe('PrejoinScreen', () => {
       preferences.readPreferences.mockReturnValue({ ...DEFAULT_PREFS, cameraOffOnJoin });
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -331,7 +345,7 @@ describe('PrejoinScreen', () => {
     it('enregistre la visite au moment de rejoindre', async () => {
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -347,7 +361,7 @@ describe('PrejoinScreen', () => {
     it('n’enregistre rien tant qu’on n’a pas rejoint', async () => {
       jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-      await render(<PrejoinScreen />);
+      await render(prejoin());
       await waitFor(() => {
         expect(screen.getByTestId('join-call-btn')).toBeTruthy();
       });
@@ -366,7 +380,12 @@ describe("PrejoinScreen — barre d'état", () => {
     // blanches. Invisibles sur les écrans clairs, correctes ici.
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
 
-    await render(<PrejoinScreen />);
+    // `prejoin()` et non `<PrejoinScreen />` nu : ce test vient de `main`, écrit
+    // AVANT que le pré-join n'héberge la feuille des effets, donc un `Portal`.
+    // Sans `PaperProvider` ancêtre le rendu jette un `AggregateError` peu
+    // bavard — un conflit sémantique que git ne pouvait pas voir, les deux
+    // côtés ayant modifié des lignes différentes.
+    await render(prejoin());
     await waitFor(() => expect(screen.getByTestId('prejoin-root')).toBeTruthy());
 
     expect(statusBarStyles()).toContain('light');
@@ -384,5 +403,86 @@ describe("PrejoinScreen — barre d'état", () => {
     await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
 
     expect(statusBarStyles()).toContain('light');
+  });
+});
+
+// Le propriétaire a branché son casque Bluetooth SUR CET ÉCRAN et n'avait aucun
+// moyen d'y choisir la destination du son. Le réglage n'existait qu'une fois la
+// séance ouverte — trop tard pour la seule personne qui voulait le vérifier
+// avant d'entrer.
+describe('PrejoinScreen — sortie audio', () => {
+  it('offre le réglage avant même d’être entré', async () => {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+  });
+
+  it('ouvre la feuille sur un appui, là où il y a une feuille', async () => {
+    // `audioRouteControl` est espionné parce que le préréglage Jest fixe
+    // `Platform.OS` à `'ios'`, où le mode vaut `'system'` : il n'y a alors
+    // AUCUNE feuille à ouvrir, seulement le sélecteur de la plateforme. Sans
+    // cet espion, le test attendrait une surface qui n'existe pas sur la
+    // plateforme qu'il simule — et son échec se lirait comme un bouton mal
+    // câblé.
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('devices');
+    jest.spyOn(audioRoute, 'listAudioDevices').mockResolvedValue([]);
+    jest.spyOn(audioRoute, 'readCurrentAudioDeviceId').mockResolvedValue(null);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+    // « Rendu ou pas rendu » plutôt qu'une prop : une prop consommée par un
+    // composant n'atteint jamais l'élément hôte, et l'assertion serait verte
+    // dans les deux états.
+    expect(screen.queryByTestId('audio-output-note')).toBe(null);
+
+    await fireEvent.press(screen.getByTestId('prejoin-audio-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('audio-output-note')).toBeTruthy());
+  });
+
+  // L'autre chemin, celui d'iOS : aucune feuille, le sélecteur de la
+  // plateforme. Sans ce test, un composant qui n'ouvrirait JAMAIS rien
+  // passerait celui du dessus dès qu'on retire l'espion.
+  it('ouvre le sélecteur de la plateforme là où il n’y a pas de feuille', async () => {
+    jest.spyOn(audioRoute, 'audioRouteControl').mockReturnValue('system');
+    const picker = jest.spyOn(audioRoute, 'openSystemRoutePicker').mockResolvedValue();
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-audio-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('prejoin-audio-btn'));
+
+    expect(picker).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('audio-output-note')).toBe(null);
+  });
+});
+
+// Cette garde a SAUTÉ en regroupant les boutons par sens, et rien ne l'a dit :
+// aucun test ne la couvrait. Sur iOS, le bouton se serait affiché et n'aurait
+// rien fait — le pendant Vision n'existe pas.
+describe("PrejoinScreen — bouton d'effets", () => {
+  it('ne le rend pas là où le module natif manque', async () => {
+    jest.spyOn(effectsModule, 'areEffectsSupported').mockReturnValue(false);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('camera-switch')).toBeTruthy());
+    expect(screen.queryByTestId('prejoin-effects-btn')).toBe(null);
+  });
+
+  it('le rend là où il existe', async () => {
+    // L'autre borne : sans elle, un composant qui ne rendrait JAMAIS le bouton
+    // passerait le test ci-dessus.
+    jest.spyOn(effectsModule, 'areEffectsSupported').mockReturnValue(true);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-effects-btn')).toBeTruthy());
   });
 });

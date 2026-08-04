@@ -68,12 +68,29 @@ jest.mock('livekit-client', () => ({
     Reconnecting: 'reconnecting',
     Reconnected: 'reconnected',
   },
+  // Les valeurs RÉELLES de l'énumération du SDK, pas des inventions : le module
+  // compare `reason` à ces constantes, et des valeurs fantaisistes rendraient
+  // le test vert contre une table de correspondance fausse. Relevées le
+  // 2026-08-04 dans `livekit-client` 2.18.
+  DisconnectReason: {
+    UNKNOWN_REASON: 0,
+    CLIENT_INITIATED: 1,
+    DUPLICATE_IDENTITY: 2,
+    SERVER_SHUTDOWN: 3,
+    PARTICIPANT_REMOVED: 4,
+    ROOM_DELETED: 5,
+    STATE_MISMATCH: 6,
+    JOIN_FAILURE: 7,
+    MIGRATION: 8,
+    SIGNAL_CLOSE: 9,
+    ROOM_CLOSED: 10,
+  },
 }));
 
-function emit(event: string): void {
+function emit(event: string, ...args: unknown[]): void {
   const handler = mockHandlers.get(event);
   if (handler === undefined) throw new Error(`Aucun gestionnaire abonné à « ${event} »`);
-  handler();
+  handler(...args);
 }
 
 // Vide la file de microtâches pour de bon. `await Promise.resolve()` n'en
@@ -536,7 +553,7 @@ describe('createCallSession — événements du serveur', () => {
     await session.connect(ACCESS);
     const seen = record(session);
 
-    emit('disconnected');
+    emit('disconnected', 5 /* ROOM_DELETED */);
 
     expect(session.getState()).toEqual({ status: 'disconnected', reason: 'closed' });
     expect(seen).toEqual(['disconnected']);
@@ -558,7 +575,7 @@ describe('createCallSession — événements périmés', () => {
     // fonction de connexion peut atteindre `handleDisconnect` plusieurs `await`
     // plus tard — donc après le départ d'une nouvelle tentative. Le drapeau
     // `hangingUp` ne couvrait que la fenêtre d'un `disconnect()` en cours.
-    emit('disconnected');
+    emit('disconnected', 5 /* ROOM_DELETED */);
 
     expect(session.getState()).toEqual({ status: 'connecting' });
 
@@ -594,7 +611,7 @@ describe('createCallSession — événements périmés', () => {
       // ouvre alors une nouvelle ère, et le dénouement de la tentative ne
       // relâche que le verrou de la sienne. Si l'ouverture d'ère ne relâchait
       // pas aussi le verrou, il ne le serait jamais.
-      emit('disconnected');
+      emit('disconnected', 5 /* ROOM_DELETED */);
     });
 
     await session.connect(ACCESS);
@@ -625,7 +642,7 @@ describe('createCallSession — événements périmés', () => {
   it('ignore un Reconnecting reçu après la fin de la séance', async () => {
     const session = createCallSession();
     await session.connect(ACCESS);
-    emit('disconnected');
+    emit('disconnected', 5 /* ROOM_DELETED */);
     expect(session.getState()).toEqual({ status: 'disconnected', reason: 'closed' });
 
     emit('reconnecting');
@@ -644,7 +661,7 @@ describe('createCallSession — coupure volontaire', () => {
     // est le seul moyen de prouver qu'un raccrochage volontaire ne passe pas
     // par un état d'erreur que l'UI afficherait.
     mockDisconnect.mockImplementation(async () => {
-      emit('disconnected');
+      emit('disconnected', 5 /* ROOM_DELETED */);
     });
     const session = createCallSession();
     await session.connect(ACCESS);
@@ -898,5 +915,48 @@ describe('abonné qui raccroche pendant la notification', () => {
     // plus jamais et l'utilisateur ne peut plus rejoindre.
     expect(mockConnect).toHaveBeenCalledTimes(1);
     expect(session.getState()).toEqual({ status: 'connected' });
+  });
+});
+
+// **Le motif du SDK était JETÉ, et toute déconnexion devenait « la réunion est
+// terminée ».** Le propriétaire s'est vu éjecté sans rien faire, avec ce
+// message, alors que la réunion continuait sans lui.
+//
+// Une ligne par situation, et c'est le point : un seul test laisserait une
+// table de correspondance constante passer.
+describe('createCallSession — motif de déconnexion', () => {
+  const cases: readonly (readonly [string, number, string])[] = [
+    ['une salle supprimée est une fin', 5, 'closed'],
+    ['une salle fermée aussi', 10, 'closed'],
+    ["l'arrêt du serveur aussi", 3, 'closed'],
+    ['une expulsion se dit expulsion', 4, 'removed'],
+    ['une identité en double se dit ainsi', 2, 'elsewhere'],
+    ['un départ voulu n’est pas une panne', 1, 'left'],
+    ['une coupure de signal est une perte', 9, 'lost'],
+    ['un motif inconnu aussi', 0, 'lost'],
+  ];
+
+  for (const [title, code, expected] of cases) {
+    it(title, async () => {
+      const session = createCallSession();
+      await session.connect(ACCESS);
+
+      emit('disconnected', code);
+
+      expect(session.getState()).toEqual({ status: 'disconnected', reason: expected });
+    });
+  }
+
+  // Sans motif du tout, on dit « perdu » et non « terminé ». C'est le repli le
+  // moins trompeur : annoncer une fin de réunion qui n'a pas eu lieu envoie
+  // chercher une cause inexistante, quand « la liaison est tombée » invite
+  // simplement à revenir.
+  it('retombe sur une perte quand le SDK ne dit rien', async () => {
+    const session = createCallSession();
+    await session.connect(ACCESS);
+
+    emit('disconnected');
+
+    expect(session.getState()).toEqual({ status: 'disconnected', reason: 'lost' });
   });
 });

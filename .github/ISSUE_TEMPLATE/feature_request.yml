@@ -1,0 +1,42 @@
+name: Proposer une évolution
+description: Suggérer une fonction ou une amélioration
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: besoin
+    attributes:
+      label: Le besoin
+      description: |
+        Décrivez la **situation**, pas la solution. Ce qui vous bloque
+        aujourd'hui, et à quelle fréquence cela vous arrive.
+      placeholder: |
+        En réunion depuis un train, je passe du casque Bluetooth au haut-parleur
+        plusieurs fois par heure, et il faut à chaque fois ouvrir deux menus.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposition
+    attributes:
+      label: Ce que vous imaginez
+      description: Facultatif. Une idée d'interface, un comportement attendu.
+
+  - type: dropdown
+    id: plateforme
+    attributes:
+      label: Plateforme concernée
+      options:
+        - les deux
+        - Android
+        - iOS
+    validations:
+      required: true
+
+  - type: textarea
+    id: ailleurs
+    attributes:
+      label: Comment font les autres
+      description: |
+        Si l'application web de meet, ou un autre client, résout déjà cela,
+        dites-le : c'est le meilleur argument, et souvent le plus rapide à
+        transposer.

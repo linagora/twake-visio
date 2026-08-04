@@ -149,12 +149,22 @@ describe('actions de modération', () => {
     expect(result).toEqual({ ok: true, value: undefined });
   });
 
+  // **Ce test a figé une route qui n'existe pas.** Il vérifiait que l'appel
+  // portait sur `update-participant-role/` — le nom écrit dans le plan — et il
+  // était vert, parce qu'un espion sur `authedFetch` ne peut rien savoir de ce
+  // que le serveur reconnaît. « Passer administrateur » échouait depuis.
+  //
+  // Mesuré le 2026-08-04 sur l'instance réelle : `update-participant-role/`
+  // rend la page HTML de Django, comme une route inventée pour l'occasion,
+  // quand `update-participant/` rend un 401 JSON. Un test d'URL ne prouve donc
+  // qu'une chose — que le code appelle ce qu'on a écrit —, et il faut mesurer
+  // la route ailleurs.
   it('change un rôle', async () => {
     const spy = jest.spyOn(client, 'authedFetch').mockResolvedValue({ ok: true, value: {} });
 
     const result = await updateParticipantRole(ACCOUNT, 'r-1', 'PA_abc', 'administrator');
 
-    expect(spy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/r-1/update-participant-role/');
+    expect(spy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/r-1/update-participant/');
     const init = spy.mock.calls[0]?.[2] as RequestInit;
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({

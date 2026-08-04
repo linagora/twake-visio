@@ -4,8 +4,16 @@ import React from 'react';
 import { tokens } from 'src/ui/tokens';
 import { ReglagesScreen } from './reglages';
 
+// `t` INTERPOLE réellement : sans cela il ne peut pas distinguer
+// `t('settings.version', { version })` d'une chaîne où le numéro serait écrit
+// en dur — c'est précisément l'erreur qui a laissé « Twake Visio 1.0 » vivre
+// dans les sept locales jusqu'à la veille de la première publication. Même
+// précaution que `cameraMenu.spec.tsx`, pour la même raison.
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) =>
+      values === undefined ? key : `${key}|${JSON.stringify(values)}`,
+  }),
 }));
 
 // Même préambule que les huit autres specs d'écran : importer `expo-router`
@@ -257,5 +265,22 @@ describe('ReglagesScreen', () => {
     await fireEvent.press(screen.getByTestId('settings-signout-btn'));
 
     expect(signOut).toHaveBeenCalled();
+  });
+  // Le numéro de version vient de `app.json`, lu par `expo-constants` au build.
+  // Écrit dans les traductions, il vivait en sept exemplaires qu'aucun bump ne
+  // pouvait atteindre.
+  it('affiche la version que porte la configuration, jamais une constante', async () => {
+    await render(<ReglagesScreen />);
+
+    // La version RÉELLE du projet, lue au même endroit que l'écran : un
+    // littéral ici deviendrait faux au prochain bump, et le test rougirait
+    // pour la mauvaise raison.
+    const expected = jest.requireActual<{ default: { expoConfig?: { version?: string } } }>(
+      'expo-constants',
+    ).default.expoConfig?.version;
+
+    expect(screen.getByTestId('settings-version')).toHaveTextContent(
+      `settings.version|{"version":"${expected ?? ''}"}`,
+    );
   });
 });

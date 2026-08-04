@@ -16,7 +16,7 @@ import { tokens } from 'src/ui/tokens';
 // et s'ancre EN BAS À DROITE, c'est-à-dire exactement là où les commandes
 // finissent.
 //
-//     BAR_HEIGHT (60) + tokens.spacing.sm (8) = 68 dp
+//     BAR_HEIGHT (56) + tokens.spacing.sm (8) = 64 dp
 //
 // Le pas d'écart est là pour que la bulle ne colle pas à la barre ; il vient de
 // l'échelle d'espacement, pas d'une appréciation.
@@ -31,7 +31,7 @@ const BOTTOM_GUARD = BAR_HEIGHT + tokens.spacing.sm;
 
 // La même garde, plus le bas du panneau de discussion quand il est ouvert :
 //
-//     68 + CHAT_FOOTER_HEIGHT (56 + 16) = 140 dp
+//     64 + CHAT_FOOTER_HEIGHT (56 + 16) = 136 dp
 //
 // Sans elle, les bulles se posaient sur `chat-send` dès la deuxième — le
 // panneau occupe toute la région au-dessus de la barre, et sa zone de saisie en

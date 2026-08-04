@@ -3,7 +3,7 @@
     "name": "Twake Visio",
     "slug": "twake-visio",
     "scheme": "twakevisio",
-    "version": "0.1.0",
+    "version": "0.8.0",
     "orientation": "default",
     "plugins": [
       "expo-router",
@@ -48,6 +48,9 @@
     },
     "ios": {
       "bundleIdentifier": "com.linagora.twakevisio",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "Twake Visio utilise la caméra pour la visioconférence.",
         "NSMicrophoneUsageDescription": "Twake Visio utilise le micro pour la visioconférence.",

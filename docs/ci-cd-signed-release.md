@@ -81,11 +81,16 @@ aucune procédure de récupération.
 
 - Enregistrer l'application Android `com.linagora.twakevisio` dans Firebase, et
   relever son **App ID** (`FIREBASE_APP_ID`).
-- Le compte de service GCP doit avoir _Firebase App Distribution Admin_, et
-  l'accès Play Console pour les envois AAB. Le même que Drive si le projet est
-  partagé.
-- Play seulement : créer la fiche, et **déposer le premier AAB à la main**. Play
-  l'exige ; `supply` prend la suite ensuite.
+- **Le compte de service a besoin de DEUX autorisations, et un seul fichier ne
+  les donne pas.** _Firebase App Distribution Admin_ côté GCP pour la
+  distribution de test, **et** une invitation dans la Play Console
+  (_Utilisateurs et autorisations_, au minimum _Gérer les versions de test_)
+  pour les envois AAB. Celui de ce projet n'avait que la première le
+  2026-08-04 : Firebase marchait, l'API Play répondait « The caller does not
+  have permission ». Voir la section des pièges.
+- Play seulement : créer la fiche, et **déposer le premier AAB à la main** —
+  c'est ce dépôt qui fixe le nom de paquet. `supply` ne prend la suite qu'une
+  fois l'invitation ci-dessus accordée.
 
 ---
 
@@ -137,6 +142,53 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 
 ## Pièges relevés, et ce qu'ils coûtent
 
+- **`macos-26` et Xcode 26.4 au minimum, pour le COMPILATEUR.** `macos-15`
+  plafonne à Xcode 26.3, sous lequel une source d'Expo SDK 57 ne compile pas —
+  `JavaScriptCodable+Date.swift:53:50`, dans `expo-modules-jsi` :
+
+  ```
+  error: type of expression is ambiguous without a type annotation
+  ```
+
+  Mesuré le 2026-08-04, et sur la source **publiée** : un `npm pack` du même
+  57.0.4 rend un fichier identique au nôtre, donc rien n'était rustiné
+  localement. Le même extrait passe le typecheck sous Xcode 26.6. Le workflow
+  s'arrête désormais avec un message qui nomme la cause si l'image ne propose
+  que 26.3.
+
+- **Le premier dépôt sur Google Play se fait à la MAIN.** `supply` échoue tant
+  qu'aucun binaire n'a été déposé par la console : c'est ce dépôt-là qui fixe le
+  nom de paquet de la fiche. Lancez `release-android.yml` avec **Produire l'AAB
+  en artefact**, téléchargez l'artefact, déposez-le dans _Tests internes_.
+- **Le compte de service Firebase n'a PAS de droits sur Play**, et ce sont deux
+  autorisations distinctes malgré le fichier unique. Mesuré le 2026-08-04 :
+  `firebase-adminsdk-fbsvc@visio-mobile-android` distribue bien sur Firebase App
+  Distribution, et se fait renvoyer « The caller does not have permission » par
+  l'API Play. **Tant que ce droit manque, `publish_to_play_store` échouera même
+  après le premier dépôt manuel.** À corriger dans la console : _Utilisateurs et
+  autorisations_ → inviter l'adresse du compte de service → droits sur
+  l'application, au minimum _Gérer les versions de test_.
+
+  Les messages de l'API séparent d'ailleurs deux causes qu'on confondrait :
+
+  | réponse                               | ce qu'elle dit                                       |
+  | ------------------------------------- | ---------------------------------------------------- |
+  | `Package not found: …`                | le compte est authentifié, le paquet lui est inconnu |
+  | `The caller does not have permission` | le paquet **existe**, ce compte n'y a pas accès      |
+
+  Interroger un paquet **dont on sait qu'il n'est pas là** est donc le contrôle
+  positif qui distingue « pas de droits » de « pas d'application ».
+
+- **Le lien d'inscription des testeurs internes n'existe que dans la console.**
+  L'API ne l'expose pas : _Tests internes_ → onglet _Testeurs_ → « Comment les
+  testeurs rejoignent votre test ». Il ne sert qu'une fois la liste enregistrée
+  **et** une version publiée sur la piste.
+- **Une liste de testeurs Play n'accepte que des comptes Google.** Une adresse
+  professionnelle qui n'est pas dans un domaine Google Workspace, et sur
+  laquelle personne n'a créé de compte Google, est refusée — et une seule entrée
+  invalide empêche d'enregistrer toute la liste. Firebase App Distribution, lui,
+  invite n'importe quelle adresse : c'est la voie courte pour faire essayer un
+  build.
 - **JDK 21, ni 17 ni 24.** Le 24 casse la configuration CMake d'AGP sur ce
   projet — mesuré le 2026-08-03, `configureCMakeDebug` échoue sur « a restricted
   method in java.lang.System has been called ». Le 17 ne couvre pas Expo 57.
@@ -157,11 +209,33 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 
 ---
 
+## Ce qui a tourné, et comment on le sait
+
+`v0.8.0`, le 2026-08-04. **Un workflow vert ne prouve pas qu'un binaire est
+signé** : il prouve qu'aucune commande n'a rendu un code non nul. Ce dépôt a
+déjà livré un `release` resté en clé de debug sous une chaîne verte. Ce qui
+suit a donc été vérifié **sur les binaires publiés**, téléchargés depuis la
+Release GitHub.
+
+|                   | iOS                                                                         | Android                                                                     |
+| ----------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| signature         | `Apple Distribution: Linagora (KUT463DS29)`                                 | notre keystore — SHA-256 identique à celui de `keytool -list -v`, schéma v2 |
+| profil            | `match AppStore com.linagora.twakevisio`, type App Store, expire 2027-07-04 | —                                                                           |
+| version embarquée | `CFBundleShortVersionString` 0.8.0, build 4                                 | `versionName` 0.8.0, `versionCode` 3                                        |
+| destination       | TestFlight, état `VALID`, `ITSAppUsesNonExemptEncryption=false`             | Firebase App Distribution                                                   |
+
+L'APK universel pèse **199 Mo** : `reactNativeArchitectures` vaut les quatre ABI
+(`armeabi-v7a,arm64-v8a,x86,x86_64`), lu dans le `gradle.properties` que
+`prebuild` génère. Play redécoupe l'AAB par architecture, donc un appareil ne
+télécharge qu'une fraction ; c'est l'APK de test qui est lourd, pas
+l'application.
+
 ## Ce qui n'est pas fait
 
-- Aucune de ces chaînes n'a **jamais tourné** sur ce dépôt. Elles sont
-  transposées d'un dépôt où elles fonctionnent, et adaptées à une arborescence
-  native régénérée — c'est précisément la partie qui n'a pas d'équivalent chez
-  Drive, donc celle qui demandera une première exécution attentive.
+- **Le premier dépôt Play n'a pas eu lieu.** La fiche existe, le nom de paquet
+  n'est donc pas encore fixé côté Play. Voir la note sur le dépôt manuel plus
+  haut.
+- **TestFlight externe** : l'envoi est interne, aucun groupe externe n'est
+  câblé. `distribute_external` demande que le premier build passe la revue Beta.
 - Les métadonnées App Store et Play (descriptions, captures) ne sont pas
   reprises : elles décrivent Drive. La lane `deliver` n'est donc pas câblée ici.

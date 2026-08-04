@@ -1,9 +1,37 @@
 import { registerGlobals } from '@livekit/react-native';
-import { Room, RoomEvent } from 'livekit-client';
+import { DisconnectReason, Room, RoomEvent } from 'livekit-client';
 
 import { startAudioRoute, stopAudioRoute } from 'src/call/audioRoute';
 import { startCallService, stopCallService } from 'src/call/callService';
 import type { CallState, RoomAccess } from 'src/call/types';
+
+/**
+ * Les seize motifs du SDK, réduits aux QUATRE situations qui appellent quatre
+ * phrases différentes. Un cinquième mot ne servirait personne : c'est le nombre
+ * de choses distinctes qu'une personne peut avoir à comprendre, pas le nombre
+ * de codes que le serveur sait émettre.
+ *
+ * Le `default` couvre `SIGNAL_CLOSE`, `STATE_MISMATCH`, `JOIN_FAILURE`,
+ * `CONNECTION_TIMEOUT`, `MEDIA_FAILURE` et `UNKNOWN_REASON` : tous disent la
+ * même chose à qui les subit — la liaison est tombée —, et les distinguer
+ * demanderait à l'utilisateur de connaître la topologie du serveur.
+ */
+function toReason(reason?: DisconnectReason): string {
+  switch (reason) {
+    case DisconnectReason.ROOM_DELETED:
+    case DisconnectReason.ROOM_CLOSED:
+    case DisconnectReason.SERVER_SHUTDOWN:
+      return 'closed';
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return 'removed';
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return 'elsewhere';
+    case DisconnectReason.CLIENT_INITIATED:
+      return 'left';
+    default:
+      return 'lost';
+  }
+}
 
 // `livekit-client` s'appuie sur les objets WebRTC globaux — RTCPeerConnection,
 // navigator.mediaDevices — que React Native ne fournit pas. `registerGlobals()`
@@ -159,13 +187,32 @@ export function createCallSession(): CallSession {
     setState({ status: 'connected' });
   }
 
-  function onDisconnected(): void {
+  /**
+   * **Le motif du SDK est LU, et non plus écrasé.**
+   *
+   * `RoomEvent.Disconnected` porte un `DisconnectReason`, et le code le
+   * jetait : toute déconnexion devenait « closed », donc « La réunion est
+   * terminée » à l'écran. Le propriétaire s'est vu éjecté sans rien faire, avec
+   * ce message — alors que la réunion continuait sans lui.
+   *
+   * Les seize motifs du SDK se réduisent à quatre situations, parce que c'est
+   * le nombre de PHRASES différentes qu'une personne peut avoir à lire :
+   *
+   *   closed    la réunion est vraiment finie — salle supprimée, serveur arrêté
+   *   removed   quelqu'un vous a expulsé
+   *   elsewhere vous vous êtes connecté ailleurs avec le même compte
+   *   lost      la liaison est tombée
+   *
+   * `CLIENT_INITIATED` n'en fait pas partie : c'est NOUS qui sommes partis, et
+   * l'écran de départ n'a aucune erreur à annoncer.
+   */
+  function onDisconnected(reason?: DisconnectReason): void {
     if (!ownsLiveConnection()) return;
     // La séance est finie : refermer l'ère. Sans cela un `Reconnecting` tardif
     // ferait repartir la machine de `disconnected` vers `reconnecting`, état
     // depuis lequel `connect()` est refusé — la session serait figée.
     openEra();
-    setState({ status: 'disconnected', reason: 'closed' });
+    setState({ status: 'disconnected', reason: toReason(reason) });
   }
 
   room.on(RoomEvent.Reconnecting, onReconnecting);

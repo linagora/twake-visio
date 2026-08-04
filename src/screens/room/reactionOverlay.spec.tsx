@@ -96,18 +96,18 @@ describe('ReactionOverlay', () => {
     await render(<ReactionOverlay chatOpen={false} reactions={[reaction()]} />);
 
     // 52 (le côté d'un bouton de barre) + 2 × 4 (le rembourrage de la rangée)
-    // + 8 (un pas d'écart, pour que la bulle ne colle pas à la barre) = 68.
+    // + 8 (un pas d'écart, pour que la bulle ne colle pas à la barre) = 64.
     // La valeur d'avant était `tokens.spacing.xl`, soit 32 : la plus basse des
     // bulles se posait 28 dp À L'INTÉRIEUR de la barre, donc sur « raccrocher ».
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 68 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 64 });
   });
 
   it('dégage aussi la zone de saisie quand le panneau de discussion est ouvert', async () => {
     await render(<ReactionOverlay chatOpen reactions={[reaction()]} />);
 
-    // Les 68 ci-dessus, plus le bas du panneau de discussion : 56 (la rangée de
-    // saisie) + 16 (le rembourrage bas de sa racine) = 140. Sans cette
+    // Les 64 ci-dessus, plus le bas du panneau de discussion : 56 (la rangée de
+    // saisie) + 16 (le rembourrage bas de sa racine) = 136. Sans cette
     // seconde valeur, les bulles se posaient sur `chat-send` dès la deuxième.
-    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 140 });
+    expect(screen.getByTestId('reaction-overlay')).toHaveStyle({ paddingBottom: 136 });
   });
 });

@@ -62,7 +62,19 @@ export function buildAuthorizeUrl(
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', config.clientId);
   url.searchParams.set('redirect_uri', redirectUriFor(config));
-  url.searchParams.set('scope', 'openid email profile');
+  // `offline_access` donne au jeton de rafraîchissement une vie INDÉPENDANTE
+  // de la session du portail. Sans lui, mesuré le 2026-08-03 : la session OIDC
+  // disparaît du magasin du SSO, le jeton meurt avec elle, et l'application
+  // redemande un mot de passe — ce qu'aucun téléphone ne devrait exiger chaque
+  // jour. Avec, la session hors ligne vit 30 jours sur cette instance
+  // (`oidcServiceOfflineSessionExpiration`).
+  //
+  // Le serveur doit l'autoriser de son côté : LemonLDAP ignore la demande sans
+  // `oidcRPMetaDataOptionsAllowOffline` sur le client, et sans consentement
+  // contourné ou demandé. Une instance qui ne l'autorise pas se contente
+  // d'ignorer la portée — la connexion réussit quand même, simplement sans
+  // jeton hors ligne.
+  url.searchParams.set('scope', 'openid email profile offline_access');
   url.searchParams.set('code_challenge', pkce.challenge);
   url.searchParams.set('code_challenge_method', pkce.method);
   url.searchParams.set('state', state);

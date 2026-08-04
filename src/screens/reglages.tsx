@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -197,8 +198,17 @@ export function ReglagesScreen(): React.ReactElement {
           </Pressable>
         </SurfaceCard>
 
+        {/* Le numéro vient de `app.json`, lu par `expo-constants` AU BUILD —
+            jamais d'une chaîne traduite. Il y vivait en sept exemplaires, un
+            par locale, et aucun bump de version ne pouvait les atteindre :
+            « Twake Visio 1.0 » a survécu jusqu'à la veille de la première
+            publication. Une seule source, et `expo prebuild` la propage.
+
+            `?? ''` plutôt qu'un repli inventé : sur un runtime où la
+            configuration manque, mieux vaut « Twake Visio » nu qu'un numéro
+            faux — un numéro faux dans un rapport de bogue coûte une heure. */}
         <Text style={styles.version} testID="settings-version">
-          {t('settings.version')}
+          {t('settings.version', { version: Constants.expoConfig?.version ?? '' })}
         </Text>
       </ScrollView>
     </View>

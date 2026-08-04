@@ -7,3 +7,9 @@ package-lock.json
 # Documents de planification, figés une fois écrits. Les reformater produirait
 # un diff de plusieurs milliers de lignes sans rien apporter à leur lecture.
 docs/superpowers
+
+# Le texte de l'AGPL-3.0, verbatim. Prettier ne sait pas l'analyser — sans
+# extension, il ne devine aucun parseur et `format:check` échoue —, et il ne
+# doit de toute façon jamais être reformaté : un texte de licence vaut par son
+# exactitude, pas par sa présentation.
+LICENSE
