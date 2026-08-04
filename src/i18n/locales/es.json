@@ -33,6 +33,8 @@
   "lobby.denied": "Su solicitud de entrada ha sido rechazada",
   "call.leave": "Salir",
   "call.share": "Compartir el enlace",
+  "call.copyLink": "Copiar el enlace",
+  "call.linkCopied": "Enlace copiado",
   "call.more": "Más",
   "call.muted": "Silenciado",
   "call.pinned": "Fijado",
@@ -176,5 +178,9 @@
   "prejoin.yourName": "Su nombre",
   "prejoin.back": "Volver",
   "prejoin.cameraPreview": "Vista previa de la cámara",
-  "common.back": "Volver"
+  "common.back": "Volver",
+  "effects.title": "Fondo",
+  "effects.none": "Ninguno",
+  "effects.blur": "Desenfoque",
+  "effects.open": "Efectos de fondo"
 }

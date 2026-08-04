@@ -33,6 +33,8 @@
   "lobby.denied": "La tua richiesta di partecipazione è stata rifiutata",
   "call.leave": "Abbandona",
   "call.share": "Condividi il link",
+  "call.copyLink": "Copia il link",
+  "call.linkCopied": "Link copiato",
   "call.more": "Altro",
   "call.muted": "Microfono disattivato",
   "call.pinned": "Fissato",
@@ -176,5 +178,9 @@
   "prejoin.yourName": "Il tuo nome",
   "prejoin.back": "Indietro",
   "prejoin.cameraPreview": "Anteprima fotocamera",
-  "common.back": "Indietro"
+  "common.back": "Indietro",
+  "effects.title": "Sfondo",
+  "effects.none": "Nessuno",
+  "effects.blur": "Sfocatura",
+  "effects.open": "Effetti di sfondo"
 }

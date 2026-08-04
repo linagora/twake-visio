@@ -33,6 +33,8 @@
   "lobby.denied": "Yêu cầu tham gia của bạn đã bị từ chối",
   "call.leave": "Rời khỏi",
   "call.share": "Chia sẻ liên kết",
+  "call.copyLink": "Sao chép liên kết",
+  "call.linkCopied": "Đã sao chép liên kết",
   "call.more": "Thêm",
   "call.muted": "Đã tắt tiếng",
   "call.pinned": "Đã ghim",
@@ -176,5 +178,9 @@
   "prejoin.yourName": "Tên của bạn",
   "prejoin.back": "Quay lại",
   "prejoin.cameraPreview": "Xem trước máy ảnh",
-  "common.back": "Quay lại"
+  "common.back": "Quay lại",
+  "effects.title": "Nền",
+  "effects.none": "Không",
+  "effects.blur": "Làm mờ",
+  "effects.open": "Hiệu ứng nền"
 }

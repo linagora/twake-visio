@@ -33,6 +33,8 @@
   "lobby.denied": "Ваш запрос на вход отклонён",
   "call.leave": "Покинуть",
   "call.share": "Поделиться ссылкой",
+  "call.copyLink": "Скопировать ссылку",
+  "call.linkCopied": "Ссылка скопирована",
   "call.more": "Ещё",
   "call.muted": "Микрофон выключен",
   "call.pinned": "Закреплено",
@@ -176,5 +178,9 @@
   "prejoin.yourName": "Ваше имя",
   "prejoin.back": "Назад",
   "prejoin.cameraPreview": "Предпросмотр камеры",
-  "common.back": "Назад"
+  "common.back": "Назад",
+  "effects.title": "Фон",
+  "effects.none": "Нет",
+  "effects.blur": "Размытие",
+  "effects.open": "Эффекты фона"
 }

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { StyleSheet, Text } from 'react-native';
 import { IconButton } from 'react-native-paper';
 
+import type { BackgroundEffect } from 'src/call/backgroundEffect';
 import type { CameraChoice } from 'src/call/devices';
 import { BottomSheet } from 'src/screens/room/bottomSheet';
 import {
@@ -10,8 +12,10 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
+import { EffectsPicker } from 'src/screens/room/effectsPicker';
 import { SheetCheck } from 'src/screens/room/sheetCheck';
 import { SheetRow } from 'src/screens/room/sheetRow';
+import { tokens } from 'src/ui/tokens';
 
 export type CameraMenuProps = {
   readonly cameras: readonly CameraChoice[];
@@ -20,6 +24,12 @@ export type CameraMenuProps = {
   // Le `CameraChoice` entier, pas seulement son `deviceId` : l'écran a besoin
   // de `facing` pour le miroir de sa propre vignette.
   readonly onSelect: (choice: CameraChoice) => void;
+  // `null` quand la plateforme n'a pas le module natif — iOS tant que son
+  // pendant Vision n'a pas tourné sur appareil. Une commande qu'on ne peut pas
+  // honorer coûte plus cher que son absence, et la MASQUER est la règle ici :
+  // un bouton grisé sur cet écran redevient noir sur noir.
+  readonly effect: BackgroundEffect | null;
+  readonly onEffectSelect: (effect: BackgroundEffect) => void;
 };
 
 // Le chevron est toujours rendu, jamais désactivé. Un appareil qui ne rendrait
@@ -30,6 +40,8 @@ export function CameraMenu({
   activeDeviceId,
   onOpen,
   onSelect,
+  effect,
+  onEffectSelect,
 }: CameraMenuProps): React.ReactElement {
   const { t } = useTranslation();
   // État d'affichage local, jamais métier : le parent n'a rien à en savoir.
@@ -42,7 +54,14 @@ export function CameraMenu({
         icon="chevron-up"
         iconColor={BAR_ICON_COLOR}
         rippleColor={BAR_RIPPLE_COLOR}
-        style={barStyles.button}
+        // ACCOLÉ au bouton caméra et deux fois moins large, comme le web :
+        // c'est ce qui a libéré la place de la main levée et des réactions.
+        // Voir `BAR_CARET_WIDTH` pour l'arithmétique, et pour la raison de ne
+        // jamais la vérifier sur un écran pliable seul.
+        style={[barStyles.button, barStyles.caret]}
+        size={18}
+        // La cible tactile reste pleine grâce au `hitSlop` : c'est la surface
+        // PEINTE qui rétrécit, pas la zone qui répond au doigt.
         hitSlop={BAR_HIT_SLOP}
         onPress={() => {
           setVisible(true);
@@ -89,7 +108,39 @@ export function CameraMenu({
             }}
           />
         ))}
+
+        {effect === null ? null : (
+          <>
+            {/* Une couleur EXPLICITE, comme tout ce qui est posé sur cet écran :
+                le thème reste clair et Paper retomberait sur un quasi-noir
+                au-dessus d'un fond sombre. */}
+            <Text style={styles.section} testID="camera-sheet-effects-title">
+              {t('effects.title')}
+            </Text>
+            <EffectsPicker
+              current={effect}
+              // Refermer AUSSI, comme le fait le choix d'un objectif juste
+              // au-dessus : deux instructions, donc deux assertions à écrire.
+              onEffectSelect={(next) => {
+                setVisible(false);
+                onEffectSelect(next);
+              }}
+              testID="camera-sheet-effects"
+            />
+          </>
+        )}
       </BottomSheet>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  section: {
+    color: tokens.color.textDark,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 13,
+    paddingHorizontal: tokens.spacing.md,
+    paddingTop: tokens.spacing.md,
+    textTransform: 'uppercase',
+  },
+});

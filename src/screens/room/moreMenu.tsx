@@ -4,8 +4,6 @@ import { View } from 'react-native';
 import { Badge, IconButton } from 'react-native-paper';
 
 import type { RaisedHand } from 'src/call/hands';
-import type { ReactionKey } from 'src/call/reactions';
-import type { RecordingState } from 'src/call/recording';
 import { BottomSheet } from 'src/screens/room/bottomSheet';
 import {
   BAR_HIT_SLOP,
@@ -13,34 +11,22 @@ import {
   BAR_RIPPLE_COLOR,
   barStyles,
 } from 'src/screens/room/controlBar';
-import { HandControl } from 'src/screens/room/handControl';
-import { ReactionPicker } from 'src/screens/room/reactionPicker';
-import { RecordingControl } from 'src/screens/room/recordingControl';
+import { HandQueue } from 'src/screens/room/handQueue';
 import { SheetRow } from 'src/screens/room/sheetRow';
 
 export type MoreMenuProps = {
-  readonly recording: RecordingState;
-  readonly canRecord: boolean;
-  readonly recordingBusy: boolean;
-  readonly handRaised: boolean;
-  readonly handBusy: boolean;
-  readonly hands: readonly RaisedHand[];
   // Le chat est le seul producteur de pastille : elle est donc portée par un
   // bouton générique et dit « quelque chose dans la feuille », pas « des
   // messages ». C'est une indirection, elle est écrite plutôt que découverte.
   readonly unread: number;
-  readonly onShare: () => void;
-  readonly onStartRecording: () => void;
-  readonly onStopRecording: () => void;
-  readonly onToggleHand: () => void;
-  // Obligatoire comme tous les autres rappels. Elle a été optionnelle le temps
-  // d'un lot — la rendre obligatoire cassait alors la compilation de
-  // `call.tsx`, qui ne la passait pas encore, et `tsc --noEmit` tourne sur tout
-  // le projet, jamais fichier par fichier. Ce câblage a atterri depuis
-  // (`handleSendReaction`), donc la dérogation n'a plus d'objet : la laisser
-  // optionnelle rendrait un site d'appel oublié silencieusement inerte.
-  readonly onSendReaction: (key: ReactionKey) => void;
+  // La file, jamais la commande : lever la main est parti dans la barre. Voir
+  // `handQueue.tsx` pour ce qui distingue cette liste du bandeau du haut.
+  readonly hands: readonly RaisedHand[];
   readonly onOpenChat: () => void;
+  // La sortie audio a quitté la BARRE pour cette ligne : ses six emplacements
+  // sont allés à la main levée et aux réactions, que le propriétaire voulait en
+  // un appui. Choisir où sort le son est plus rare que lever la main.
+  readonly onOpenAudioOutput: () => void;
 };
 
 // Ce menu prend la place du bouton de partage et porte trois commandes : le
@@ -61,19 +47,10 @@ export type MoreMenuProps = {
 // rappel du parent : `RecordingControl` n'a rien à savoir du menu qui le
 // contient.
 export function MoreMenu({
-  recording,
-  canRecord,
-  recordingBusy,
-  handRaised,
-  handBusy,
-  hands,
   unread,
-  onShare,
-  onStartRecording,
-  onStopRecording,
-  onToggleHand,
-  onSendReaction,
+  hands,
   onOpenChat,
+  onOpenAudioOutput,
 }: MoreMenuProps): React.ReactElement {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
@@ -115,32 +92,6 @@ export function MoreMenu({
         onDismiss={() => setVisible(false)}
       >
         <SheetRow
-          testID="share-btn"
-          title={t('call.share')}
-          accessibilityLabel={t('call.share')}
-          onPress={() => {
-            setVisible(false);
-            onShare();
-          }}
-        />
-        <RecordingControl
-          state={recording}
-          canStart={canRecord}
-          busy={recordingBusy}
-          onStart={() => {
-            setVisible(false);
-            onStartRecording();
-          }}
-          onStop={() => {
-            setVisible(false);
-            onStopRecording();
-          }}
-        />
-        {/* Placée avant la main levée, dont le bloc de file n'est pas
-            pressable : les trois commandes restent groupées, et la file garde
-            le bas de la feuille où on ne la prendra pas pour une liste
-            d'actions. */}
-        <SheetRow
           testID="chat-btn"
           title={t('chat.title')}
           accessibilityLabel={t('chat.title')}
@@ -149,20 +100,20 @@ export function MoreMenu({
             onOpenChat();
           }}
         />
-        <HandControl
-          raised={handRaised}
-          busy={handBusy}
-          hands={hands}
-          onToggle={() => {
+        <HandQueue hands={hands} />
+        {/* La sortie audio, descendue de la barre. Elle referme ce menu AVANT
+            d'ouvrir sa feuille : les deux ne peuvent pas coexister, la seconde
+            étant montée par `callControlBar.tsx` et non ici — une feuille
+            rendue dans une autre est démontée quand celle-ci se ferme. */}
+        <SheetRow
+          testID="audio-output-row"
+          title={t('call.audioOutput')}
+          accessibilityLabel={t('call.audioOutput')}
+          onPress={() => {
             setVisible(false);
-            onToggleHand();
+            onOpenAudioOutput();
           }}
         />
-        {/* Quatrième entrée, jamais fermée sur l'appui — à l'inverse des trois
-            précédentes. `onSendReaction` passe tel quel, sans enveloppe : c'est
-            ce qui permet d'envoyer plusieurs réactions de suite sans rouvrir le
-            menu (§5.C8 de la conception). */}
-        <ReactionPicker onSend={onSendReaction} />
       </BottomSheet>
     </>
   );

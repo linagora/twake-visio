@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import * as Clipboard from 'expo-clipboard';
 import { KeyboardAvoidingView, Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +14,6 @@ import {
   updateParticipantRole,
   type ParticipantRole,
 } from 'src/api/participants';
-import { startRecording, stopRecording } from 'src/api/recording';
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
@@ -21,6 +21,7 @@ import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
+import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
 import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
@@ -32,11 +33,7 @@ import {
 } from 'src/call/permissions';
 import type { ReactionKey } from 'src/call/reactions';
 import { createReactionStore } from 'src/call/reactionStore';
-import {
-  canStartRecording,
-  recordingErrorMessage,
-  type RecordingMessageKey,
-} from 'src/call/recording';
+import { type RecordingMessageKey } from 'src/call/recording';
 import { createRecordingStore } from 'src/call/recordingStore';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
@@ -69,6 +66,7 @@ type MessageKey =
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
   | 'chat.sendFailed'
+  | 'call.linkCopied'
   | RecordingMessageKey;
 
 // Sert deux appelants : l'accès initial au salon, et les trois actions de
@@ -111,7 +109,7 @@ function toApiErrorMessage(error: ApiError): MessageKey {
 // peuvent poser la même clé (`error.forbidden` vaut pour la modération comme
 // pour l'admission) — c'est la PROVENANCE, et elle ne sert qu'à décider ce
 // qu'un succès a le droit d'effacer.
-type NoticeKind = 'device' | 'hand' | 'chat' | 'lobby' | 'moderation' | 'recording';
+type NoticeKind = 'device' | 'hand' | 'chat' | 'lobby' | 'moderation' | 'recording' | 'link';
 
 type Notice = {
   readonly kind: NoticeKind;
@@ -433,7 +431,6 @@ export function CallScreen(): React.ReactElement {
   // autoriseraient quatre combinaisons dont une impossible — les deux panneaux
   // ouverts sur la même région d'écran.
   const [panel, setPanel] = useState<Panel>('none');
-  const [recordingBusy, setRecordingBusy] = useState(false);
   // Une requête en vol, jamais un état désiré : l'affichage suit l'attribut,
   // et lui seul. Partagé par la commande du menu et par le bandeau, qui
   // portent sur le même état — deux requêtes concurrentes en sens opposé
@@ -547,17 +544,6 @@ export function CallScreen(): React.ReactElement {
   const canModerate = access !== null && access.isAdministrable && roomId !== null;
   const hasLobby = access !== null && access.room.accessLevel !== 'public';
 
-  // Même forme que `canModerate`, `roomId !== null` inclus pour la même raison
-  // exactement : sans lui, un salon dont `room.id` vaut `null` fabriquerait
-  // `/api/v1.0/rooms//start-recording/`. `canStartRecording` est la frontière
-  // de divergence entre `main` et le déployé — tout ce qu'elle laisse passer
-  // est accepté par les deux serveurs.
-  const canRecord =
-    account !== null &&
-    roomId !== null &&
-    access !== null &&
-    canStartRecording(account.instance.features, access);
-
   // `roomId ?? ''` ne sert jamais de véritable requête : dès que `roomId` est
   // `null`, `canModerate` (et donc `enabled` ci-dessous) vaut déjà `false`, et
   // l'effet de scrutation du Hook ne se déclenche pas. Le repli n'existe que
@@ -592,6 +578,16 @@ export function CallScreen(): React.ReactElement {
   );
 
   const connected = callState.status === 'connected';
+
+  // L'effet d'arrière-plan, réglable EN SÉANCE. `applyEffect` ne touche pas à
+  // la piste : le décorateur natif change de mode, donc aucune renégociation
+  // avec le serveur et aucune coupure chez les autres participants.
+  const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
+
+  const handleEffectSelect = (next: BackgroundEffect): void => {
+    setEffect(next);
+    applyEffect(next);
+  };
 
   useEffect(() => {
     if (!connected) return;
@@ -701,6 +697,20 @@ export function CallScreen(): React.ReactElement {
   // Le lien porte sur l'instance du compte, jamais sur une constante : une
   // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
   // mène pas à sa réunion.
+  /**
+   * Copie le lien de la réunion, et le DIT.
+   *
+   * Une copie silencieuse est indiscernable d'un appui manqué : rien ne bouge à
+   * l'écran, et le presse-papiers n'est visible nulle part. La Snackbar est donc
+   * la commande, pas une politesse.
+   */
+  const handleCopyLink = async (): Promise<void> => {
+    const activeAccount = getActiveAccount();
+    if (activeAccount === null) return;
+    await Clipboard.setStringAsync(`${activeAccount.instance.serverUrl}/${slug}`);
+    postNotice('link', 'call.linkCopied');
+  };
+
   const handleShare = async (): Promise<void> => {
     // Nom distinct du `account` de plus haut pour la même raison que dans
     // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
@@ -918,42 +928,16 @@ export function CallScreen(): React.ReactElement {
       .catch(() => postNotice('moderation', 'error.network'));
   };
 
-  // `result.ok` d'abord, un `.catch()` séparé pour l'exception inattendue :
-  // l'échec ordinaire de ces deux fonctions est une *valeur* résolue, jamais un
-  // rejet — un `.catch()` seul ne le verrait pas passer, et le périmètre B a
-  // livré ce bogue deux fois. Aucun état optimiste : les métadonnées sont la
-  // source unique, et un « en cours » local créerait une seconde source qui
-  // peut contredire la première. Un succès efface l'erreur d'un essai
-  // précédent, comme les trois actions de modération.
-  const handleStartRecording = (): void => {
-    if (account === null || roomId === null) return;
-    setRecordingBusy(true);
-    startRecording(account, roomId)
-      .then((result) => {
-        setRecordingBusy(false);
-        postNotice('recording', result.ok ? null : recordingErrorMessage('start', result.error));
-      })
-      .catch(() => {
-        setRecordingBusy(false);
-        postNotice('recording', 'error.network');
-      });
-  };
-
-  // Le serveur n'exige pas d'être celui qui a démarré l'enregistrement pour
-  // l'arrêter : la commande est offerte à tout administrateur du salon.
-  const handleStopRecording = (): void => {
-    if (account === null || roomId === null) return;
-    setRecordingBusy(true);
-    stopRecording(account, roomId)
-      .then((result) => {
-        setRecordingBusy(false);
-        postNotice('recording', result.ok ? null : recordingErrorMessage('stop', result.error));
-      })
-      .catch(() => {
-        setRecordingBusy(false);
-        postNotice('recording', 'error.network');
-      });
-  };
+  // **L'enregistrement n'a plus de commande, et c'est une décision du
+  // propriétaire, prise sur appareil : « ça ne fonctionne pas ».** Le
+  // démarrage et l'arrêt sont donc retirés — pas seulement masqués, faute de
+  // quoi ils resteraient du code que rien n'atteint et que rien ne rougit.
+  //
+  // Ce qui SURVIT, et qu'il ne faut pas retirer avec : `RecordingIndicator`,
+  // alimenté par les métadonnées du salon. Un enregistrement démarré depuis le
+  // client web doit rester visible ici — c'est même le seul cas où il se
+  // produit aujourd'hui, et le taire serait pire que de ne pas savoir
+  // l'ordonner.
 
   const message: MessageKey | null =
     failure ?? (callState.status === 'disconnected' ? toDisconnectMessage(callState.reason) : null);
@@ -1057,6 +1041,8 @@ export function CallScreen(): React.ReactElement {
               donc en plein écran, comme l'indicateur d'enregistrement, là où le
               bandeau d'admission survit. */}
           <CallHeader
+            onCopyLink={handleCopyLink}
+            onShareLink={handleShare}
             elapsedSeconds={elapsedSeconds}
             onParticipantsPress={handleToggleParticipants}
             participantCount={participants.length}
@@ -1071,7 +1057,16 @@ export function CallScreen(): React.ReactElement {
               bandeau la dit, et la baisse en un seul appui. Ne rend rien au
               repos. La bande empile ses lignes : l'indicateur d'enregistrement
               et celui-ci peuvent être vrais en même temps. */}
-          <HandBanner raised={handRaised} position={handRank} onLower={handleToggleHand} />
+          {/* La position n'est montrée QUE si elle informe. Seul à lever la
+              main, « Position 1 » n'apprend rien et allonge un bandeau déjà
+              chargé — le propriétaire l'a relevé. Dès qu'une autre main est
+              levée, le rang redevient une information : c'est l'ordre dans
+              lequel on prendra la parole. */}
+          <HandBanner
+            raised={handRaised}
+            position={hands.length > 1 ? handRank : null}
+            onLower={handleToggleHand}
+          />
         </>
       ) : null}
 
@@ -1148,19 +1143,15 @@ export function CallScreen(): React.ReactElement {
         // ne dit qu'« échec » ou « réussite » sur le changement de
         // périphérique. C'est ici, à sa frontière, que sa provenance est posée.
         onNotice={(key) => postNotice('device', key)}
-        recording={recordingState}
-        canRecord={canRecord}
-        recordingBusy={recordingBusy}
         handRaised={handRaised}
         handBusy={handBusy}
         hands={hands}
         unread={chat.unread}
-        onShare={handleShare}
-        onStartRecording={handleStartRecording}
-        onStopRecording={handleStopRecording}
         onToggleHand={handleToggleHand}
         onSendReaction={handleSendReaction}
         onOpenChat={handleOpenChat}
+        effect={areEffectsSupported() ? effect : null}
+        onEffectSelect={handleEffectSelect}
         onLeave={handleLeave}
       />
 
