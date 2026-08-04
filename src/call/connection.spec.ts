@@ -925,7 +925,7 @@ describe('abonné qui raccroche pendant la notification', () => {
 // Une ligne par situation, et c'est le point : un seul test laisserait une
 // table de correspondance constante passer.
 describe('createCallSession — motif de déconnexion', () => {
-  const cases: ReadonlyArray<readonly [string, number, string]> = [
+  const cases: readonly (readonly [string, number, string])[] = [
     ['une salle supprimée est une fin', 5, 'closed'],
     ['une salle fermée aussi', 10, 'closed'],
     ["l'arrêt du serveur aussi", 3, 'closed'],
