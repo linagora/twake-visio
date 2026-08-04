@@ -323,7 +323,7 @@ describe('JoinSheet', () => {
     });
 
     // L'ASYMÉTRIE que ce correctif referme : `parsePastedMeeting` conserve le
-    // port (`deepLinks.ts:109` lit `parsed.host`), la saisie manuelle le
+    // port (`deepLinks.ts:127` lit `parsed.host`), la saisie manuelle le
     // jetait (`hostname`). Quelqu'un qui s'héberge sur `:8443` marchait donc
     // en COLLANT son lien et atterrissait sur `:443`, sans un mot, en TAPANT
     // la même adresse.

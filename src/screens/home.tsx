@@ -23,10 +23,18 @@ const styles = StyleSheet.create({
 
 // L'hôte à montrer dans la feuille « Rejoindre ». `new URL` GARDÉ, comme
 // `agendaHosts` (`deepLinks.ts`) et `toSamePath` le font déjà : cet appel se
-// produit à CHAQUE rendu de l'écran principal, et il jetterait pour une valeur
-// que l'écran n'utilise même pas — `home.tsx` ne passe pas `onHostChange`,
-// donc la rangée de serveur ne se rend pas ici. Faire tomber tout l'accueil
-// sur une URL de compte illisible serait le pire échange possible.
+// produit à CHAQUE rendu de l'écran principal, pour une valeur que l'écran
+// n'utilise même pas — `home.tsx` ne passe pas `onHostChange`, donc la rangée
+// de serveur ne se rend pas ici.
+//
+// CE QUE CE GARDE-FOU ATTRAPE, exactement : sous Node — donc sous Jest — un
+// `serverUrl` illisible fait JETER `new URL`, et sans lui tout l'accueil
+// tomberait. Sur APPAREIL il ne jette pas : le `URL` de React Native rend une
+// chaîne vide, et le repli n'est jamais atteint. Voir la section « Jest et
+// l'application n'exécutent PAS le même `URL` » d'`AGENTS.md`. Le garde reste
+// — il coûte trois lignes et couvre le cas où l'un des deux moteurs change —
+// mais il ne faut pas lui prêter une protection qu'il n'exerce pas là où la
+// personne se trouve.
 //
 // Le repli est le NOM D'HÔTE par défaut, pas la chaîne fautive : la feuille
 // affiche un hôte, jamais un URL.

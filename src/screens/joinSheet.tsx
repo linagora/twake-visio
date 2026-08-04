@@ -75,7 +75,7 @@ const HOST_WITH_PORT = /^[a-z0-9.-]+(:\d+)?$/i;
 // fausse. Elle ne rejetait que ce que Node rejette — c'est-à-dire rien de ce
 // que voit l'utilisateur.
 //
-// Le PORT est CONSERVÉ, comme le fait déjà le collage (`deepLinks.ts:109` lit
+// Le PORT est CONSERVÉ, comme le fait déjà le collage (`deepLinks.ts:127` lit
 // `parsed.host`, jamais `hostname`) : sans cela, la même personne qui héberge
 // son instance sur `:8443` marchait en COLLANT un lien et se retrouvait
 // silencieusement sur `:443` en TAPANT la même adresse.

@@ -150,7 +150,7 @@ export function PrejoinScreen(): React.ReactElement {
   //
   // Sans visiteur — ni compte ni session invité —, il n'y a aucun accès à
   // demander : l'état de DÉPART le dit, comme le font `lobby.tsx:63-67` et
-  // `call.tsx:252-254`. Le poser depuis l'effet appellerait `setState` de
+  // `call.tsx:271-273`. Le poser depuis l'effet appellerait `setState` de
   // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
   //
   // Ce garde-fou manquait ICI, et c'est l'écran qui donne son nom au défaut :
@@ -259,7 +259,7 @@ export function PrejoinScreen(): React.ReactElement {
   };
 
   // Les DEUX sorties de cet écran — le chevron de l'en-tête et le bouton de
-  // l'écran d'erreur — et la même règle que `call.tsx:804-810` et
+  // l'écran d'erreur — et la même règle que `call.tsx:823-829` et
   // `lobby.tsx:136-140` : la session invité se referme AVANT la navigation, et
   // un invité repart vers `/welcome`, jamais vers `/home`.
   //

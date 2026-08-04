@@ -144,7 +144,7 @@ describe('parsePastedMeeting', () => {
 // | `https://mon serveur`         | **lève**         | hôte « mon serveur »    |
 //
 // Elle EXPLIQUE, et elle ne l'excuse pas, une mesure fausse de la Tâche 1 : le
-// `.toLowerCase()` de `deepLinks.ts:109` avait été jugé sans effet parce que
+// `.toLowerCase()` de `deepLinks.ts:127` avait été jugé sans effet parce que
 // le mutant restait vert. Il l'était sous Node. Sur l'appareil, cette ligne
 // est PORTANTE — sans elle, `meet.linagora.com` collé en capitales ne
 // correspond à aucune instance connue, et la feuille marque un hôte parfaitement

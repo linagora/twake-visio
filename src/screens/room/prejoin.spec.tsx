@@ -726,7 +726,7 @@ describe('le pré-join avec un compte', () => {
 // `lobby.tsx` branchaient déjà, le pré-join non.
 // LE sablier éternel, sur l'écran même que ce lot dit en débarrasser.
 //
-// `lobby.tsx:63-67` et `call.tsx:252-254` posent tous deux `error.unauthorized`
+// `lobby.tsx:63-67` et `call.tsx:271-273` posent tous deux `error.unauthorized`
 // comme état de DÉPART quand `getVisitor()` rend `null` ; le pré-join ne le
 // faisait pas. Son effet sortait alors sans rien poser, `access` restait nul,
 // et le rendu tombait sur l'`ActivityIndicator` — sans message, sans sortie,
