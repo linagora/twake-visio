@@ -42,6 +42,8 @@
   "call.permissionsDenied": "L'accès à la caméra et au micro est nécessaire pour rejoindre",
   "call.reconnecting": "Reconnexion…",
   "call.ended": "La réunion est terminée",
+  "call.removed": "Vous avez été retiré de la réunion",
+  "call.joinedElsewhere": "Vous avez rejoint cette réunion depuis un autre appareil",
   "call.ongoingTitle": "Réunion en cours",
   "call.ongoingBody": "Touchez pour revenir à la réunion",
   "call.cameraFront": "Caméra avant",

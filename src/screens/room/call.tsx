@@ -67,6 +67,8 @@ type MessageKey =
   | 'error.badRequest'
   | 'error.serverError'
   | 'call.ended'
+  | 'call.removed'
+  | 'call.joinedElsewhere'
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
@@ -131,7 +133,23 @@ type Notice = {
 // `err.message` et laisse tomber le `ConnectionErrorReason` structuré du SDK.
 // Deviner l'autorisation depuis ce texte serait faux dès la version suivante.
 function toDisconnectMessage(reason: string): MessageKey {
-  return reason === 'closed' ? 'call.ended' : 'error.network';
+  switch (reason) {
+    case 'closed':
+      return 'call.ended';
+    // Expulsé par quelqu'un. Le dire, plutôt que « la réunion est terminée » :
+    // elle continue sans vous, et l'ignorer laisse chercher une panne.
+    case 'removed':
+      return 'call.removed';
+    // Le même compte a rejoint ailleurs — le serveur ne garde qu'une session
+    // par identité. C'est le motif le plus déroutant de tous : rien n'a échoué,
+    // et l'écran d'avant disait pourtant « terminée ».
+    case 'elsewhere':
+      return 'call.joinedElsewhere';
+    case 'left':
+      return 'call.ended';
+    default:
+      return 'error.network';
+  }
 }
 
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à

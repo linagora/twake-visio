@@ -42,6 +42,8 @@
   "call.permissionsDenied": "Camera and microphone access is required to join",
   "call.reconnecting": "Reconnecting…",
   "call.ended": "The meeting has ended",
+  "call.removed": "You were removed from the meeting",
+  "call.joinedElsewhere": "You joined this meeting from another device",
   "call.ongoingTitle": "Meeting in progress",
   "call.ongoingBody": "Tap to return to the meeting",
   "call.cameraFront": "Front camera",

@@ -42,6 +42,8 @@
   "call.permissionsDenied": "Для подключения нужен доступ к камере и микрофону",
   "call.reconnecting": "Переподключение…",
   "call.ended": "Встреча завершена",
+  "call.removed": "Вас удалили из встречи",
+  "call.joinedElsewhere": "Вы присоединились к этой встрече с другого устройства",
   "call.ongoingTitle": "Встреча идёт",
   "call.ongoingBody": "Нажмите, чтобы вернуться к встрече",
   "call.cameraFront": "Фронтальная камера",

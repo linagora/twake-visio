@@ -42,6 +42,8 @@
   "call.permissionsDenied": "Cần quyền truy cập máy ảnh và micrô để tham gia",
   "call.reconnecting": "Đang kết nối lại…",
   "call.ended": "Cuộc họp đã kết thúc",
+  "call.removed": "Bạn đã bị xoá khỏi cuộc họp",
+  "call.joinedElsewhere": "Bạn đã tham gia cuộc họp này từ thiết bị khác",
   "call.ongoingTitle": "Cuộc họp đang diễn ra",
   "call.ongoingBody": "Chạm để quay lại cuộc họp",
   "call.cameraFront": "Máy ảnh trước",
