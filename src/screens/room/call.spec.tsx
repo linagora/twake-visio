@@ -3499,17 +3499,24 @@ describe("CallScreen — barre d'état", () => {
 // n'a aucun droit de modération.
 describe('la sortie de séance', () => {
   it("ramène un COMPTE à l'accueil", async () => {
+    // L'autre polarité de `endGuestSession` (Revue Tâche 8, Minor) : un compte
+    // n'en appelle jamais une, et sans cette assertion, retirer la garde
+    // `current?.kind === 'guest'` de `handleLeave` passait toute la suite.
+    const end = jest.spyOn(guest, 'endGuestSession');
     jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('leave-btn'));
 
     expect(mockReplace).toHaveBeenCalledWith('/home');
+    expect(end).not.toHaveBeenCalled();
   });
 
   it("ramène un INVITÉ à l'écran d'accueil public", async () => {
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('leave-btn'));
 
@@ -3520,6 +3527,7 @@ describe('la sortie de séance', () => {
     const end = jest.spyOn(guest, 'endGuestSession');
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('leave-btn'));
 
@@ -3532,6 +3540,7 @@ describe('le partage du lien', () => {
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'dismissedAction' });
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-share')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('call-header-share'));
 
@@ -3553,6 +3562,7 @@ describe('la copie du lien', () => {
     clipboard.setStringAsync.mockResolvedValue(true);
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-copy')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('call-header-copy'));
 
@@ -3567,6 +3577,7 @@ describe('la copie du lien', () => {
     clipboard.setStringAsync.mockResolvedValue(true);
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-copy')).toBeTruthy());
 
     await fireEvent.press(screen.getByTestId('call-header-copy'));
 
