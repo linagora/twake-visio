@@ -1,0 +1,16 @@
+<!--
+  Le FOND de l'icône adaptative Android : le dégradé seul.
+
+  Il existe parce que `adaptiveIcon.backgroundColor` n'accepte qu'une couleur
+  unie. Aplatir le dégradé en une seule teinte ferait diverger l'icône Android
+  de celle d'iOS, sur le seul argument que la configuration est plus courte.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="fond" x1="0" y1="1024" x2="1024" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00AD5C" />
+      <stop offset="1" stop-color="#B6EC3D" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#fond)" />
+</svg>

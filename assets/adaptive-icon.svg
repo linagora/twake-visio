@@ -1,0 +1,28 @@
+<!--
+  Le PREMIER PLAN de l'icône adaptative Android : le glyphe seul, sur du
+  transparent. Le fond est fourni à part (`adaptive-icon-background.svg`), parce
+  qu'un dégradé ne peut pas se déclarer dans `adaptiveIcon.backgroundColor`, qui
+  n'accepte qu'une couleur unie.
+
+  **Le glyphe est réduit à 85 %, et ce n'est pas une marge de confort.** Android
+  garantit seulement le carré central de 72 dp sur 108, et le masque du lanceur
+  y est souvent un CERCLE — donc de rayon 0,333 du côté. Mesuré sur la
+  géométrie d'`icon.svg` : le bord droit de l'objectif, à son coin bas, tombe à
+  0,349 du centre, soit HORS du cercle. À 85 %, il retombe à 0,297 et passe.
+
+  Le corps, lui, passait déjà : son coin haut-droit est à 0,252. C'est
+  l'objectif seul qui imposait la réduction, et le vérifier sur le mauvais
+  élément aurait conclu à tort que tout allait bien.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g transform="translate(76.8,76.8) scale(0.85)">
+    <rect x="160" y="288" width="480" height="448" rx="104" fill="#FFFFFF" />
+    <path
+      d="M736,456 L808,400 L808,624 L736,568 Z"
+      fill="#FFFFFF"
+      stroke="#FFFFFF"
+      stroke-width="64"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>
