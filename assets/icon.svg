@@ -2,43 +2,39 @@
   L'icône de Twake Visio, source de vérité. Tous les PNG du dépôt en dérivent,
   et `scripts/make-icons.sh` les régénère.
 
-  **Reconstituée, pas copiée.** L'original n'existait qu'en tuile de lanceur, à
-  32 px. La géométrie a donc été relevée pixel par pixel sur cette tuile, puis
-  reproduite ici en vecteur ; le rendu de ce fichier, ramené à 32 px, redonne
-  exactement les mêmes mesures que la référence :
+  **Tout ici est RELEVÉ, rien n'est dessiné à l'œil.**
 
-    glyphe 21x14 sur 32 · corps x 5..19 y 9..22 · objectif x 22..25 y 12..19
-    écart corps/objectif 2 px
+  Le dégradé est celui de `src/ui/tokens` — `tileGradientFrom` vers
+  `tileGradientTo`, du haut-gauche vers le bas-droite, comme `BrandTile` le pose
+  (`start={{x:0,y:0}} end={{x:1,y:1}}`). Ce sont les jetons qui font autorité et
+  non un prélèvement sur capture : une capture d'écran traverse une gestion de
+  couleur, et la mesure y rendait `#54A767` là où le jeton dit `#2AA960`.
 
-  Les deux arrêts du dégradé viennent d'un ajustement par moindres carrés sur
-  les 351 pixels intérieurs de la tuile, et non d'un prélèvement ponctuel : un
-  seul pixel, aux bords, est mélangé au fond blanc et donne une couleur fausse.
+  Le glyphe est `video-outline` de MaterialCommunityIcons, EXTRAIT de la police
+  par fontTools plutôt que retracé : `U+F0BDC`, 512 unités par em, boîte
+  englobante (64,64)-(448,320). Une caméra retracée à la main serait une
+  seconde marque, presque identique et jamais tout à fait.
 
-  **Plein cadre, et c'est délibéré.** La tuile d'origine est un squircle posé
-  sur du blanc. Une icône d'application ne doit pas l'être : iOS et Android
-  appliquent LEUR propre masque, et un coin arrondi dessiné dans l'image
-  ressortirait comme un liseré blanc à l'intérieur du masque du système.
+  Sa taille reprend celle de `BrandTile` : `GLYPH` vaut 46 pour un `SIDE` de 92,
+  soit 50 % du côté. Sur 1024, l'em fait donc 512, et l'échelle est de 1.
+
+  La transformation renverse l'axe Y — une police compte vers le haut, SVG vers
+  le bas — et centre la boîte englobante : `translate(256,704) scale(1,-1)`
+  place le glyphe en x 320..704 et y 384..640, centré sur 512 dans les deux
+  sens.
+
+  **Plein cadre, et c'est délibéré.** iOS et Android appliquent LEUR propre
+  masque ; un coin arrondi dessiné ici ressortirait en liseré à l'intérieur.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="fond" x1="0" y1="1024" x2="1024" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00AD5C" />
-      <stop offset="1" stop-color="#B6EC3D" />
+    <linearGradient id="fond" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2AA960" />
+      <stop offset="1" stop-color="#138041" />
     </linearGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#fond)" />
-  <!-- Le corps de la caméra. -->
-  <rect x="160" y="288" width="480" height="448" rx="104" fill="#FFFFFF" />
-  <!-- L'objectif. Le trapèze est tracé RÉTRÉCI, puis dilaté par un contour de
-       la même couleur avec des jointures rondes : c'est ce qui lui donne ses
-       coins arrondis sans avoir à poser quatre arcs à la main. Le contour fait
-       64 d'épaisseur, donc 32 de chaque côté ; les sommets sont rentrés
-       d'autant pour que l'étendue finale soit bien x 704..840. -->
-  <path
-    d="M736,456 L808,400 L808,624 L736,568 Z"
-    fill="#FFFFFF"
-    stroke="#FFFFFF"
-    stroke-width="64"
-    stroke-linejoin="round"
-  />
+  <g transform="translate(256,704) scale(1,-1)">
+    <path d="M320 277V107H107V277ZM341 320H85Q76 320 70.0 314.0Q64 308 64 299V85Q64 76 70.0 70.0Q76 64 85 64H341Q350 64 356.5 70.0Q363 76 363 85V160L448 75V309L363 224V299Q363 308 356.5 314.0Q350 320 341 320Z" fill="#FFFFFF" />
+  </g>
 </svg>
