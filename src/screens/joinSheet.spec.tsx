@@ -134,7 +134,11 @@ describe('JoinSheet', () => {
   });
 
   describe('coller un lien', () => {
-    it('accepte un lien d’un hôte connu et remplit les cases', async () => {
+    // Le titre ne dit plus « d'un hôte connu » : le collage ne discrimine plus
+    // du tout par hôte (Décision 1) ; `meet.linagora.com` n'est ici qu'un hôte
+    // valide parmi d'autres, gardé pour la régression sur le remplissage des
+    // cases, pas pour son appartenance à l'allowlist.
+    it('accepte un lien de réunion et remplit les cases', async () => {
       clipboard.getStringAsync.mockResolvedValue('https://meet.linagora.com/ogo-kmyy-qrl');
       await render(sheet());
       await fireEvent.press(screen.getByTestId('join-paste'));
@@ -293,6 +297,39 @@ describe('JoinSheet', () => {
 
       expect(onHostChange).toHaveBeenCalledWith('meet.acme.com');
       expect(screen.queryByTestId('join-host-input')).toBe(null);
+    });
+
+    // `trimmed.includes('://')` n'était exercé nulle part côté VRAI : les cinq
+    // tests ci-dessus ne collent jamais de schéma. Sans ce test, une mutation
+    // qui préfixerait toujours `https://` — cassant toute saisie qui porte déjà
+    // un schéma — passerait inaperçue.
+    it('accepte une adresse saisie avec son schéma déjà présent', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'https://meet.acme.com');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(onHostChange).toHaveBeenCalledWith('meet.acme.com');
+    });
+
+    // Le champ VIDÉ : garde le rejet d'une entrée vide, quel que soit le
+    // mécanisme qui le produit. `normalizeHostInput` n'a PAS de garde dédiée à
+    // ce cas — mesurée redondante avec le `catch` sur `new URL('https://')`,
+    // qui lève déjà (voir le commentaire de la fonction) — donc ce test ne
+    // cible pas une ligne précise : il fixe le comportement OBSERVABLE, qui ne
+    // doit pas régresser si le mécanisme interne change à nouveau.
+    it('refuse un champ vidé, comme une saisie qui ne forme pas une adresse', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), '');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
     });
   });
 

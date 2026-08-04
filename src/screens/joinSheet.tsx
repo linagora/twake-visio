@@ -48,9 +48,16 @@ const TOTAL_CELLS = CODE_GROUPS.reduce((total, size) => total + size, 0);
 // schéma manquant est ajouté avant analyse, et c'est `URL` qui tranche ce qui
 // forme un hôte — pas une regex maison, qui laisserait toujours passer un cas
 // auquel on n'a pas pensé.
+//
+// PAS de garde dédiée à une entrée vide : `https://` seul est un URL INVALIDE
+// pour un schéma spécial — mesuré, `new URL('https://')` lève —, donc le
+// `catch` ci-dessous rejette déjà ce cas. Une garde `trimmed.length === 0`
+// existait ici ; retirée après l'avoir mutée en `if (false)` sans qu'aucun
+// test ne rougisse : les deux chemins mènent au même `null`, et rien ne peut
+// jamais les distinguer. Ne pas la remettre sans une entrée qui, elle, sépare
+// les deux — il n'y en a pas.
 function normalizeHostInput(raw: string): string | null {
   const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
   const withScheme = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
   try {
     const { hostname } = new URL(withScheme);
