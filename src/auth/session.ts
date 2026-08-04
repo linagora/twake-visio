@@ -15,6 +15,18 @@ const REFRESH_GUARD_MS = 30_000;
 
 const inFlight = new Map<string, Promise<RefreshOutcome>>();
 
+// Le refus d'un rafraîchissement est le SEUL moment où l'application apprend
+// que la session est morte. Aucun écran ne peut le déduire de son côté : celui
+// qui reçoit « aucune session » ne sait pas s'il n'y en a jamais eu — au
+// démarrage, avant connexion — ou si celle qu'il avait vient d'être perdue.
+// D'où ce signal, émis une fois, à l'endroit qui sait.
+const sessionLostListeners = new Set<() => void>();
+
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => sessionLostListeners.delete(listener);
+}
+
 export async function getAccessToken(
   accountId: string,
   config: InstanceConfig,
@@ -64,6 +76,20 @@ export async function forceRefresh(
             await clearTokens(accountId);
           } catch {
             // Jetons non effacés, session tout de même perdue.
+          }
+          // Après l'effacement, jamais avant : un écouteur qui renvoie vers la
+          // connexion doit trouver un stockage déjà vide, sans quoi l'écran
+          // d'entrée le renverrait aussitôt vers l'accueil.
+          //
+          // Un écouteur qui jette ne doit pas emporter les autres, ni faire
+          // passer un refus pour une indisponibilité — c'est ce que ferait le
+          // `catch` global de cette fonction.
+          for (const listener of sessionLostListeners) {
+            try {
+              listener();
+            } catch {
+              // Un écouteur défaillant ne change rien au sort de la session.
+            }
           }
         }
         return { ok: false, reason: transient ? 'unavailable' : 'refused' };

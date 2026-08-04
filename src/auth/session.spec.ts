@@ -1,4 +1,4 @@
-import { forceRefresh, getAccessToken, resetSessionForTest } from 'src/auth/session';
+import { forceRefresh, getAccessToken, onSessionLost, resetSessionForTest } from 'src/auth/session';
 import * as oidc from 'src/auth/oidc';
 import * as storage from 'src/auth/storage';
 import type { InstanceConfig } from 'src/instance/types';
@@ -272,6 +272,65 @@ describe('forceRefresh — rafraîchissement en vol unique', () => {
   // un SSO indisponible ne dit RIEN de la session. Écarter les jetons là
   // déconnecterait quelqu'un dont la session est parfaitement valide, pour un
   // Wi-Fi qui a hoqueté.
+  // Le refus est le SEUL moment où l'application apprend que la session est
+  // morte. Personne d'autre ne peut le déduire : un écran qui reçoit
+  // « aucune session » ne sait pas s'il n'y en a jamais eu — au démarrage,
+  // avant connexion — ou si celle qu'il avait vient d'être perdue.
+  it('prévient ses écouteurs quand la session est perdue', async () => {
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt-mort',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'invalid_grant' });
+    jest.spyOn(storage, 'clearTokens').mockResolvedValue();
+    const heard = jest.fn();
+    const unsubscribe = onSessionLost(heard);
+
+    await forceRefresh(ACCOUNT, CONFIG);
+
+    expect(heard).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  // L'autre polarité, et elle compte autant : une panne réseau ne dit rien de
+  // la session. Prévenir ici renverrait quelqu'un se reconnecter pour un
+  // Wi-Fi qui a hoqueté.
+  it('ne prévient personne quand le SSO est seulement injoignable', async () => {
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'network' });
+    const heard = jest.fn();
+    const unsubscribe = onSessionLost(heard);
+
+    await forceRefresh(ACCOUNT, CONFIG);
+
+    expect(heard).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("n'appelle plus un écouteur désabonné", async () => {
+    jest.spyOn(storage, 'loadTokens').mockResolvedValue({
+      accessToken: 'old',
+      refreshToken: 'rt-mort',
+      idToken: null,
+      expiresAt: Date.now() - 1_000,
+    });
+    jest.spyOn(oidc, 'refreshTokens').mockResolvedValue({ ok: false, error: 'invalid_grant' });
+    jest.spyOn(storage, 'clearTokens').mockResolvedValue();
+    const heard = jest.fn();
+    onSessionLost(heard)();
+
+    await forceRefresh(ACCOUNT, CONFIG);
+
+    expect(heard).not.toHaveBeenCalled();
+  });
+
   it('garde les jetons quand le SSO est seulement INJOIGNABLE', async () => {
     jest.spyOn(storage, 'loadTokens').mockResolvedValue({
       accessToken: 'old',
