@@ -123,8 +123,12 @@ jobs:
       # binaire n'a pas été déposé par la console — c'est ce dépôt-là qui fixe
       # le nom de paquet de la fiche. D'où une étape qui ne fait que produire
       # l'artefact, séparée de celle qui l'envoie.
+      # Sur un TAG, toujours : c'est la version qu'on publie, donc celle dont on
+      # veut l'AAB sous la main. La bascule ne sert qu'aux exécutions
+      # manuelles, où produire un AAB coûte un `bundleRelease` de plus pour
+      # rien la plupart du temps.
       - name: AAB signé (artefact, dépôt manuel)
-        if: inputs.build_aab == true
+        if: inputs.build_aab == true || startsWith(github.ref, 'refs/tags/')
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -136,7 +140,7 @@ jobs:
 
       - name: Publier l'AAB en artefact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        if: inputs.build_aab == true
+        if: inputs.build_aab == true || startsWith(github.ref, 'refs/tags/')
         with:
           name: twake-visio-android-aab-${{ github.run_number }}
           path: android/app/build/outputs/bundle/release/app-release.aab
