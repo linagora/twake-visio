@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Se déconnecter",
-  "settings.version": "Twake Visio 1.0 · Serveur souverain",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Vos réunions, partout,\nen toute sécurité.",
@@ -182,5 +182,10 @@
   "effects.title": "Arrière-plan",
   "effects.none": "Aucun",
   "effects.blur": "Flou",
-  "effects.open": "Effets d'arrière-plan"
+  "effects.open": "Effets d'arrière-plan",
+  "home.agendaTitle": "Prochaines réunions",
+  "home.agendaSignedOut": "Votre session a expiré. Reconnectez-vous pour retrouver votre agenda.",
+  "home.agendaUnreachable": "L'agenda ne répond pas pour l'instant. Nouvelle tentative dans une minute.",
+  "home.agendaUnsupported": "Cette instance ne propose pas d'agenda.",
+  "home.agendaSignIn": "Se reconnecter"
 }

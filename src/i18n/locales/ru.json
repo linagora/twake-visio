@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Выйти",
-  "settings.version": "Twake Visio 1.0 · Суверенный сервер",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Ваши встречи, где угодно,\nв полной безопасности.",
@@ -182,5 +182,10 @@
   "effects.title": "Фон",
   "effects.none": "Нет",
   "effects.blur": "Размытие",
-  "effects.open": "Эффекты фона"
+  "effects.open": "Эффекты фона",
+  "home.agendaTitle": "Ближайшие встречи",
+  "home.agendaSignedOut": "Сеанс истёк. Войдите снова, чтобы увидеть календарь.",
+  "home.agendaUnreachable": "Календарь не отвечает. Повтор через минуту.",
+  "home.agendaUnsupported": "Этот сервер не предоставляет календарь.",
+  "home.agendaSignIn": "Войти снова"
 }

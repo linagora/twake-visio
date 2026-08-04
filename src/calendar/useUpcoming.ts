@@ -19,6 +19,15 @@ import { selectUpcoming } from 'src/calendar/upcoming';
  * simplement rien de prévu. Confondre les deux ferait croire l'application
  * cassée à qui n'a pas de réunion aujourd'hui.
  */
+/**
+ * Pourquoi le panneau ne peut pas s'afficher, du point de vue de la PERSONNE.
+ *
+ * - `signed-out` : la session est perdue ou absente. Un geste la répare.
+ * - `unreachable` : le service ne répond pas. Rien à faire, ça se retente seul.
+ * - `unsupported` : cette instance n'expose pas d'agenda. Rien ne le réparera.
+ */
+export type UpcomingCause = 'signed-out' | 'unreachable' | 'unsupported';
+
 export type UpcomingState =
   | { readonly status: 'loading' }
   // `reason` n'est PAS décorative : sans elle, « pas de panneau » couvre quatre
@@ -26,7 +35,14 @@ export type UpcomingState =
   // logs JavaScript n'atteignent pas logcat, et le débogueur de Metro refuse
   // les connexions. Mesuré le 2026-08-03 : le panneau était absent et rien ne
   // permettait de dire pourquoi.
-  | { readonly status: 'unavailable'; readonly reason: string }
+  // `cause` est TYPÉE, `reason` reste libre, et les deux servent deux publics.
+  //
+  // `reason` porte le détail technique — un code HTTP, une audience de jeton —
+  // et n'est lue qu'en développement. `cause` est ce que l'écran montre à la
+  // personne : trois situations qui appellent trois phrases et trois gestes
+  // différents. Les confondre produisait « agenda indisponible — jeton:
+  // no-session », qui ne dit à personne qu'il suffit de se reconnecter.
+  | { readonly status: 'unavailable'; readonly cause: UpcomingCause; readonly reason: string }
   | { readonly status: 'ready'; readonly events: readonly CalendarEvent[]; readonly now: number };
 
 // DEUX cadences, et il faut les deux. Le widget web fait de même.
@@ -73,27 +89,31 @@ export function useUpcomingMeetings(): UpcomingState {
       setState({ status: 'ready', events: selectUpcoming(all, now), now });
     };
 
-    const hide = (reason: string): void => {
+    const hide = (cause: UpcomingCause, reason: string): void => {
       loaded.current = null;
-      setState({ status: 'unavailable', reason });
+      setState({ status: 'unavailable', cause, reason });
     };
 
     const load = async (): Promise<void> => {
       const account = getActiveAccount();
       if (account === null) {
-        if (!cancelled) hide('aucun compte');
+        if (!cancelled) hide('signed-out', 'aucun compte');
         return;
       }
 
       const base = sideServiceUrl(account.instance.serverUrl);
       if (base === null) {
-        if (!cancelled) hide('hôte indéductible');
+        if (!cancelled) hide('unsupported', 'hôte indéductible');
         return;
       }
 
       const outcome = await getAccessToken(account.id, account.instance);
       if (!outcome.ok) {
-        if (!cancelled) hide(`jeton: ${outcome.reason}`);
+        // Un jeton absent ou REFUSÉ se répare en se reconnectant ; un SSO
+        // injoignable ne se répare pas d'ici et se retente seul.
+        const cause: UpcomingCause =
+          outcome.reason === 'unavailable' ? 'unreachable' : 'signed-out';
+        if (!cancelled) hide(cause, `jeton: ${outcome.reason}`);
         return;
       }
 
@@ -129,7 +149,10 @@ export function useUpcomingMeetings(): UpcomingState {
           // service peut refuser un jeton frappé pour `livekit-meet`, et ce
           // refus se lit « pas de calendrier ici », jamais comme une panne.
           if (!cancelled) {
-            hide(`${error instanceof Error ? error.message : String(error)}${detail}`);
+            hide(
+              'unreachable',
+              `${error instanceof Error ? error.message : String(error)}${detail}`,
+            );
           }
         }
       };

@@ -150,7 +150,7 @@ describe('HomeScreen', () => {
       // Un `401` d'audience passe par ici.
       jest
         .spyOn(upcoming, 'useUpcomingMeetings')
-        .mockReturnValue({ status: 'unavailable', reason: 'test' });
+        .mockReturnValue({ cause: 'signed-out', status: 'unavailable', reason: 'test' });
       jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 
       await renderHome();

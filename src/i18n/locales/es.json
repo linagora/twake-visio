@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Cerrar sesión",
-  "settings.version": "Twake Visio 1.0 · Servidor soberano",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Sus reuniones, en todas partes,\ncon total seguridad.",
@@ -182,5 +182,10 @@
   "effects.title": "Fondo",
   "effects.none": "Ninguno",
   "effects.blur": "Desenfoque",
-  "effects.open": "Efectos de fondo"
+  "effects.open": "Efectos de fondo",
+  "home.agendaTitle": "Próximas reuniones",
+  "home.agendaSignedOut": "Tu sesión ha caducado. Vuelve a iniciar sesión para ver tu agenda.",
+  "home.agendaUnreachable": "La agenda no responde. Se reintentará en un minuto.",
+  "home.agendaUnsupported": "Esta instancia no ofrece agenda.",
+  "home.agendaSignIn": "Volver a iniciar sesión"
 }

@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Đăng xuất",
-  "settings.version": "Twake Visio 1.0 · Máy chủ chủ quyền",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Cuộc họp của bạn, mọi nơi,\nhoàn toàn an toàn.",
@@ -182,5 +182,10 @@
   "effects.title": "Nền",
   "effects.none": "Không",
   "effects.blur": "Làm mờ",
-  "effects.open": "Hiệu ứng nền"
+  "effects.open": "Hiệu ứng nền",
+  "home.agendaTitle": "Cuộc họp sắp tới",
+  "home.agendaSignedOut": "Phiên của bạn đã hết hạn. Hãy đăng nhập lại để xem lịch.",
+  "home.agendaUnreachable": "Lịch không phản hồi. Sẽ thử lại sau một phút.",
+  "home.agendaUnsupported": "Máy chủ này không cung cấp lịch.",
+  "home.agendaSignIn": "Đăng nhập lại"
 }

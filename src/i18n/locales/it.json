@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Disconnetti",
-  "settings.version": "Twake Visio 1.0 · Server sovrano",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Le tue riunioni, ovunque,\nin tutta sicurezza.",
@@ -182,5 +182,10 @@
   "effects.title": "Sfondo",
   "effects.none": "Nessuno",
   "effects.blur": "Sfocatura",
-  "effects.open": "Effetti di sfondo"
+  "effects.open": "Effetti di sfondo",
+  "home.agendaTitle": "Prossime riunioni",
+  "home.agendaSignedOut": "La tua sessione è scaduta. Accedi di nuovo per vedere il calendario.",
+  "home.agendaUnreachable": "Il calendario non risponde. Nuovo tentativo tra un minuto.",
+  "home.agendaUnsupported": "Questa istanza non offre un calendario.",
+  "home.agendaSignIn": "Accedi di nuovo"
 }

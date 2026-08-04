@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { openBrowserAsync } from 'expo-web-browser';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { getActiveAccount } from 'src/auth/accounts';
 import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
@@ -13,14 +13,10 @@ import { ActionCard } from 'src/ui/actionCard';
 import { AppHeader } from 'src/ui/appHeader';
 import { tokens } from 'src/ui/tokens';
 import { UpcomingMeetings } from 'src/ui/upcomingMeetings';
+import { UpcomingUnavailable } from 'src/ui/upcomingUnavailable';
 
 const styles = StyleSheet.create({
   content: { gap: 12, padding: 18 },
-  diagnostic: {
-    color: tokens.color.textMeta,
-    fontFamily: tokens.font.medium,
-    fontSize: 11,
-  },
   root: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
@@ -91,15 +87,19 @@ export function HomeScreen(): React.ReactElement {
             VIDE, elle, se rend : c'est la différence entre « rien de prévu » et
             « pas de calendrier », et les confondre ferait croire l'application
             cassée à qui n'a pas de réunion aujourd'hui. */}
-        {/* DIAGNOSTIC, développement seulement. Les logs JavaScript n'atteignent
-            pas logcat et le débogueur de Metro refuse les connexions : sans
-            cette ligne, « le panneau n'apparaît pas » est indiscernable de
-            « le service a refusé le jeton ». `__DEV__` est faux dans un build
-            de production, où l'écran reste silencieux comme prévu. */}
-        {__DEV__ && upcoming.status === 'unavailable' ? (
-          <Text style={styles.diagnostic} testID="upcoming-diagnostic">
-            agenda indisponible — {upcoming.reason}
-          </Text>
+        {/* L'écran ne se TAIT plus quand l'agenda manque. Il se taisait en
+            production — un agenda absent était alors indiscernable d'un agenda
+            vide — et parlait en développement une langue de développeur :
+            « agenda indisponible — jeton: no-session ».
+            Le détail technique n'est pas perdu pour autant : il descend sous la
+            phrase, en développement seulement. */}
+        {upcoming.status === 'unavailable' ? (
+          <UpcomingUnavailable
+            cause={upcoming.cause}
+            detail={upcoming.reason}
+            onSignIn={() => router.push('/welcome')}
+            testID="upcoming-unavailable"
+          />
         ) : null}
 
         {upcoming.status === 'ready' ? (

@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Abmelden",
-  "settings.version": "Twake Visio 1.0 · Souveräner Server",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Ihre Besprechungen, überall,\nin voller Sicherheit.",
@@ -182,5 +182,10 @@
   "effects.title": "Hintergrund",
   "effects.none": "Keiner",
   "effects.blur": "Weichzeichnen",
-  "effects.open": "Hintergrundeffekte"
+  "effects.open": "Hintergrundeffekte",
+  "home.agendaTitle": "Nächste Besprechungen",
+  "home.agendaSignedOut": "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an, um Ihren Kalender zu sehen.",
+  "home.agendaUnreachable": "Der Kalender antwortet nicht. Neuer Versuch in einer Minute.",
+  "home.agendaUnsupported": "Diese Instanz bietet keinen Kalender.",
+  "home.agendaSignIn": "Erneut anmelden"
 }

@@ -149,7 +149,7 @@
   "settings.languages.vi": "Tiếng Việt",
   "settings.languages.ru": "Русский",
   "settings.signOut": "Sign out",
-  "settings.version": "Twake Visio 1.0 · Sovereign server",
+  "settings.version": "Twake Visio {{version}}",
   "welcome.title": "Twake",
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Your meetings, anywhere,\nsecurely.",
@@ -182,5 +182,10 @@
   "effects.title": "Background",
   "effects.none": "None",
   "effects.blur": "Blur",
-  "effects.open": "Background effects"
+  "effects.open": "Background effects",
+  "home.agendaTitle": "Upcoming meetings",
+  "home.agendaSignedOut": "Your session has expired. Sign in again to see your calendar.",
+  "home.agendaUnreachable": "The calendar is not responding. Retrying in a minute.",
+  "home.agendaUnsupported": "This instance does not provide a calendar.",
+  "home.agendaSignIn": "Sign in again"
 }
