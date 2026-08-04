@@ -445,8 +445,17 @@ export function PrejoinScreen(): React.ReactElement {
             `onSurfaceDisabled`, un quasi-noir qu'aucune couleur explicite ne
             rattrape sur cet écran sombre — la règle d'AGENTS.md. Un invité
             sans nom n'a donc AUCUN bouton à regarder, plutôt qu'un bouton
-            mort. */}
-        {name.trim().length > 0 ? (
+            mort.
+
+            La garde ne vaut QUE pour un invité, et c'est tout son sujet : lui
+            seul dispose du champ qui le sortirait de là. Écrite pour tout
+            visiteur, elle transformait un nom vide en cul-de-sac sur le
+            chemin AUTHENTIFIÉ — sans bouton pour entrer, et sans champ pour se
+            nommer. Et un compte peut parfaitement porter un nom vide :
+            `users.ts:22` calcule `full_name ?? short_name ?? email`, or `??`
+            ne rattrape pas `""`, et un utilisateur Django sans prénom ni nom a
+            justement un `full_name` vide. */}
+        {visitor?.kind !== 'guest' || name.trim().length > 0 ? (
           <Button
             buttonColor={tokens.color.brandStrong}
             mode="contained"

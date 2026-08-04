@@ -648,6 +648,27 @@ describe('le pré-join avec un compte', () => {
     );
   });
 
+  // LA régression que la garde de nom vide avait introduite sur le chemin
+  // authentifié. Elle a été écrite pour un invité — lui seul dispose du champ
+  // qui le sortirait de là —, mais elle s'appliquait à TOUT visiteur.
+  //
+  // Un compte peut porter un nom vide : `users.ts:22` calcule
+  // `full_name ?? short_name ?? email`, et `??` ne rattrape pas `""` — or un
+  // utilisateur Django sans prénom ni nom a précisément un `full_name` vide.
+  // Un tel compte obtenait un pré-join SANS bouton « Rejoindre » et SANS champ
+  // pour se nommer : un cul-de-sac sur l'unique route qui mène à une réunion.
+  it('rend « Rejoindre » à un COMPTE dont le nom est vide', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({
+      kind: 'account',
+      account: { ...ACCOUNT, displayName: '' },
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen());
+  });
+
   it("écrit BIEN dans l'historique pour un compte", async () => {
     jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
