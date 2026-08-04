@@ -19,7 +19,15 @@
         }
       ],
       "expo-font",
-      "./plugins/withAndroidReleaseSigning"
+      "./plugins/withAndroidReleaseSigning",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#00AD5C"
+        }
+      ],
+      "expo-background-task"
     ],
     "android": {
       "package": "com.linagora.twakevisio",

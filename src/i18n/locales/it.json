@@ -189,5 +189,15 @@
   "home.agendaSignedOut": "La tua sessione è scaduta. Accedi di nuovo per vedere il calendario.",
   "home.agendaUnreachable": "Il calendario non risponde. Nuovo tentativo tra un minuto.",
   "home.agendaUnsupported": "Questa istanza non offre un calendario.",
-  "home.agendaSignIn": "Accedi di nuovo"
+  "home.agendaSignIn": "Accedi di nuovo",
+  "settings.groups.notifications": "Notifiche",
+  "settings.rows.reminder": "Promemoria prima di una riunione",
+  "settings.rows.reminderHint": "Ricevi una notifica con un pulsante Partecipa",
+  "settings.options.reminderNever": "Mai",
+  "settings.options.reminder60": "1 ora prima",
+  "settings.options.reminder30": "30 minuti prima",
+  "settings.options.reminder15": "15 minuti prima",
+  "settings.options.reminder5": "5 minuti prima",
+  "notifications.reminderBody": "Inizia alle {{time}}",
+  "notifications.joinAction": "Partecipa"
 }

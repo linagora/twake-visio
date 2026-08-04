@@ -28,6 +28,11 @@ echo "Rendu des SVG…"
 rsvg-convert -w 1024 -h 1024 assets/icon.svg -o /tmp/tv-icon.png
 rsvg-convert -w 1024 -h 1024 assets/adaptive-icon.svg -o assets/adaptive-icon.png
 rsvg-convert -w 1024 -h 1024 assets/adaptive-icon-background.svg -o assets/adaptive-icon-background.png
+# L'icône de notification Android n'utilise QUE le canal alpha : tout pixel
+# opaque y est peint en blanc par le système. Le premier plan adaptatif est
+# déjà exactement cela, d'où la même source. Sans elle, Android affiche
+# l'icône de l'application aplatie en un pâté blanc illisible.
+rsvg-convert -w 96 -h 96 assets/adaptive-icon.svg -o assets/notification-icon.png
 
 python3 - <<'PY'
 from PIL import Image
@@ -56,6 +61,7 @@ attendu = {
     'assets/adaptive-icon.png': ((1024, 1024), True),
     'assets/adaptive-icon-background.png': ((1024, 1024), False),
     'assets/store/play-icon-512.png': ((512, 512), False),
+    'assets/notification-icon.png': ((96, 96), True),
 }
 faux = 0
 for chemin, (taille, alpha_attendu) in attendu.items():

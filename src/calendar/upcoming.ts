@@ -15,13 +15,19 @@ export const WINDOW_AHEAD_MS = 24 * 3600000;
 export const MAX_EVENTS = 3;
 
 /**
- * Les prochaines visioconférences, triées, dédupliquées et tronquées.
+ * Tout ce que la fenêtre retient : trié, dédupliqué, **non tronqué**.
+ *
+ * Extrait de `selectUpcoming` pour que les rappels de réunion s'appuient sur la
+ * même règle sans hériter de sa troncature. `MAX_EVENTS` est une contrainte
+ * d'AFFICHAGE — une carte d'accueil ne montre pas plus de trois lignes — et une
+ * notification n'a pas cette contrainte : une journée à six réunions est
+ * justement celle où l'on en oublie une.
  *
  * `now` est un PARAMÈTRE et non un `Date.now()` lu à l'intérieur : c'est ce qui
  * permet à une fixture de rendre chaque borne vraie ET fausse. Une fonction qui
  * lit l'horloge elle-même ne peut être testée qu'à l'instant où elle tourne.
  */
-export function selectUpcoming(
+export function selectWindow(
   events: readonly CalendarEvent[],
   now: number,
 ): readonly CalendarEvent[] {
@@ -44,7 +50,18 @@ export function selectUpcoming(
     kept.push(event);
   }
 
-  // Le tri PRÉCÈDE la troncature. L'inverse rendrait trois évènements valides
-  // mais pas les trois prochains.
-  return kept.sort((a, b) => a.startMs - b.startMs).slice(0, MAX_EVENTS);
+  return kept.sort((a, b) => a.startMs - b.startMs);
+}
+
+/**
+ * Les prochaines visioconférences telles que l'accueil les montre.
+ *
+ * Le tri PRÉCÈDE la troncature, et c'est `selectWindow` qui le fait : l'inverse
+ * rendrait trois évènements valides mais pas les trois prochains.
+ */
+export function selectUpcoming(
+  events: readonly CalendarEvent[],
+  now: number,
+): readonly CalendarEvent[] {
+  return selectWindow(events, now).slice(0, MAX_EVENTS);
 }

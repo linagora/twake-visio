@@ -189,5 +189,15 @@
   "home.agendaSignedOut": "Сеанс истёк. Войдите снова, чтобы увидеть календарь.",
   "home.agendaUnreachable": "Календарь не отвечает. Повтор через минуту.",
   "home.agendaUnsupported": "Этот сервер не предоставляет календарь.",
-  "home.agendaSignIn": "Войти снова"
+  "home.agendaSignIn": "Войти снова",
+  "settings.groups.notifications": "Уведомления",
+  "settings.rows.reminder": "Напоминание перед встречей",
+  "settings.rows.reminderHint": "Вы получите уведомление с кнопкой «Присоединиться»",
+  "settings.options.reminderNever": "Никогда",
+  "settings.options.reminder60": "За 1 час",
+  "settings.options.reminder30": "За 30 минут",
+  "settings.options.reminder15": "За 15 минут",
+  "settings.options.reminder5": "За 5 минут",
+  "notifications.reminderBody": "Начало в {{time}}",
+  "notifications.joinAction": "Присоединиться"
 }

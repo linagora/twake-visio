@@ -7,7 +7,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { getActiveAccount } from 'src/auth/accounts';
 import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
 import { calendarEventUrl } from 'src/calendar/webCalendar';
-import { parseMeetingLink } from 'src/navigation/deepLinks';
+import { agendaHosts, parseMeetingLink } from 'src/navigation/deepLinks';
 import { JoinSheet } from 'src/screens/joinSheet';
 import { ActionCard } from 'src/ui/actionCard';
 import { AppHeader } from 'src/ui/appHeader';
@@ -40,14 +40,10 @@ export function HomeScreen(): React.ReactElement {
 
   // L'hôte de l'instance connectée, seul autorisé à fournir un salon depuis
   // l'agenda. Vide sans compte, ce qui referme la porte plutôt que de l'ouvrir.
-  const allowedHosts = useMemo(() => {
-    if (account === null) return [];
-    try {
-      return [new URL(account.instance.serverUrl).hostname];
-    } catch {
-      return [];
-    }
-  }, [account]);
+  const allowedHosts = useMemo(
+    () => (account === null ? [] : agendaHosts(account.instance.serverUrl)),
+    [account],
+  );
 
   // L'encart HAUT n'est PAS ici : il appartient à l'en-tête, seule surface qui
   // borde ce bord et qui porte sa propre couleur. Posé sur cette racine, la

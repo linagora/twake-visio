@@ -1,4 +1,4 @@
-import { parseMeetingLink } from 'src/navigation/deepLinks';
+import { agendaHosts, parseMeetingLink } from 'src/navigation/deepLinks';
 
 const HOSTS = ['meet.linagora.com', 'visio.twake.app'] as const;
 
@@ -66,5 +66,25 @@ describe('parseMeetingLink', () => {
 
   it('ignore une URL malformée', () => {
     expect(parseMeetingLink('pas une url', HOSTS)).toBe(null);
+  });
+});
+
+describe('agendaHosts', () => {
+  it("rend l'hôte de l'instance", () => {
+    expect(agendaHosts('https://meet.linagora.com')).toEqual(['meet.linagora.com']);
+  });
+
+  it("ignore le chemin et le port de l'URL", () => {
+    expect(agendaHosts('https://meet.example.org:8443/quelque/chose')).toEqual([
+      'meet.example.org',
+    ]);
+  });
+
+  it('rend une liste VIDE quand l’URL est illisible', () => {
+    // Vide et non « tout accepter » : une liste d'hôtes vide REFERME la porte,
+    // puisque `parseMeetingLink` exige une correspondance. L'inverse ferait
+    // ouvrir un salon depuis n'importe quel lien d'agenda.
+    expect(agendaHosts('pas une url')).toEqual([]);
+    expect(agendaHosts('')).toEqual([]);
   });
 });

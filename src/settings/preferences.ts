@@ -2,6 +2,7 @@ import { createMMKV } from 'react-native-mmkv';
 
 import type { AccessLevel } from 'src/call/types';
 import { isSupportedLocale, type SupportedLocale } from 'src/i18n/supported';
+import { isLeadMinutes, type LeadMinutes } from 'src/notifications/reminders';
 
 // Les quatre réglages que l'écran Réglages expose.
 //
@@ -16,6 +17,12 @@ export type Preferences = {
   // `resolveLocale`. Une chaîne vide ne conviendrait pas : elle est
   // indiscernable d'une locale inconnue.
   readonly language: SupportedLocale | null;
+  // Le délai du rappel avant une réunion, `null` valant « jamais ».
+  //
+  // Un seul champ plutôt qu'un booléen ET un délai : deux champs autoriseraient
+  // l'état bâtard « activé, mais quel délai », qu'il faudrait alors trancher
+  // partout où on les lit. C'est déjà l'idiome de `language` juste au-dessus.
+  readonly reminderLeadMinutes: LeadMinutes | null;
 };
 
 // `public` et non le `trusted` du mockup.
@@ -29,6 +36,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   cameraOffOnJoin: false,
   defaultAccessLevel: 'public',
   language: null,
+  // Muet par défaut. Une application qui se met à notifier sans qu'on le lui
+  // ait demandé se fait couper ses notifications en bloc, et perd du même coup
+  // celles qu'on aurait voulues.
+  reminderLeadMinutes: null,
 };
 
 const store = createMMKV({ id: 'preferences' });
@@ -42,6 +53,7 @@ function isAccessLevel(value: string): value is AccessLevel {
 export function readPreferences(): Preferences {
   const level = store.getString('defaultAccessLevel');
   const language = store.getString('language');
+  const lead = store.getNumber('reminderLeadMinutes');
   return {
     micOffOnJoin: store.getBoolean('micOffOnJoin') ?? DEFAULT_PREFERENCES.micOffOnJoin,
     cameraOffOnJoin: store.getBoolean('cameraOffOnJoin') ?? DEFAULT_PREFERENCES.cameraOffOnJoin,
@@ -53,6 +65,10 @@ export function readPreferences(): Preferences {
     // Même raison : une locale retirée de `SUPPORTED_LOCALES` entre deux
     // versions ferait basculer i18next sur une langue qui n'existe plus.
     language: language !== undefined && isSupportedLocale(language) ? language : null,
+    // Et encore la même : un délai retiré de `LEAD_MINUTES` entre deux versions
+    // programmerait des rappels à une heure que plus aucune ligne de réglage
+    // ne saurait afficher.
+    reminderLeadMinutes: lead !== undefined && isLeadMinutes(lead) ? lead : null,
   };
 }
 
