@@ -60,3 +60,75 @@ export function parseMeetingLink(url: string, allowedHosts: readonly string[]): 
   if (first === undefined || segments.length !== 1) return null;
   return isRoomSegment(first) ? first : null;
 }
+
+// ————————————————————————————————————————————————————————————————————————
+// Ce que le PRESSE-PAPIERS peut rendre, à la différence d'un lien profond.
+//
+// `parseMeetingLink` ci-dessus garde son allowlist et n'est PAS touchée : un
+// lien profond arrive sans qu'on l'ait demandé, et l'allowlist est ce qui
+// empêche un message hostile de faire ouvrir un salon étranger.
+//
+// Coller est l'inverse : un appui délibéré, dont l'hôte est montré avant que
+// quoi que ce soit ne parte. D'où deux fonctions, et non un drapeau sur une
+// seule — un drapeau se met à faux par erreur, une fonction séparée non.
+export type PastedTarget = { readonly slug: string; readonly host: string | null };
+
+// `null` en hôte veut dire « aucune information d'hôte dans ce qui a été
+// collé » — l'appelant garde le sien. Ce n'est PAS « hôte inconnu ».
+const BARE_CODE = /^[a-z]{3}-?[a-z]{4}-?[a-z]{3}$/i;
+
+const EMBEDDED_URL = /https:\/\/[^\s<>"']+/i;
+
+// La ponctuation qui termine une phrase, pas une URL. « Rendez-vous ici :
+// https://…/abc-defg-hij. » est la forme sous laquelle un lien circule
+// vraiment, et sans ce retrait le point final entre dans le segment, que
+// SLUG_CHARSET refuse alors — un refus que rien n'expliquerait à l'écran.
+const TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/;
+
+function fromUrl(candidate: string): PastedTarget | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol === `${APP_SCHEME}:`) {
+    if (parsed.host !== 'room') return null;
+    const segment = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
+    if (segment === undefined) return null;
+    return isRoomSegment(segment) ? { slug: segment, host: null } : null;
+  }
+
+  if (parsed.protocol !== 'https:') return null;
+
+  const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
+  const first = segments[0];
+  if (first === undefined || segments.length !== 1) return null;
+  if (!isRoomSegment(first)) return null;
+  return { slug: first, host: parsed.host.toLowerCase() };
+}
+
+export function parsePastedMeeting(text: string): PastedTarget | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+
+  const whole = fromUrl(trimmed);
+  if (whole !== null) return whole;
+
+  const embedded = EMBEDDED_URL.exec(trimmed);
+  if (embedded !== null) {
+    const found = fromUrl(embedded[0].replace(TRAILING_PUNCTUATION, ''));
+    if (found !== null) return found;
+  }
+
+  // Le motif est appliqué au TEXTE ENTIER, jamais après normalisation.
+  //
+  // `normalizeCodeInput` jette tout ce qui n'est pas [a-z] puis tronque à dix :
+  // lui passer « Rejoins-moi : abc-defg-hij » lui ferait rendre dix lettres,
+  // donc un code « complet », donc parfaitement bogus — dix cases remplies et
+  // une proposition de rejoindre un salon qui n'existe pas.
+  if (BARE_CODE.test(trimmed)) return { slug: trimmed, host: null };
+
+  return null;
+}
