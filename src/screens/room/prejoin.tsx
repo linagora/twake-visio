@@ -14,6 +14,15 @@ import { getActiveAccount } from 'src/auth/accounts';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
+import {
+  applyEffect,
+  areEffectsSupported,
+  useEffectCameraPreview,
+  type BackgroundEffect,
+} from 'src/call/backgroundEffect';
+import { AudioOutputSheet } from 'src/screens/room/audioOutputControl';
+import { EffectsSheet } from 'src/screens/room/effectsSheet';
+import { useAudioOutput } from 'src/screens/room/useAudioOutput';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
 import { readPreferences } from 'src/settings/preferences';
 import { tokens } from 'src/ui/tokens';
@@ -39,12 +48,16 @@ const styles = StyleSheet.create({
   bar: {
     bottom: 16,
     flexDirection: 'row',
-    gap: 12,
+    // 28 entre les GROUPES, 12 à l'intérieur : c'est ce rapport qui fait lire
+    // deux blocs plutôt que quatre boutons. Un écart identique partout et le
+    // regroupement ne se voit pas ; trop grand, la rangée se disloque.
+    gap: 28,
     justifyContent: 'center',
     left: 0,
     position: 'absolute',
     right: 0,
   },
+  group: { flexDirection: 'row', gap: 12 },
   control: {
     alignItems: 'center',
     backgroundColor: CONTROL_SURFACE,
@@ -135,7 +148,37 @@ export function PrejoinScreen(): React.ReactElement {
   // L'aperçu suit la bascule caméra : la couper relâche la caméra, la rallumer
   // la réacquiert. Le module possède ce cycle, y compris le flux qui arrive
   // après le démontage.
-  const previewUrl = useCameraPreview(!cameraOff);
+  // DEUX aperçus, et un seul est monté à la fois.
+  //
+  // Là où le natif existe, la caméra passe par le décorateur d'effets — c'est
+  // la seule façon de VOIR le flou avant d'entrer. Ailleurs (iOS aujourd'hui),
+  // on garde la voie `getUserMedia` d'origine.
+  //
+  // Les deux crochets sont appelés inconditionnellement, jamais dans un `if` :
+  // `react-hooks/rules-of-hooks` l'exige, et c'est le drapeau `enabled` qui
+  // décide lequel acquiert réellement une caméra.
+  const effectsOn = areEffectsSupported();
+  const plainPreviewUrl = useCameraPreview(!cameraOff && !effectsOn);
+  const effectPreviewUrl = useEffectCameraPreview(!cameraOff && effectsOn);
+  const previewUrl = effectsOn ? effectPreviewUrl : plainPreviewUrl;
+
+  // L'effet choisi AVANT d'entrer. Il est appliqué au natif dès la sélection,
+  // donc l'aperçu au-dessus le montre — c'est le seul aperçu qui vaille, les
+  // vignettes du panneau ne sont que des numéros.
+  const [effect, setEffect] = useState<BackgroundEffect>({ kind: 'none' });
+  const [effectsOpen, setEffectsOpen] = useState(false);
+
+  // Cet écran n'a pas de Snackbar : un échec de routage y serait muet. Le
+  // signaler demanderait une surface que le pré-join n'a pas, et l'inventer
+  // pour un cas que personne n'a rencontré serait prématuré — la feuille, elle,
+  // montre l'appareil CONSTATÉ, donc un routage refusé se voit à la coche qui
+  // ne bouge pas.
+  const audio = useAudioOutput(() => undefined);
+
+  const handleEffectSelect = (next: BackgroundEffect): void => {
+    setEffect(next);
+    applyEffect(next);
+  };
 
   useEffect(() => {
     const account = getActiveAccount();
@@ -251,37 +294,93 @@ export function PrejoinScreen(): React.ReactElement {
           <RTCView mirror objectFit="cover" streamURL={previewUrl} style={styles.video} />
         )}
 
+        {/* DEUX groupes, séparés par un écart plus large que celui qui sépare
+            deux boutons d'un même groupe : le son à gauche, l'image à droite.
+            L'ordre d'avant les entrelaçait — micro, caméra, effets, son — et
+            rien ne disait que le dernier bouton commandait la même chose que le
+            premier. Demande du propriétaire, faite en regardant la rangée. */}
         <View style={styles.bar}>
-          <Pressable
-            accessibilityLabel={t('call.muted')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: micOff }}
-            onPress={() => setMicOff((previous) => !previous)}
-            style={[styles.control, micOff ? styles.controlOff : null]}
-            testID="mic-switch"
-          >
-            <MaterialCommunityIcons
-              color={tokens.color.textDark}
-              name={micOff ? 'microphone-off' : 'microphone'}
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={t('prejoin.cameraOff')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: cameraOff }}
-            onPress={() => setCameraOff((previous) => !previous)}
-            style={[styles.control, cameraOff ? styles.controlOff : null]}
-            testID="camera-switch"
-          >
-            <MaterialCommunityIcons
-              color={tokens.color.textDark}
-              name={cameraOff ? 'video-off' : 'video'}
-              size={24}
-            />
-          </Pressable>
+          <View style={styles.group}>
+            <Pressable
+              accessibilityLabel={t('call.muted')}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: micOff }}
+              onPress={() => setMicOff((previous) => !previous)}
+              style={[styles.control, micOff ? styles.controlOff : null]}
+              testID="mic-switch"
+            >
+              <MaterialCommunityIcons
+                color={tokens.color.textDark}
+                name={micOff ? 'microphone-off' : 'microphone'}
+                size={24}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityLabel={t('call.audioOutput')}
+              accessibilityRole="button"
+              onPress={audio.onOpen}
+              style={styles.control}
+              testID="prejoin-audio-btn"
+            >
+              <MaterialCommunityIcons color={tokens.color.textDark} name="volume-high" size={20} />
+            </Pressable>
+          </View>
+
+          <View style={styles.group}>
+            <Pressable
+              accessibilityLabel={t('prejoin.cameraOff')}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: cameraOff }}
+              onPress={() => setCameraOff((previous) => !previous)}
+              style={[styles.control, cameraOff ? styles.controlOff : null]}
+              testID="camera-switch"
+            >
+              <MaterialCommunityIcons
+                color={tokens.color.textDark}
+                name={cameraOff ? 'video-off' : 'video'}
+                size={24}
+              />
+            </Pressable>
+            {/* Masqué là où le natif n'existe pas — iOS attend son pendant
+                Vision. Une commande qu'on ne peut pas honorer coûte plus cher
+                que son absence. Cette garde a SAUTÉ en regroupant les boutons,
+                et rien ne l'a dit : aucun test ne la couvrait. */}
+            {effectsOn ? (
+              <Pressable
+                accessibilityLabel={t('effects.open')}
+                accessibilityRole="button"
+                onPress={() => setEffectsOpen(true)}
+                style={styles.control}
+                testID="prejoin-effects-btn"
+              >
+                <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       </View>
+
+      <AudioOutputSheet
+        visible={audio.open}
+        onDismiss={audio.onDismiss}
+        mode={audio.mode}
+        outputs={audio.outputs}
+        chosen={audio.chosen}
+        devices={audio.devices}
+        currentDeviceId={audio.currentDeviceId}
+        manual={audio.manual}
+        onSelect={audio.onSelect}
+        onSelectDevice={audio.onSelectDevice}
+        onAutomatic={audio.onAutomatic}
+      />
+
+      <EffectsSheet
+        current={effect}
+        onEffectSelect={handleEffectSelect}
+        onSheetDismiss={() => setEffectsOpen(false)}
+        testID="prejoin-effects"
+        visible={effectsOpen}
+      />
 
       <View style={styles.footer}>
         <View style={styles.nameCard}>

@@ -1,0 +1,42 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'com.linagora.twakevisio.segmentation'
+version = '0.1.0'
+
+android {
+  namespace 'com.linagora.twakevisio.segmentation'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+  lint {
+    abortOnError true
+  }
+}
+
+dependencies {
+  // `compileOnly` et non `implementation` : l'application embarque DÉJÀ ce
+  // paquet — c'est lui qui porte tout WebRTC. Le lier en `implementation`
+  // dupliquerait ses classes dans l'APK. On ne veut que le compilateur.
+  //
+  // Le nom du projet vient de l'autolinking de React Native, qui translittère
+  // `@livekit/react-native-webrtc` : la barre oblique devient un souligné, le
+  // reste est conservé. Vérifié par `./gradlew projects`, pas deviné.
+  compileOnly project(':livekit_react-native-webrtc')
+
+  // Les classes du PONT React Native — `ReactApplicationContext`, et
+  // `getNativeModule` qui donne accès au registre où vit `WebRTCModule`.
+  // `compileOnly` n'est pas transitif : la dépendance ci-dessus ne les apporte
+  // pas, bien que `AbstractVideoCaptureController` les importe elle-même.
+  compileOnly 'com.facebook.react:react-android'
+
+  // MLKit Selfie Segmentation, EMBARQUÉ dans l'application (`segmentation-selfie`)
+  // et non téléchargé à la demande par les Google Play Services. C'est ce que
+  // demande une mesure : un modèle dont l'absence ferait échouer le premier
+  // appel au lieu de mesurer un temps.
+  //
+  // Le poids embarqué est le prix de ce choix, et il fait partie du chiffrage :
+  // à relever sur l'APK produit.
+  implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta6'
+}

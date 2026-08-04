@@ -53,6 +53,27 @@ describe('buildAuthorizeUrl', () => {
     const url = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st', 'no', 'ada@linagora.com'));
     expect(url.searchParams.get('login_hint')).toBe('ada@linagora.com');
   });
+
+  // `offline_access` est ce qui donne au jeton de rafraîchissement une vie
+  // INDÉPENDANTE de la session du portail. Sans lui, mesuré sur l'instance de
+  // développement le 2026-08-03, le jeton meurt avec la session — « Unable to
+  // find OIDC session » — et l'application redemande un mot de passe alors
+  // qu'aucun téléphone ne devrait l'exiger chaque jour.
+  //
+  // C'est une portée que le SERVEUR doit aussi autoriser : LemonLDAP ignore la
+  // demande à moins que `oidcRPMetaDataOptionsAllowOffline` ne soit posé sur le
+  // client, et que le consentement soit contourné ou demandé
+  // (`Issuer/OpenIDConnect.pm:885-912`). Les deux moitiés ont été livrées
+  // ensemble ; l'une sans l'autre ne fait rien.
+  it("demande l'accès hors ligne, sans perdre les portées de base", () => {
+    const scope = new URL(buildAuthorizeUrl(CONFIG, PKCE, 'st', 'no')).searchParams.get('scope');
+
+    // Découpé plutôt que comparé à une chaîne : l'ordre des portées n'a aucune
+    // signification, et le figer ferait rougir un ajout parfaitement valide.
+    expect(scope?.split(' ')).toEqual(
+      expect.arrayContaining(['openid', 'email', 'profile', 'offline_access']),
+    );
+  });
 });
 
 describe('exchangeCode', () => {

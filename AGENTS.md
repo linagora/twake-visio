@@ -248,6 +248,35 @@ them by hand.
 
 The iOS Simulator cannot publish camera or microphone — iOS testing needs a device.
 
+### Deux JDK sont installés, et le défaut CASSE la compilation Android
+
+Mesuré le 2026-08-02. `java -version` rend **24.0.2**, et Temurin **21** est
+présent à côté. Compiler avec le 24 fait échouer la configuration CMake sur :
+
+```
+Execution failed for task ':react-native-nitro-modules:configureCMakeDebug[arm64-v8a]'.
+> WARNING: A restricted method in java.lang.System has been called
+Caused by: java.lang.IllegalStateException
+```
+
+**Le message ne nomme ni Java ni le JDK.** Le 24 émet cet avertissement sur la
+sortie que l'AGP parse pour configurer CMake ; le parseur ne sait qu'en faire et
+lève. Rien dans la trace ne mène à la version de Java, et rien dans le code n'est
+en cause.
+
+    export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
+
+**Et un code de sortie 143 n'est PAS un échec de compilation** : c'est 128 + 15,
+donc `SIGTERM` — la compilation a été tuée. Lu trop vite, il envoie chercher un
+bug dans du C++ qui compilait très bien. Une compilation Android longue doit être
+détachée (`nohup … & disown`) de tout ordonnanceur susceptible de la faucher.
+
+**Enfin, la bâtisse CMake vit DANS `node_modules`**
+(`node_modules/react-native-nitro-modules/android/.cxx`). Un worktree dont
+`node_modules` est un lien symbolique vers le dépôt principal — la convention de
+ce dépôt — la PARTAGE donc avec lui. Le lien est sûr pour du JavaScript ; deux
+compilations natives simultanées se disputeraient le même répertoire.
+
 ## Mesurer sur appareil : une sonde muette n'est pas une mesure
 
 Trois fausses conclusions en une journée, le 2026-08-02, toutes de la même forme — **la sonde
@@ -303,6 +332,32 @@ appareil le 2026-08-02 ; le détail est dans
 
 Confondre les deux premiers a failli faire conclure qu'un service de premier plan tout neuf
 ne servait à rien.
+
+### Le Pixel 10 Pro Fold a TROIS écrans, et l'application n'est pas toujours sur celui qu'on capture
+
+Mesuré le 2026-08-03, six allers-retours perdus. `screencap` et `uiautomator dump` rendaient
+une page **blanche** — un seul bouton flottant « Tools » dans tout l'arbre d'accessibilité —
+alors que l'application tournait, que `topResumedActivity` la nommait, que le journal
+montrait MMKV chargeant ses comptes, et que le paquet servait un bundle de 12 Mo en `200`.
+Rien ne mentait ; je regardais le mauvais écran.
+
+`adb shell dumpsys display | grep mUniqueId` les énumère. Sur cet appareil :
+
+| écran                            | `-d` à passer          | quand                                                            |
+| -------------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| Outer Display (1080×2364)        | `4619827677550801153`  | téléphone plié — `mState=ON`                                     |
+| Inner Display (2076×2152)        | `4619827677550801152`  | téléphone déplié                                                 |
+| **virtuel `scrcpy`** (1080×2360) | `11529215049685854924` | **quand `scrcpy --new-display` tourne : c'est là que l'app vit** |
+
+L'identifiant du virtuel **change à chaque lancement de `scrcpy`** : ne le code jamais en
+dur, relis-le. Et `am force-stop` + `monkey` relance l'activité sur l'écran **par défaut**,
+donc déplace l'application hors de la fenêtre que la personne regarde — préférer le
+rechargement à chaud de Metro, qui ne déplace rien.
+
+**Le signe qui distingue « écran vide » de « mauvais écran » :** un arbre d'accessibilité
+qui contient les vues de l'application (`package=com.linagora.twakevisio`, un `ComposeView`)
+mais **aucun texte**. Une application réellement plantée n'a pas d'arbre du tout ; une
+application qui rend ailleurs en a un, vide.
 
 ## Internationalisation
 

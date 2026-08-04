@@ -71,6 +71,31 @@ const screenSince = new Map<string, number>();
 
 function readScreen(participant: Participant): VideoTrackRef | null {
   const publication = participant.getTrackPublication(Track.Source.ScreenShare);
+  // SONDE temporaire. Un partage émis depuis le client web n'apparaît pas sur
+  // mobile, et trois causes produisent le même écran : aucune publication, une
+  // publication non SOUSCRITE, une publication coupée. Elles demandent trois
+  // corrections opposées, et les journaux JavaScript n'atteignent pas logcat —
+  // seule la sortie de Metro les porte.
+  if (__DEV__) {
+    // `getTrackPublications` n'existe pas sur les doubles de `participants.spec`,
+    // qui ne portent que ce que le module lit vraiment. La sonde vérifie donc
+    // avant d'appeler : une sonde qui casse la suite ne mesure plus rien, elle
+    // empêche de mesurer.
+    const list =
+      typeof participant.getTrackPublications === 'function'
+        ? participant.getTrackPublications()
+        : [];
+    const sources = list
+      .map(
+        (item) =>
+          `${String(item.source)}:${item.track === undefined ? 'non-souscrit' : 'souscrit'}${
+            item.isMuted ? ':coupé' : ''
+          }`,
+      )
+      .join(' ');
+    // eslint-disable-next-line no-console
+    console.log(`[écran] ${participant.identity} → ${sources || 'aucune publication'}`);
+  }
   if (publication === undefined) return null;
   if (publication.track === undefined) return null;
   if (publication.isMuted) return null;

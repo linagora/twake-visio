@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useSessionGuard } from 'src/auth/sessionGuard';
 import { initI18n } from 'src/i18n';
 import { listKnownHosts } from 'src/instance/knownInstances';
 import { parseMeetingLink } from 'src/navigation/deepLinks';
@@ -22,6 +23,10 @@ import { makeTheme } from 'src/ui/theme';
 export default function RootLayout(): React.ReactElement | null {
   const router = useRouter();
   const [i18nReady, setI18nReady] = useState(false);
+  // Monté ICI parce que c'est la seule surface qui survit à toute navigation :
+  // une session perdue doit ramener à la connexion depuis n'importe quel écran,
+  // et la logique vit dans `src/`, pas sous `app/`.
+  useSessionGuard();
   // Les quatre graisses que le mockup emploie, et aucune Regular. Sans ce
   // chargement, `theme.fonts` nomme une famille qui n'existe pas : RN retombe
   // en silence sur la police système, et la refonte n'est visible nulle part.

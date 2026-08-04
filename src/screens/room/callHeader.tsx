@@ -45,6 +45,13 @@ export const CALL_SURFACE_HAIRLINE = 'rgba(255, 255, 255, 0.1)';
 
 const styles = StyleSheet.create({
   identity: { flexShrink: 1, gap: 3 },
+  // La cible garde 32 dp de côté plus un `hitSlop` de 8 : 48 dp de zone
+  // sensible, au-dessus du minimum tactile, pour une surface peinte discrète.
+  linkAction: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
+  // `flexShrink: 1` sur le titre SEUL, jamais sur la rangée : sans lui, un nom
+  // de réunion long pousse les deux icônes hors de l'écran au lieu de se
+  // tronquer.
+  titleRow: { alignItems: 'center', flexDirection: 'row', gap: 2 },
   // La pastille de présence. `tokens.color.brand` (#1FA45C) plutôt que le
   // #28C46E du mockup : le vert du mockup n'existe pas dans `src/ui/tokens`, et
   // le document de conception de ce lot autorise explicitement `brand` ICI —
@@ -86,6 +93,11 @@ const styles = StyleSheet.create({
   // `participantsPanel.tsx` a payé, mesuré à 39 px de nom restant.
   title: {
     color: tokens.color.textDark,
+    // Porté par le TITRE depuis que deux icônes le suivent sur la même rangée.
+    // Sans lui, un nom de réunion long les pousse hors de l'écran au lieu de se
+    // tronquer — le défaut exact que `participantsPanel.tsx` a payé, mesuré à
+    // 39 px de nom restant.
+    flexShrink: 1,
     fontFamily: tokens.font.extraBold,
     fontSize: 15,
   },
@@ -124,6 +136,13 @@ export type CallHeaderProps = {
   // trouvée sur notre propre fibre, et le test passe que la prop soit câblée ou
   // non. Mesuré sur ce dépôt : zéro rouge avant renommage, quatre après.
   readonly onParticipantsPress: () => void;
+  // Copier et partager le lien, montés ICI et non dans le menu « Plus ».
+  //
+  // Ils y étaient — « Partager le lien » en première ligne — et le propriétaire
+  // les a rapprochés du slug qu'ils concernent : le lien de la réunion, c'est
+  // ce titre. Deux gestes de moins, et la commande se lit à côté de son objet.
+  readonly onCopyLink: () => void;
+  readonly onShareLink: () => void;
 };
 
 // L'en-tête de la séance : nom de la réunion, état, et l'accès au panneau des
@@ -142,15 +161,56 @@ export function CallHeader({
   elapsedSeconds,
   participantCount,
   onParticipantsPress,
+  onCopyLink,
+  onShareLink,
 }: CallHeaderProps): React.ReactElement {
   const { t } = useTranslation();
 
   return (
     <View style={styles.root} testID="call-header">
       <View style={styles.identity}>
-        <Text numberOfLines={1} style={styles.title} testID="call-header-title">
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text numberOfLines={1} style={styles.title} testID="call-header-title">
+            {title}
+          </Text>
+          {/* Des `Pressable` nus, comme la pastille des participants juste à
+              droite, et non des `IconButton` de Paper : celui-ci impose un
+              gabarit de 40 dp et une marge que l'on devrait neutraliser, pour
+              une cible qui doit rester discrète à côté d'un titre.
+              La couleur du glyphe est EXPLICITE — le fond de la séance est
+              sombre dans les deux schémas, et Paper retomberait sur un
+              quasi-noir. */}
+          <Pressable
+            accessibilityLabel={t('call.copyLink')}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onCopyLink}
+            style={styles.linkAction}
+            testID="call-header-copy"
+          >
+            <MaterialCommunityIcons
+              color={CALL_META_TEXT}
+              name="content-copy"
+              size={16}
+              testID="call-header-copy-glyph"
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel={t('call.share')}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onShareLink}
+            style={styles.linkAction}
+            testID="call-header-share"
+          >
+            <MaterialCommunityIcons
+              color={CALL_META_TEXT}
+              name="share-variant"
+              size={16}
+              testID="call-header-share-glyph"
+            />
+          </Pressable>
+        </View>
         <View style={styles.meta}>
           <View style={styles.live} testID="call-header-live" />
           <Text style={styles.timer} testID="call-header-timer">
