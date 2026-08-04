@@ -32,6 +32,7 @@
   "lobby.waiting": "Warten auf Genehmigung",
   "lobby.noModerator": "Derzeit ist kein Moderator anwesend",
   "lobby.denied": "Ihre Beitrittsanfrage wurde abgelehnt",
+  "lobby.approvalRequired": "Diese Besprechung erfordert eine Genehmigung zum Beitreten",
   "call.leave": "Verlassen",
   "call.share": "Link teilen",
   "call.copyLink": "Link kopieren",

@@ -32,6 +32,7 @@
   "lobby.waiting": "Đang chờ phê duyệt",
   "lobby.noModerator": "Hiện không có người điều hành nào có mặt",
   "lobby.denied": "Yêu cầu tham gia của bạn đã bị từ chối",
+  "lobby.approvalRequired": "Cuộc họp này yêu cầu phê duyệt để tham gia",
   "call.leave": "Rời khỏi",
   "call.share": "Chia sẻ liên kết",
   "call.copyLink": "Sao chép liên kết",

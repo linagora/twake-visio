@@ -32,6 +32,7 @@
   "lobby.waiting": "Esperando aprobación",
   "lobby.noModerator": "No hay ningún moderador presente en este momento",
   "lobby.denied": "Su solicitud de entrada ha sido rechazada",
+  "lobby.approvalRequired": "Esta reunión requiere aprobación para entrar",
   "call.leave": "Salir",
   "call.share": "Compartir el enlace",
   "call.copyLink": "Copiar el enlace",

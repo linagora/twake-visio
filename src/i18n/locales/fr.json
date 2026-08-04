@@ -32,6 +32,7 @@
   "lobby.waiting": "En attente de validation",
   "lobby.noModerator": "Aucun modérateur n'est actuellement présent",
   "lobby.denied": "Votre demande d'entrée a été refusée",
+  "lobby.approvalRequired": "Cette réunion demande une validation pour y entrer",
   "call.leave": "Quitter",
   "call.share": "Partager le lien",
   "call.copyLink": "Copier le lien",

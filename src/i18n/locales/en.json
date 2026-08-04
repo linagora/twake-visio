@@ -32,6 +32,7 @@
   "lobby.waiting": "Waiting for approval",
   "lobby.noModerator": "No moderator is currently present",
   "lobby.denied": "Your request to join was declined",
+  "lobby.approvalRequired": "This meeting requires approval to join",
   "call.leave": "Leave",
   "call.share": "Share the link",
   "call.copyLink": "Copy the link",

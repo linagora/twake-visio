@@ -643,6 +643,26 @@ describe('CallScreen', () => {
     expect(screen.getByTestId('call-error')).toHaveTextContent('call.ended');
   });
 
+  // La variante d'`ApiError` que `toApiErrorMessage` n'avait pas, et la seule
+  // qui arrive par `fetchRoomAccess` plutôt que par une action de modération.
+  //
+  // Elle retombait sur `error.network` — « Connexion impossible » — alors que
+  // le réseau marchait, la réponse étant arrivée. Et ce n'est pas un cas rare
+  // depuis le mode invité : meet ne rend jamais de bloc livekit à un appelant
+  // anonyme sur un salon `trusted` ou `restricted`, donc TOUT invité d'un tel
+  // salon atterrit ici.
+  it("dit qu'une validation est requise, et jamais que le réseau a lâché", async () => {
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
+
+    await renderCall();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-error')).toHaveTextContent('lobby.approvalRequired'),
+    );
+  });
+
   it("applique les choix du pré-écran à l'entrée en séance", async () => {
     await renderCall();
 

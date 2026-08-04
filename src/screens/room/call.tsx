@@ -74,6 +74,10 @@ type MessageKey =
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
+  // La salle d'attente parle sur CET écran aussi : `fetchRoomAccess` rend
+  // `lobby` quand le serveur n'a pas délivré de jeton, ce qui est le cas
+  // NOMINAL d'un invité sur un salon `trusted` ou `restricted`.
+  | 'lobby.approvalRequired'
   | 'chat.sendFailed'
   | 'call.linkCopied'
   | RecordingMessageKey;
@@ -92,10 +96,23 @@ type MessageKey =
 // l'écran ni celle qui débogue ne pouvaient savoir ce que le serveur avait
 // refusé.
 //
-// `lobby` reste avec `network` : il ne vient d'aucun statut — `fetchRoomAccess`
-// le construit depuis l'absence du bloc livekit — et voudrait dire que l'accès
-// a été retiré entre le pré-écran et ici, un cas qu'aucun retour vers la salle
-// d'attente ne rattrape.
+// `lobby` a sa case, et il n'en avait pas : il retombait sur `error.network`,
+// donc sur « Connexion impossible », alors que le réseau marchait — la réponse
+// était arrivée. C'est exactement le défaut décrit au paragraphe ci-dessus,
+// laissé sur la seule variante qui l'atteint le plus souvent.
+//
+// Car ce n'est PAS un cas rare depuis le mode invité : `fetchRoomAccess`
+// construit `lobby` depuis l'absence du bloc livekit, et meet n'en rend jamais
+// à un appelant anonyme sur un salon `trusted` ou `restricted` (lecture de
+// `serializers.py`, conception du 2026-08-04). Un invité sur un tel salon
+// arrive donc TOUJOURS ici — y compris après que la salle d'attente l'a
+// admis — et s'entendait dire que son réseau avait lâché.
+//
+// Le message dit maintenant ce qui est vrai dans les deux lectures : cet écran
+// n'a pas obtenu de jeton, et ce salon demande une validation. Il ne referme
+// pas pour autant le passage de témoin salle d'attente → séance, qui est une
+// question d'architecture posée séparément au partenaire humain : on cesse
+// seulement de mentir en attendant qu'elle soit tranchée.
 function toApiErrorMessage(error: ApiError): MessageKey {
   switch (error.kind) {
     case 'unauthorized':
@@ -108,6 +125,8 @@ function toApiErrorMessage(error: ApiError): MessageKey {
       return 'error.badRequest';
     case 'server':
       return 'error.serverError';
+    case 'lobby':
+      return 'lobby.approvalRequired';
     default:
       return 'error.network';
   }
