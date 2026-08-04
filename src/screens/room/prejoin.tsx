@@ -4,13 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RTCView } from '@livekit/react-native-webrtc';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActivityIndicator, Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
-import { getActiveAccount } from 'src/auth/accounts';
+import { rememberGuestName } from 'src/auth/guest';
+import { getVisitor, visitorName } from 'src/auth/visitor';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
@@ -86,6 +87,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
+  // Mêmes graisse et taille que `nameValue`, qu'il remplace pour un invité :
+  // c'est la même ligne, éditable ou non, et elle ne doit pas sauter d'une
+  // taille à l'autre selon qui regarde l'écran.
+  nameInput: { color: tokens.color.textDark, fontFamily: tokens.font.bold, fontSize: 15 },
   nameValue: { color: tokens.color.textDark, fontFamily: tokens.font.bold, fontSize: 15 },
   preview: {
     backgroundColor: tokens.color.surfaceDark,
@@ -130,8 +135,14 @@ export function PrejoinScreen(): React.ReactElement {
   const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const [access, setAccess] = useState<RoomAccess | null>(null);
-  // Lu une fois : le compte ne change pas pendant qu'on regarde cet écran.
-  const [account] = useState(() => getActiveAccount());
+  // Lu une fois : qui frappe à la porte ne change pas pendant qu'on regarde cet
+  // écran — compte ou invité, la même garantie que l'ancien `account`.
+  const [visitor] = useState(() => getVisitor());
+  // Le nom que CET écran affiche et que les autres verront. Pour un compte,
+  // c'est une valeur figée, celle du profil ; pour un invité, `setName` la
+  // fait bouger à chaque frappe — voir l'encart « VOTRE NOM » plus bas, seul
+  // endroit qui la modifie.
+  const [name, setName] = useState(() => (visitor === null ? '' : visitorName(visitor)));
   // La raison du refus, quand il y en a une. `null` tant qu'on attend : les
   // deux ensemble donnent les trois états de cet écran — on attend, on est
   // entré, on est refusé — là où `access` seul n'en distinguait que deux et
@@ -181,10 +192,10 @@ export function PrejoinScreen(): React.ReactElement {
   };
 
   useEffect(() => {
-    const account = getActiveAccount();
-    if (account === null || slug === undefined) return;
+    const currentVisitor = getVisitor();
+    if (currentVisitor === null || slug === undefined) return;
 
-    fetchRoomAccess({ kind: 'account', account }, slug)
+    fetchRoomAccess(currentVisitor, slug)
       .then((result) => {
         if (result.ok) {
           setAccess(result.value);
@@ -216,7 +227,13 @@ export function PrejoinScreen(): React.ReactElement {
     // la durée exigerait un point d'accroche à la FIN de l'appel.
     // Le nom que CET écran affiche, pas un autre : c'est celui que la personne
     // vient de lire, donc celui qu'elle reconnaîtra dans l'historique.
-    if (slug !== undefined && access !== null) {
+    //
+    // Un invité n'a PAS d'historique : rien ne l'authentifie d'une visite à
+    // l'autre, donc aucun compte ne pourrait jamais relire une ligne écrite
+    // ici. Il mémorise son nom pour la PROCHAINE fois à la place.
+    if (visitor?.kind === 'guest') {
+      rememberGuestName(name);
+    } else if (slug !== undefined && access !== null) {
       rememberVisit(slug, access.room.name, Date.now());
     }
     router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
@@ -282,7 +299,7 @@ export function PrejoinScreen(): React.ReactElement {
           // est. L'avatar vaut mieux qu'un rectangle noir, qui se lit comme une
           // panne.
           <View style={styles.previewIdle}>
-            <InitialsAvatar name={account?.displayName ?? ''} size="lg" testID="prejoin-avatar" />
+            <InitialsAvatar name={name} size="lg" testID="prejoin-avatar" />
             <Text style={styles.previewLabel} testID="prejoin-camera-label">
               {cameraOff ? t('prejoin.cameraOff') : t('prejoin.cameraPreview')}
             </Text>
@@ -387,20 +404,40 @@ export function PrejoinScreen(): React.ReactElement {
           <Text style={styles.nameLabel} testID="prejoin-name-label">
             {t('prejoin.yourName')}
           </Text>
-          <Text numberOfLines={1} style={styles.nameValue} testID="prejoin-name">
-            {account?.displayName ?? ''}
-          </Text>
+          {/* Un invité choisit ce que les autres liront ; un compte le porte
+              déjà, figé, dans son profil — rien à saisir de plus. */}
+          {visitor?.kind === 'guest' ? (
+            <TextInput
+              onChangeText={setName}
+              placeholder={t('prejoin.yourNamePrompt')}
+              placeholderTextColor={tokens.color.muted}
+              style={styles.nameInput}
+              testID="prejoin-name-input"
+              value={name}
+            />
+          ) : (
+            <Text numberOfLines={1} style={styles.nameValue} testID="prejoin-name">
+              {name}
+            </Text>
+          )}
         </View>
-        <Button
-          buttonColor={tokens.color.brandStrong}
-          mode="contained"
-          onPress={handleJoin}
-          style={styles.join}
-          testID="join-call-btn"
-          textColor={tokens.color.onBrand}
-        >
-          {t('prejoin.join')}
-        </Button>
+        {/* Masqué, jamais grisé : un bouton `disabled` de Paper retombe sur
+            `onSurfaceDisabled`, un quasi-noir qu'aucune couleur explicite ne
+            rattrape sur cet écran sombre — la règle d'AGENTS.md. Un invité
+            sans nom n'a donc AUCUN bouton à regarder, plutôt qu'un bouton
+            mort. */}
+        {name.trim().length > 0 ? (
+          <Button
+            buttonColor={tokens.color.brandStrong}
+            mode="contained"
+            onPress={handleJoin}
+            style={styles.join}
+            testID="join-call-btn"
+            textColor={tokens.color.onBrand}
+          >
+            {t('prejoin.join')}
+          </Button>
+        ) : null}
       </View>
     </View>
   );
