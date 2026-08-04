@@ -68,7 +68,7 @@ export function LobbyScreen(): React.ReactElement {
     const account = getActiveAccount();
     if (account === null) return;
 
-    requestEntry(account, slug, account.displayName)
+    requestEntry({ kind: 'account', account }, slug, account.displayName)
       .then((result) =>
         setState(result.ok ? { kind: 'waiting' } : toFailedOrNoModerator(result.error)),
       )
@@ -87,7 +87,7 @@ export function LobbyScreen(): React.ReactElement {
 
     let stopped = false;
     const timer = setInterval(() => {
-      void requestEntry(account, slug, account.displayName)
+      void requestEntry({ kind: 'account', account }, slug, account.displayName)
         .then((result) => {
           if (stopped) return;
           if (!result.ok) {

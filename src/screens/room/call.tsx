@@ -635,7 +635,7 @@ export function CallScreen(): React.ReactElement {
 
     let cancelled = false;
 
-    fetchRoomAccess(activeAccount, slug)
+    fetchRoomAccess({ kind: 'account', account: activeAccount }, slug)
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {

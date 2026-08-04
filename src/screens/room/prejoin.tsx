@@ -141,7 +141,7 @@ export function PrejoinScreen(): React.ReactElement {
     const account = getActiveAccount();
     if (account === null || slug === undefined) return;
 
-    fetchRoomAccess(account, slug)
+    fetchRoomAccess({ kind: 'account', account }, slug)
       .then((result) => {
         if (result.ok) {
           setAccess(result.value);

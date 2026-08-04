@@ -49,7 +49,11 @@ describe('LobbyScreen', () => {
     await waitFor(() => {
       expect(screen.getByTestId('lobby-waiting')).toBeTruthy();
     });
-    expect(rooms.requestEntry).toHaveBeenCalledWith(ACCOUNT, 'reunion', 'Ada');
+    expect(rooms.requestEntry).toHaveBeenCalledWith(
+      { kind: 'account', account: ACCOUNT },
+      'reunion',
+      'Ada',
+    );
   });
 
   it("signale explicitement l'absence de modérateur", async () => {

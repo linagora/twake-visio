@@ -1,6 +1,8 @@
 import { createRoom, fetchMyRooms, fetchRoomAccess, requestEntry } from 'src/api/rooms';
+import * as anon from 'src/api/anon';
 import * as client from 'src/api/client';
 import type { Account } from 'src/auth/accounts';
+import type { Visitor } from 'src/auth/visitor';
 
 const ACCOUNT = {
   id: 'https://sso.linagora.com|u-1',
@@ -14,6 +16,13 @@ const ACCOUNT = {
   email: 'ada@linagora.com',
   displayName: 'Ada',
 } as Account;
+
+const AS_ACCOUNT: Visitor = { kind: 'account', account: ACCOUNT };
+const AS_GUEST: Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: 'Camille Dupont',
+};
 
 beforeEach(() => {
   jest.restoreAllMocks();
@@ -31,7 +40,7 @@ describe('fetchRoomAccess', () => {
       },
     });
 
-    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+    const result = await fetchRoomAccess(AS_ACCOUNT, 'reunion');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -46,9 +55,81 @@ describe('fetchRoomAccess', () => {
       value: { id: 'r-1', slug: 'reunion', access_level: 'restricted' },
     });
 
-    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+    const result = await fetchRoomAccess(AS_ACCOUNT, 'reunion');
 
     expect(result).toEqual({ ok: false, error: { kind: 'lobby', participantId: '' } });
+  });
+});
+
+describe('fetchRoomAccess, en invité', () => {
+  it('passe par anonFetch, jamais par le chemin authentifié', async () => {
+    const anonSpy = jest.spyOn(anon, 'anonFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'abc-defg-hij',
+        access_level: 'public',
+        livekit: { url: 'https://lk', room: 'r-1', token: 'tok' },
+      },
+    });
+    const authedSpy = jest.spyOn(client, 'authedFetch');
+
+    await fetchRoomAccess(AS_GUEST, 'abc-defg-hij');
+
+    expect(authedSpy).not.toHaveBeenCalled();
+    expect(anonSpy.mock.calls[0]?.[0]).toBe('https://meet.acme.com');
+  });
+
+  // Mesuré le 2026-08-04 : sans ce paramètre le jeton porte "Anonymous".
+  it('porte le nom en paramètre de requête, encodé', async () => {
+    const anonSpy = jest.spyOn(anon, 'anonFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'abc',
+        access_level: 'public',
+        livekit: { url: 'https://lk', room: 'r-1', token: 'tok' },
+      },
+    });
+
+    await fetchRoomAccess(AS_GUEST, 'abc');
+
+    expect(anonSpy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/abc/?username=Camille%20Dupont');
+  });
+
+  it("n'ajoute AUCUN paramètre quand le nom est vide", async () => {
+    const anonSpy = jest.spyOn(anon, 'anonFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'abc',
+        access_level: 'public',
+        livekit: { url: 'https://lk', room: 'r-1', token: 'tok' },
+      },
+    });
+
+    await fetchRoomAccess({ ...AS_GUEST, displayName: '' }, 'abc');
+
+    expect(anonSpy.mock.calls[0]?.[1]).toBe('/api/v1.0/rooms/abc/');
+  });
+});
+
+describe('fetchRoomAccess, avec un compte', () => {
+  it('passe par authedFetch, jamais par le chemin anonyme', async () => {
+    const anonSpy = jest.spyOn(anon, 'anonFetch');
+    jest.spyOn(client, 'authedFetch').mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'r-1',
+        slug: 'abc',
+        access_level: 'public',
+        livekit: { url: 'https://lk', room: 'r-1', token: 'tok' },
+      },
+    });
+
+    await fetchRoomAccess(AS_ACCOUNT, 'abc');
+
+    expect(anonSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -189,7 +270,7 @@ describe('requestEntry', () => {
       },
     });
 
-    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
 
     expect(result).toEqual({
       ok: true,
@@ -210,7 +291,7 @@ describe('requestEntry', () => {
       value: { id: 'p-1', status: 'denied', username: 'Ada' },
     });
 
-    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -232,11 +313,25 @@ describe('requestEntry', () => {
       value: { id: 'p-1', status: 'quelque-chose-de-neuf', username: 'Ada' },
     });
 
-    const result = await requestEntry(ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('waiting');
+  });
+});
+
+describe('requestEntry, en invité', () => {
+  it('poste le nom par anonFetch', async () => {
+    const anonSpy = jest.spyOn(anon, 'anonFetch').mockResolvedValue({
+      ok: true,
+      value: { id: 'p-1', status: 'accepted' },
+    });
+
+    await requestEntry(AS_GUEST, 'abc', 'Camille Dupont');
+
+    const init = anonSpy.mock.calls[0]?.[2] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'Camille Dupont' });
   });
 });
 
@@ -253,7 +348,7 @@ describe('fetchRoomAccess, droit de modérer', () => {
       },
     });
 
-    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+    const result = await fetchRoomAccess(AS_ACCOUNT, 'reunion');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -271,7 +366,7 @@ describe('fetchRoomAccess, droit de modérer', () => {
       },
     });
 
-    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+    const result = await fetchRoomAccess(AS_ACCOUNT, 'reunion');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -295,7 +390,7 @@ describe('fetchRoomAccess, droit de modérer', () => {
       },
     });
 
-    const result = await fetchRoomAccess(ACCOUNT, 'reunion');
+    const result = await fetchRoomAccess(AS_ACCOUNT, 'reunion');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;

@@ -1,8 +1,10 @@
+import { anonFetch } from 'src/api/anon';
 import { authedFetch } from 'src/api/client';
 import type { ParticipantRole } from 'src/api/participants';
 import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
+import { visitorName, visitorServerUrl, type Visitor } from 'src/auth/visitor';
 import type { AccessLevel, Room, RoomAccess } from 'src/call/types';
 
 type RawRoom = {
@@ -23,13 +25,32 @@ function toRoom(raw: RawRoom): Room {
   };
 }
 
+// Le branchement compte / invité, en UN seul endroit du dépôt.
+//
+// `username` ne part QUE pour un invité : sur le chemin authentifié, meet tire
+// le nom du jeton porteur, et lui en passer un autre le laisserait choisir
+// lequel croire.
+async function visitorFetch<T>(
+  visitor: Visitor,
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResult<T>> {
+  if (visitor.kind === 'account') return await authedFetch<T>(visitor.account, path, init);
+  return await anonFetch<T>(visitorServerUrl(visitor), path, init);
+}
+
 export async function fetchRoomAccess(
-  account: Account,
+  visitor: Visitor,
   slug: string,
 ): Promise<ApiResult<RoomAccess>> {
-  const result = await authedFetch<RawRoom>(
-    account,
-    `/api/v1.0/rooms/${encodeURIComponent(slug)}/`,
+  // Le nom vide n'ajoute AUCUN paramètre plutôt qu'un paramètre vide : meet
+  // retomberait alors sur « Anonymous », ce qu'il fait déjà sans le paramètre,
+  // mais une chaîne vide dans l'URL se lirait comme un nom choisi.
+  const name = visitor.kind === 'guest' ? visitorName(visitor) : '';
+  const query = name.length > 0 ? `?username=${encodeURIComponent(name)}` : '';
+  const result = await visitorFetch<RawRoom>(
+    visitor,
+    `/api/v1.0/rooms/${encodeURIComponent(slug)}/${query}`,
   );
   if (!result.ok) return result;
 
@@ -175,12 +196,12 @@ function toEntryStatus(raw: string | undefined): EntryStatus {
 // C'est donc lui qu'il faut scruter, et non `fetchRoomAccess`, qui ne change
 // pas sur un refus.
 export async function requestEntry(
-  account: Account,
+  visitor: Visitor,
   slug: string,
   username: string,
 ): Promise<ApiResult<EntryOutcome>> {
-  const result = await authedFetch<RawEntry>(
-    account,
+  const result = await visitorFetch<RawEntry>(
+    visitor,
     `/api/v1.0/rooms/${encodeURIComponent(slug)}/request-entry/`,
     {
       method: 'POST',
