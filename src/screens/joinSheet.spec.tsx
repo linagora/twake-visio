@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { PaperProvider } from 'react-native-paper';
 
@@ -27,11 +27,14 @@ function withPaper(node: React.ReactElement): React.ReactElement {
   return <PaperProvider theme={{ animation: { scale: 0 } }}>{node}</PaperProvider>;
 }
 
+// La feuille prend maintenant un hôte ; `host` est fourni par défaut, sinon
+// TOUS les tests du fichier casseraient sur un type manquant.
 function sheet(
   overrides: Partial<React.ComponentProps<typeof JoinSheet>> = {},
 ): React.ReactElement {
   return withPaper(
     <JoinSheet
+      host="meet.linagora.com"
       onJoinRoom={jest.fn()}
       onSheetDismiss={jest.fn()}
       testID="join"
@@ -105,14 +108,28 @@ describe('JoinSheet', () => {
     });
 
     // Le slug porte les tirets, la saisie ne les a pas : c'est `formatCodeSlug`
-    // qui les rend, et ce test garde le format ATTENDU PAR MEET.
-    it('remonte le slug avec ses tirets', async () => {
+    // qui les rend, et ce test garde le format ATTENDU PAR MEET. `onJoinRoom`
+    // remonte maintenant un COUPLE : le slug ET l'hôte par défaut de `sheet()`.
+    it('remonte le slug avec ses tirets, accompagné de l’hôte', async () => {
       const onJoinRoom = jest.fn();
       await render(sheet({ onJoinRoom }));
       await type('ogokmyyqrl');
       await fireEvent.press(screen.getByTestId('join-submit'));
 
-      expect(onJoinRoom).toHaveBeenCalledWith('ogo-kmyy-qrl');
+      expect(onJoinRoom).toHaveBeenCalledWith({ slug: 'ogo-kmyy-qrl', host: 'meet.linagora.com' });
+    });
+
+    // Un hôte DIFFÉRENT de celui par défaut de `sheet()` : une implémentation
+    // qui recopierait la chaîne littérale 'meet.linagora.com' au lieu de lire
+    // la prop `host` passerait quand même le test précédent.
+    it("remonte le slug ET l'hôte courant", async () => {
+      const onJoinRoom = jest.fn();
+      await render(sheet({ host: 'meet.acme.com', onJoinRoom, onHostChange: jest.fn() }));
+
+      await type('abcdefghij');
+      await fireEvent.press(screen.getByTestId('join-submit'));
+
+      expect(onJoinRoom).toHaveBeenCalledWith({ slug: 'abc-defg-hij', host: 'meet.acme.com' });
     });
   });
 
@@ -122,20 +139,8 @@ describe('JoinSheet', () => {
       await render(sheet());
       await fireEvent.press(screen.getByTestId('join-paste'));
 
-      expect(screen.getByTestId('join-cell-0')).toHaveTextContent('o');
+      await waitFor(() => expect(screen.getByTestId('join-cell-0')).toHaveTextContent('o'));
       expect(screen.getByTestId('join-cell-9')).toHaveTextContent('l');
-    });
-
-    // La branche de REFUS doit être empruntée : c'est la même allowlist qui
-    // protège les liens profonds, et sans ce test elle pourrait disparaître
-    // sans qu'aucune suite ne bronche.
-    it('refuse un lien d’un hôte inconnu', async () => {
-      clipboard.getStringAsync.mockResolvedValue('https://evil.example/ogo-kmyy-qrl');
-      await render(sheet());
-      await fireEvent.press(screen.getByTestId('join-paste'));
-
-      expect(screen.getByTestId('join-cell-0')).toHaveTextContent('');
-      expect(screen.getByTestId('join-paste-error')).toBeTruthy();
     });
 
     it('n’affiche aucune erreur avant qu’on ait collé', async () => {
@@ -149,7 +154,145 @@ describe('JoinSheet', () => {
       await render(sheet());
       await fireEvent.press(screen.getByTestId('join-paste'));
 
-      expect(screen.getByTestId('join-paste-error')).toBeTruthy();
+      await waitFor(() => expect(screen.getByTestId('join-paste-error')).toBeTruthy());
+    });
+  });
+
+  // Le lot du mode invité abroge le refus d'hôte inconnu au collage — Décision
+  // 1 du partenaire humain : appuyer sur « Coller » est un geste délibéré, à la
+  // différence d'un lien profond qui arrive sans qu'on l'ait demandé.
+  describe('coller, désormais', () => {
+    it('accepte un code nu', async () => {
+      clipboard.getStringAsync.mockResolvedValue('abc-defg-hij');
+      await render(sheet());
+
+      await fireEvent.press(screen.getByTestId('join-paste'));
+
+      await waitFor(() => expect(screen.getByTestId('join-cell-0')).toHaveTextContent('a'));
+      expect(screen.queryByTestId('join-paste-error')).toBe(null);
+    });
+
+    it("adopte l'hôte d'un lien collé, même inconnu", async () => {
+      const onHostChange = jest.fn();
+      clipboard.getStringAsync.mockResolvedValue('https://meet.acme.com/abc-defg-hij');
+      await render(sheet({ onHostChange }));
+
+      await fireEvent.press(screen.getByTestId('join-paste'));
+
+      await waitFor(() => expect(onHostChange).toHaveBeenCalledWith('meet.acme.com'));
+    });
+
+    it("GARDE l'hôte courant quand le collage n'en porte aucun", async () => {
+      const onHostChange = jest.fn();
+      clipboard.getStringAsync.mockResolvedValue('abc-defg-hij');
+      await render(sheet({ onHostChange }));
+
+      await fireEvent.press(screen.getByTestId('join-paste'));
+
+      await waitFor(() => expect(screen.getByTestId('join-cell-0')).toHaveTextContent('a'));
+      expect(onHostChange).not.toHaveBeenCalled();
+    });
+
+    it('signale un presse-papiers qui ne porte ni lien ni code', async () => {
+      clipboard.getStringAsync.mockResolvedValue('bonjour');
+      await render(sheet());
+
+      await fireEvent.press(screen.getByTestId('join-paste'));
+
+      await waitFor(() => expect(screen.getByTestId('join-paste-error')).toBeOnTheScreen());
+    });
+  });
+
+  // La conséquence OBSERVABLE, jamais `props.onHostChange` : une prop consommée
+  // vaut `undefined` sur l'élément hôte et l'assertion serait verte partout.
+  describe('la rangée de serveur', () => {
+    it("n'est PAS rendue sans onHostChange — le cas de home.tsx", async () => {
+      await render(sheet());
+
+      expect(screen.queryByTestId('join-host')).toBe(null);
+    });
+
+    it('est rendue avec onHostChange — le cas invité', async () => {
+      await render(sheet({ onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host')).toHaveTextContent('meet.linagora.com');
+    });
+
+    it('ne marque PAS un hôte connu', async () => {
+      await render(sheet({ host: 'meet.linagora.com', onHostChange: jest.fn() }));
+
+      expect(screen.queryByTestId('join-host-unknown')).toBe(null);
+    });
+
+    it('marque un hôte hors allowlist', async () => {
+      await render(sheet({ host: 'meet.acme.com', onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host-unknown')).toBeOnTheScreen();
+    });
+  });
+
+  // Le « Changer » du mockup : un `TextInput` EN REMPLACEMENT du texte, jamais
+  // à côté. Aucune de ces cases n'était dans le brief mot pour mot ; chaque
+  // conditionnelle qu'elle exerce vient de `joinSheet.tsx`, aux deux états.
+  describe('changer l’hôte manuellement', () => {
+    it('affiche le bouton « Changer », pas de champ de saisie, tant qu’on n’a pas appuyé dessus', async () => {
+      await render(sheet({ onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host-change')).toBeOnTheScreen();
+      expect(screen.queryByTestId('join-host-input')).toBe(null);
+    });
+
+    it('affiche un champ pré-rempli de l’hôte courant après avoir appuyé sur « Changer », et masque le bouton', async () => {
+      await render(sheet({ host: 'meet.linagora.com', onHostChange: jest.fn() }));
+
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+
+      expect(screen.getByTestId('join-host-input')).toHaveProp('value', 'meet.linagora.com');
+      expect(screen.queryByTestId('join-host-change')).toBe(null);
+    });
+
+    it('refuse une saisie qui ne forme pas une adresse, sans remonter le changement', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+
+      await fireEvent.changeText(
+        screen.getByTestId('join-host-input'),
+        'ceci n’est pas une adresse',
+      );
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+      expect(onHostChange).not.toHaveBeenCalled();
+      // Un essai raté ne referme pas la rangée : le champ reste là pour corriger.
+      expect(screen.getByTestId('join-host-input')).toBeOnTheScreen();
+    });
+
+    it('efface l’erreur dès que la saisie reprend', async () => {
+      await render(sheet({ onHostChange: jest.fn() }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(
+        screen.getByTestId('join-host-input'),
+        'ceci n’est pas une adresse',
+      );
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+      expect(screen.getByTestId('join-host-error')).toBeOnTheScreen();
+
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com');
+
+      expect(screen.queryByTestId('join-host-error')).toBe(null);
+    });
+
+    it('adopte une adresse valide, la remonte et referme le champ', async () => {
+      const onHostChange = jest.fn();
+      await render(sheet({ onHostChange }));
+      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com');
+
+      await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
+
+      expect(onHostChange).toHaveBeenCalledWith('meet.acme.com');
+      expect(screen.queryByTestId('join-host-input')).toBe(null);
     });
   });
 
@@ -172,12 +315,26 @@ describe('JoinSheet', () => {
     });
 
     it('pose la couleur du message d’erreur', async () => {
-      clipboard.getStringAsync.mockResolvedValue('https://evil.example/x');
+      // 'bonjour', pas un lien d'hôte inconnu : le collage accepte désormais
+      // tout hôte, la seule branche qui échoue encore est « ni lien ni code ».
+      clipboard.getStringAsync.mockResolvedValue('bonjour');
       await render(sheet());
       await fireEvent.press(screen.getByTestId('join-paste'));
 
-      expect(screen.getByTestId('join-paste-error')).toHaveStyle({
-        color: tokens.color.danger,
+      await waitFor(() =>
+        expect(screen.getByTestId('join-paste-error')).toHaveStyle({
+          color: tokens.color.danger,
+        }),
+      );
+    });
+
+    // L'hôte inconnu est un FAIT à lire, pas une erreur : Décision 3 du
+    // partenaire humain impose `textMeta`, jamais `danger`.
+    it('pose une couleur d’INFORMATION, pas de danger, sur le marqueur d’hôte inconnu', async () => {
+      await render(sheet({ host: 'meet.acme.com', onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host-unknown')).toHaveStyle({
+        color: tokens.color.textMeta,
       });
     });
   });

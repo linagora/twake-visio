@@ -124,6 +124,20 @@ describe('HomeScreen', () => {
     expect(screen.getByTestId('home-join-sheet-input')).toBeTruthy();
   });
 
+  // Décision 2 du partenaire humain : la rangée de serveur est réservée au
+  // mode invité. `JoinSheet` ne la rend que si `onHostChange` lui est fourni
+  // (`joinSheet.spec.tsx` le garde à sa source) ; ce test garde le SITE
+  // D'APPEL — qu'une personne connectée ne passe jamais ce rappel.
+  it("ne rend pas la rangée de serveur : une personne connectée n'a pas de serveur à choisir", async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+    jest.spyOn(rooms, 'fetchMyRooms').mockResolvedValue({ ok: true, value: [] });
+
+    await renderHome();
+    await fireEvent.press(screen.getByTestId('home-join'));
+
+    expect(screen.queryByTestId('home-join-sheet-host')).toBe(null);
+  });
+
   // La conditionnelle prend ses deux valeurs : fermée au départ.
   it('ne monte pas la feuille tant qu’on ne l’ouvre pas', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);

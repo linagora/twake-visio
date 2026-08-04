@@ -6,6 +6,7 @@ import { TextInput } from 'react-native-paper';
 
 import { fetchMyRooms } from 'src/api/rooms';
 import { getActiveAccount } from 'src/auth/accounts';
+import { DEFAULT_SERVER_URL } from 'src/constants';
 import { JoinSheet } from 'src/screens/joinSheet';
 import { findRoomTitle } from 'src/rooms/titles';
 import type { Room } from 'src/call/types';
@@ -203,8 +204,13 @@ export function HomeScreen(): React.ReactElement {
         }}
       />
 
+      {/* Pas d'`onHostChange` : une personne connectée n'a aucun serveur à
+          choisir, celui de son compte est le seul qui vaille. La rangée de
+          serveur de la feuille ne se rend donc pas ici — c'est le cas invité,
+          hors de cet écran, qui la fait apparaître. */}
       <JoinSheet
-        onJoinRoom={(slug) => {
+        host={new URL(account?.instance.serverUrl ?? DEFAULT_SERVER_URL).hostname}
+        onJoinRoom={({ slug }) => {
           setJoinOpen(false);
           router.push(`/room/${slug}/prejoin`);
         }}

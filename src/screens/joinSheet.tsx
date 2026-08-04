@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { listKnownHosts } from 'src/instance/knownInstances';
-import { parseMeetingLink } from 'src/navigation/deepLinks';
+import { parsePastedMeeting } from 'src/navigation/deepLinks';
 import {
   CODE_GROUPS,
   formatCodeSlug,
@@ -14,12 +14,22 @@ import {
 import { FormSheet } from 'src/ui/formSheet';
 import { tokens } from 'src/ui/tokens';
 
+// Le couple remonté à la validation. `host` accompagne désormais `slug` :
+// un salon rejoint depuis un lien collé peut viser une instance différente de
+// celle par défaut, et l'appelant doit savoir laquelle interroger.
+type JoinTarget = { readonly slug: string; readonly host: string };
+
 type Props = {
   readonly visible: boolean;
   readonly onSheetDismiss: () => void;
-  // Remonte le SLUG, pas une route : la navigation appartient à l'appelant,
+  // Remonte un COUPLE, pas une route : la navigation appartient à l'appelant,
   // qui sait d'où il vient. Cette feuille ne connaît pas expo-router.
-  readonly onJoinRoom: (slug: string) => void;
+  readonly onJoinRoom: (target: JoinTarget) => void;
+  readonly host: string;
+  // ABSENT = la rangée n'est pas rendue. UNE prop porte la capacité ET le
+  // rappel : deux props à tenir d'accord seraient une de trop, et `home.tsx`
+  // n'a aucun serveur à choisir.
+  readonly onHostChange?: (host: string) => void;
   readonly testID: string;
 };
 
@@ -33,16 +43,41 @@ const SEPARATOR_AFTER = CODE_GROUPS.reduce<readonly number[]>((marks, size) => {
 
 const TOTAL_CELLS = CODE_GROUPS.reduce((total, size) => total + size, 0);
 
+// Valide une adresse saisie À LA MAIN dans la rangée de serveur, quand on
+// appuie sur « Changer ». Repris de `normalizeServerUrl` (`server.tsx`) : un
+// schéma manquant est ajouté avant analyse, et c'est `URL` qui tranche ce qui
+// forme un hôte — pas une regex maison, qui laisserait toujours passer un cas
+// auquel on n'a pas pensé.
+function normalizeHostInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const withScheme = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
+  try {
+    const { hostname } = new URL(withScheme);
+    return hostname.length > 0 ? hostname.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function JoinSheet({
   visible,
   onSheetDismiss,
   onJoinRoom,
+  host,
+  onHostChange,
   testID,
 }: Props): React.ReactElement {
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [pasteFailed, setPasteFailed] = useState(false);
   const [focused, setFocused] = useState(false);
+  // L'édition manuelle de l'hôte : un brouillon distinct de `host`, qui reste
+  // la prop tant que rien n'a été confirmé. Une saisie abandonnée ne doit pas
+  // affecter ce que la feuille affiche ou remonte ailleurs.
+  const [hostEditing, setHostEditing] = useState(false);
+  const [hostDraft, setHostDraft] = useState('');
+  const [hostInvalid, setHostInvalid] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // La case où le prochain caractère atterrira. `code.length` la donne
@@ -59,6 +94,11 @@ export function JoinSheet({
   // focus.
   const caretIndex = focused ? code.length : -1;
 
+  // Hors allowlist : `listKnownHosts()` sert ici de RÉFÉRENCE d'affichage, pas
+  // de filtre. La Décision 1 du partenaire humain accepte tout hôte collé —
+  // elle demande seulement de dire quand il n'est pas reconnu.
+  const hostKnown = listKnownHosts().includes(host.toLowerCase());
+
   function handleChange(raw: string): void {
     setCode(normalizeCodeInput(raw));
     setPasteFailed(false);
@@ -66,20 +106,46 @@ export function JoinSheet({
 
   async function handlePaste(): Promise<void> {
     const clip = await Clipboard.getStringAsync();
-    // La MÊME allowlist que celle des liens profonds. Sans elle, n'importe quel
-    // site collé ferait ouvrir un salon d'une instance étrangère.
-    const slug = parseMeetingLink(clip, listKnownHosts());
-    if (slug === null) {
+    // `parsePastedMeeting`, PAS `parseMeetingLink` : coller est un geste
+    // délibéré dont l'hôte sera montré, un lien profond ne l'est pas. Les deux
+    // fonctions existent pour cette raison ; ne pas les confondre.
+    const target = parsePastedMeeting(clip);
+    if (target === null) {
       setPasteFailed(true);
       return;
     }
-    setCode(normalizeCodeInput(slug));
+    setCode(normalizeCodeInput(target.slug));
     setPasteFailed(false);
+    // `host: null` veut dire « le collage ne portait aucun hôte » — un code nu,
+    // ou le schéma applicatif. On garde alors le courant.
+    if (target.host !== null) onHostChange?.(target.host);
   }
 
   function handleSubmit(): void {
     const slug = formatCodeSlug(code);
-    if (slug !== null) onJoinRoom(slug);
+    if (slug !== null) onJoinRoom({ slug, host });
+  }
+
+  function handleHostChangePress(): void {
+    // Le brouillon repart de l'hôte COURANT, pas de celui du dernier montage :
+    // un collage a pu le faire avancer entre-temps.
+    setHostDraft(host);
+    setHostEditing(true);
+  }
+
+  function handleHostDraftChange(raw: string): void {
+    setHostDraft(raw);
+    setHostInvalid(false);
+  }
+
+  function handleHostConfirm(): void {
+    const normalized = normalizeHostInput(hostDraft);
+    if (normalized === null) {
+      setHostInvalid(true);
+      return;
+    }
+    onHostChange?.(normalized);
+    setHostEditing(false);
   }
 
   return (
@@ -92,6 +158,53 @@ export function JoinSheet({
       <Text style={styles.instructions} testID={`${testID}-instructions`}>
         {t('join.instructions')}
       </Text>
+
+      {/* Absente sans `onHostChange` : `home.tsx` ne passe pas ce rappel, une
+          personne connectée n'a aucun serveur à choisir. */}
+      {onHostChange === undefined ? null : (
+        <View style={styles.hostRow}>
+          <Text style={styles.hostLabel}>{t('join.server')}</Text>
+
+          {hostEditing ? (
+            <View style={styles.hostEdit}>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                onChangeText={handleHostDraftChange}
+                onSubmitEditing={handleHostConfirm}
+                placeholder={t('join.serverPrompt')}
+                style={styles.hostInput}
+                testID={`${testID}-host-input`}
+                value={hostDraft}
+              />
+              {hostInvalid ? (
+                <Text style={styles.error} testID={`${testID}-host-error`}>
+                  {t('join.serverInvalid')}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.hostDisplay}>
+              <View style={styles.hostValueGroup}>
+                <Text style={styles.hostValue} testID={`${testID}-host`}>
+                  {host}
+                </Text>
+                {/* Un FAIT à lire, pas une erreur : `textMeta`, jamais `danger`
+                    — Décision 3 du partenaire humain. */}
+                {hostKnown ? null : (
+                  <Text style={styles.hostUnknown} testID={`${testID}-host-unknown`}>
+                    {t('join.serverUnknown')}
+                  </Text>
+                )}
+              </View>
+              <Pressable onPress={handleHostChangePress} testID={`${testID}-host-change`}>
+                <Text style={styles.hostChangeLabel}>{t('join.serverChange')}</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* La saisie réelle est un `TextInput` TRANSPARENT superposé aux cases —
           la technique du mockup. Elle donne un curseur système et une seule
@@ -225,6 +338,52 @@ const styles = StyleSheet.create({
     fontFamily: tokens.font.semiBold,
     fontSize: 12.5,
   },
+  // Le libellé « Changer », de la même famille que `pasteLabel` mais coloré
+  // comme une action plutôt qu'un contenu : c'est la seule commande de cette
+  // rangée.
+  hostChangeLabel: {
+    color: tokens.color.brandStrong,
+    fontFamily: tokens.font.bold,
+    fontSize: 13,
+  },
+  hostDisplay: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  hostEdit: { flex: 1, gap: 6 },
+  hostInput: {
+    borderColor: tokens.color.fieldBorder,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: tokens.color.textPrimary,
+    flex: 1,
+    fontFamily: tokens.font.medium,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  hostLabel: {
+    color: tokens.color.textSecondary,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 13,
+  },
+  hostRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  // Le marqueur d'hôte inconnu : une INFORMATION, pas une erreur, donc
+  // `textMeta` — jamais `danger`. Voir la Décision 3 du partenaire humain.
+  hostUnknown: {
+    color: tokens.color.textMeta,
+    fontFamily: tokens.font.medium,
+    fontSize: 11.5,
+  },
+  hostValue: {
+    color: tokens.color.textPrimary,
+    fontFamily: tokens.font.bold,
+    fontSize: 14,
+  },
+  hostValueGroup: { gap: 2 },
   instructions: {
     color: tokens.color.textSecondary,
     fontFamily: tokens.font.medium,
