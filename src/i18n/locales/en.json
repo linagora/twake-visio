@@ -194,5 +194,15 @@
   "home.agendaSignedOut": "Your session has expired. Sign in again to see your calendar.",
   "home.agendaUnreachable": "The calendar is not responding. Retrying in a minute.",
   "home.agendaUnsupported": "This instance does not provide a calendar.",
-  "home.agendaSignIn": "Sign in again"
+  "home.agendaSignIn": "Sign in again",
+  "settings.groups.notifications": "Notifications",
+  "settings.rows.reminder": "Meeting reminder",
+  "settings.rows.reminderHint": "You get a notification with a Join button",
+  "settings.options.reminderNever": "Never",
+  "settings.options.reminder60": "1 hour before",
+  "settings.options.reminder30": "30 minutes before",
+  "settings.options.reminder15": "15 minutes before",
+  "settings.options.reminder5": "5 minutes before",
+  "notifications.reminderBody": "Starts at {{time}}",
+  "notifications.joinAction": "Join"
 }

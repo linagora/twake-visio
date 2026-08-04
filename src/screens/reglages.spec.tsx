@@ -28,6 +28,19 @@ jest.mock('src/settings/preferences', () => ({
   readPreferences: jest.fn(),
   writePreference: jest.fn(),
 }));
+// L'agenda est bouchonné plutôt que joint : le crochet réel ferait une requête
+// CalDAV, et l'écran n'a besoin que du booléen.
+jest.mock('src/calendar/useAgendaAvailable', () => ({ useAgendaAvailable: jest.fn() }));
+// Les trois modules qui touchent le système. Aucun n'est exercé par ces
+// tests-ci ; les bouchonner évite de tirer `expo-notifications` dans un
+// environnement qui n'en a pas.
+jest.mock('src/notifications/backgroundTask', () => ({
+  syncReminderTask: jest.fn(async () => undefined),
+}));
+jest.mock('src/notifications/job', () => ({ runReminderSync: jest.fn(async () => undefined) }));
+jest.mock('src/notifications/permission', () => ({
+  ensureNotificationPermission: jest.fn(async () => true),
+}));
 
 const accounts = jest.requireMock('src/auth/accounts') as { getActiveAccount: jest.Mock };
 const prefs = jest.requireMock('src/settings/preferences') as {
@@ -35,12 +48,19 @@ const prefs = jest.requireMock('src/settings/preferences') as {
   writePreference: jest.Mock;
 };
 const i18n = jest.requireMock('src/i18n') as { chooseLanguage: jest.Mock };
+const agenda = jest.requireMock('src/calendar/useAgendaAvailable') as {
+  useAgendaAvailable: jest.Mock;
+};
+const permission = jest.requireMock('src/notifications/permission') as {
+  ensureNotificationPermission: jest.Mock;
+};
 
 const DEFAULTS = {
   micOffOnJoin: true,
   cameraOffOnJoin: false,
   defaultAccessLevel: 'public' as const,
   language: null,
+  reminderLeadMinutes: null,
 };
 
 describe('ReglagesScreen', () => {
@@ -48,6 +68,10 @@ describe('ReglagesScreen', () => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
     prefs.readPreferences.mockReturnValue(DEFAULTS);
+    // Par DÉFAUT indisponible : c'est l'état d'un compte sans agenda, et le
+    // laisser à `true` ferait passer les tests existants pour de mauvaises
+    // raisons — un groupe de plus qu'ils n'attendent.
+    agenda.useAgendaAvailable.mockReturnValue(false);
     accounts.getActiveAccount.mockReturnValue({
       displayName: 'Michel Maudet',
       email: 'michel.maudet@twake.app',
@@ -282,5 +306,91 @@ describe('ReglagesScreen', () => {
     expect(screen.getByTestId('settings-version')).toHaveTextContent(
       `settings.version|{"version":"${expected ?? ''}"}`,
     );
+  });
+
+  describe('le groupe Notifications', () => {
+    // La conditionnelle introduite par les rappels, ses trois états. Une seule
+    // polarité testée laisserait le groupe s'afficher pour un compte sans agenda,
+    // proposant un rappel qui ne se déclencherait jamais.
+    it("n'est PAS rendu quand l'agenda ne répond pas", async () => {
+      agenda.useAgendaAvailable.mockReturnValue(false);
+      await render(<ReglagesScreen />);
+
+      expect(screen.queryByTestId('settings-group-notifications')).toBe(null);
+      expect(screen.queryByTestId('setting-reminder-header')).toBe(null);
+    });
+
+    it("n'est PAS rendu tant qu'on ne SAIT pas", async () => {
+      // `null` est l'état d'attente. Sans ce cas, la ligne apparaîtrait puis
+      // disparaîtrait sous le doigt à chaque ouverture des réglages.
+      agenda.useAgendaAvailable.mockReturnValue(null);
+      await render(<ReglagesScreen />);
+
+      expect(screen.queryByTestId('settings-group-notifications')).toBe(null);
+    });
+
+    it("est rendu quand l'agenda répond", async () => {
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      await render(<ReglagesScreen />);
+
+      expect(screen.getByTestId('settings-group-notifications')).toBeTruthy();
+      expect(screen.getByTestId('setting-reminder-header')).toBeTruthy();
+    });
+
+    it('affiche « Jamais » quand aucun délai n’est choisi', async () => {
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      await render(<ReglagesScreen />);
+
+      expect(screen.getByTestId('setting-reminder-current')).toHaveTextContent(
+        'settings.options.reminderNever',
+      );
+    });
+
+    it('affiche le délai choisi', async () => {
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      prefs.readPreferences.mockReturnValue({ ...DEFAULTS, reminderLeadMinutes: 15 });
+      await render(<ReglagesScreen />);
+
+      expect(screen.getByTestId('setting-reminder-current')).toHaveTextContent(
+        'settings.options.reminder15',
+      );
+    });
+
+    it("n'écrit RIEN quand la permission est refusée", async () => {
+      // Le cas invisible en développement, où la permission est accordée depuis
+      // longtemps. Sans lui, un refus laisserait la ligne afficher un délai qui
+      // ne produirait jamais aucun rappel.
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      permission.ensureNotificationPermission.mockResolvedValue(false);
+      await render(<ReglagesScreen />);
+
+      await fireEvent.press(screen.getByTestId('setting-reminder-header'));
+      await fireEvent.press(screen.getByTestId('setting-reminder-option-15'));
+
+      expect(prefs.writePreference).not.toHaveBeenCalled();
+    });
+
+    it('écrit le délai quand la permission est accordée', async () => {
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      permission.ensureNotificationPermission.mockResolvedValue(true);
+      await render(<ReglagesScreen />);
+
+      await fireEvent.press(screen.getByTestId('setting-reminder-header'));
+      await fireEvent.press(screen.getByTestId('setting-reminder-option-15'));
+
+      expect(prefs.writePreference).toHaveBeenCalledWith('reminderLeadMinutes', 15);
+    });
+
+    it('écrit null pour « Jamais », et ne demande AUCUNE permission', async () => {
+      agenda.useAgendaAvailable.mockReturnValue(true);
+      prefs.readPreferences.mockReturnValue({ ...DEFAULTS, reminderLeadMinutes: 15 });
+      await render(<ReglagesScreen />);
+
+      await fireEvent.press(screen.getByTestId('setting-reminder-header'));
+      await fireEvent.press(screen.getByTestId('setting-reminder-option-never'));
+
+      expect(prefs.writePreference).toHaveBeenCalledWith('reminderLeadMinutes', null);
+      expect(permission.ensureNotificationPermission).not.toHaveBeenCalled();
+    });
   });
 });

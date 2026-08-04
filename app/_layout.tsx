@@ -9,7 +9,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -17,6 +17,12 @@ import { useSessionGuard } from 'src/auth/sessionGuard';
 import { initI18n } from 'src/i18n';
 import { listKnownHosts } from 'src/instance/knownInstances';
 import { parseMeetingLink } from 'src/navigation/deepLinks';
+// Importé pour son EFFET DE BORD : `defineTask` doit être appelée au chargement
+// du module, hors de tout composant, parce que le système peut réveiller
+// l'application directement dans la tâche et cherche alors une définition déjà
+// enregistrée.
+import 'src/notifications/backgroundTask';
+import { useReminders } from 'src/notifications/useReminders';
 import { makeTheme } from 'src/ui/theme';
 
 // expo-router requires a default export for every file under app/.
@@ -27,6 +33,9 @@ export default function RootLayout(): React.ReactElement | null {
   // une session perdue doit ramener à la connexion depuis n'importe quel écran,
   // et la logique vit dans `src/`, pas sous `app/`.
   useSessionGuard();
+  // Même raison que la ligne au-dessus : une réponse de notification peut
+  // arriver quel que soit l'écran affiché, ou avant qu'aucun ne le soit.
+  useReminders(useCallback((route: string) => router.push(route as never), [router]));
   // Les quatre graisses que le mockup emploie, et aucune Regular. Sans ce
   // chargement, `theme.fonts` nomme une famille qui n'existe pas : RN retombe
   // en silence sur la police système, et la refonte n'est visible nulle part.

@@ -5,11 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getActiveAccount } from 'src/auth/accounts';
+import { useAgendaAvailable } from 'src/calendar/useAgendaAvailable';
 import { instanceLabel } from 'src/instance/label';
 import { signOut } from 'src/auth/login';
 import type { AccessLevel } from 'src/call/types';
 import { chooseLanguage } from 'src/i18n';
 import { SUPPORTED_LOCALES, type SupportedLocale } from 'src/i18n/supported';
+import { syncReminderTask } from 'src/notifications/backgroundTask';
+import { runReminderSync } from 'src/notifications/job';
+import { ensureNotificationPermission } from 'src/notifications/permission';
+import { LEAD_MINUTES, type LeadMinutes } from 'src/notifications/reminders';
 import { readPreferences, writePreference } from 'src/settings/preferences';
 import { AppHeader } from 'src/ui/appHeader';
 import { InitialsAvatar } from 'src/ui/initialsAvatar';
@@ -21,6 +26,11 @@ import { tokens } from 'src/ui/tokens';
 // « suivre le système » n'est pas une locale : elle a besoin d'un identifiant
 // à elle, distinct des sept, pour que la rangée puisse la cocher.
 const SYSTEM_LANGUAGE = 'system';
+
+// « Jamais » n'est pas un délai : c'est son absence, que `reminderLeadMinutes`
+// porte par `null`. Même raison que `SYSTEM_LANGUAGE` juste au-dessus, et même
+// forme — une rangée ne sait cocher qu'un identifiant.
+const NEVER_REMIND = 'never';
 
 const ACCESS_LEVELS: readonly AccessLevel[] = ['public', 'trusted', 'restricted'];
 
@@ -39,6 +49,9 @@ export function ReglagesScreen(): React.ReactElement {
   const [preferences, setPreferences] = useState(() => readPreferences());
 
   const account = getActiveAccount();
+  // `null` tant qu'on ne sait pas : on ne rend alors PAS le groupe, plutôt que
+  // de le faire apparaître puis disparaître sous le doigt.
+  const agendaAvailable = useAgendaAvailable();
 
   function toggleRow(row: string): void {
     setOpenRow((current) => (current === row ? null : row));
@@ -75,6 +88,41 @@ export function ReglagesScreen(): React.ReactElement {
       label: t(`settings.languages.${locale}`),
     })),
   ];
+
+  const reminderOptions: readonly SettingOption[] = [
+    { id: NEVER_REMIND, label: t('settings.options.reminderNever') },
+    ...LEAD_MINUTES.map((minutes) => ({
+      id: String(minutes),
+      label: t(`settings.options.reminder${minutes}`),
+    })),
+  ];
+  const reminderId = preferences.reminderLeadMinutes?.toString() ?? NEVER_REMIND;
+  const reminderLabel = reminderOptions.find((o) => o.id === reminderId)?.label ?? '';
+
+  /**
+   * Applique un choix de rappel : permission, préférence, tâche, programmation.
+   *
+   * L'ORDRE compte. La permission d'abord : refusée, on n'écrit rien et la
+   * rangée reste sur « Jamais », plutôt que d'afficher un délai qui ne
+   * produirait jamais rien. C'est le cas qu'on ne voit pas en développement,
+   * où la permission est déjà accordée depuis longtemps.
+   */
+  async function chooseReminder(id: string): Promise<void> {
+    const lead: LeadMinutes | null = id === NEVER_REMIND ? null : (Number(id) as LeadMinutes);
+
+    if (lead !== null && !(await ensureNotificationPermission())) {
+      setPreferences(readPreferences());
+      setOpenRow(null);
+      return;
+    }
+
+    writePreference('reminderLeadMinutes', lead);
+    setPreferences(readPreferences());
+    setOpenRow(null);
+
+    await syncReminderTask(lead !== null);
+    await runReminderSync();
+  }
 
   const languageId = preferences.language ?? SYSTEM_LANGUAGE;
   const languageLabel = languageOptions.find((option) => option.id === languageId)?.label ?? '';
@@ -183,6 +231,33 @@ export function ReglagesScreen(): React.ReactElement {
             />
           </SurfaceCard>
         </View>
+
+        {/* Rendu SEULEMENT quand l'agenda répond. Non rendu, et jamais
+            désactivé : `AGENTS.md` proscrit `disabled` sur cet écran, parce que
+            `IconButton/utils.ts` teste `disabled` AVANT toute couleur explicite
+            et rend un quasi-noir. Le précédent est `participantsPanel.tsx`, qui
+            masque ses actions de modération plutôt que de les griser. */}
+        {agendaAvailable === true ? (
+          <View style={styles.group}>
+            <SectionLabel
+              label={t('settings.groups.notifications')}
+              testID="settings-group-notifications"
+            />
+            <SurfaceCard>
+              <SettingRow
+                currentLabel={reminderLabel}
+                hint={t('settings.rows.reminderHint')}
+                label={t('settings.rows.reminder')}
+                onOptionPress={(id) => void chooseReminder(id)}
+                onRowPress={() => toggleRow('reminder')}
+                open={openRow === 'reminder'}
+                options={reminderOptions}
+                selectedId={reminderId}
+                testID="setting-reminder"
+              />
+            </SurfaceCard>
+          </View>
+        ) : null}
 
         <SurfaceCard>
           <Pressable

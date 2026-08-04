@@ -132,3 +132,23 @@ export function parsePastedMeeting(text: string): PastedTarget | null {
 
   return null;
 }
+
+/**
+ * Les hôtes autorisés à fournir un salon depuis l'AGENDA de la personne.
+ *
+ * Ce n'est PAS `listKnownHosts()`, qui est l'allowlist de ce qui arrive du
+ * dehors et ne contient que les instances de production : sur toute autre,
+ * « Rejoindre » n'aurait rien fait, en silence. Ici l'évènement vient de
+ * l'agenda de la personne, sur SON instance : c'est cet hôte-là qui fait
+ * autorité, et lui seul.
+ *
+ * Vide quand l'URL est illisible, ce qui REFERME la porte plutôt que de
+ * l'ouvrir.
+ */
+export function agendaHosts(serverUrl: string): readonly string[] {
+  try {
+    return [new URL(serverUrl).hostname];
+  } catch {
+    return [];
+  }
+}

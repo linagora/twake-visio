@@ -194,5 +194,15 @@
   "home.agendaSignedOut": "Votre session a expiré. Reconnectez-vous pour retrouver votre agenda.",
   "home.agendaUnreachable": "L'agenda ne répond pas pour l'instant. Nouvelle tentative dans une minute.",
   "home.agendaUnsupported": "Cette instance ne propose pas d'agenda.",
-  "home.agendaSignIn": "Se reconnecter"
+  "home.agendaSignIn": "Se reconnecter",
+  "settings.groups.notifications": "Notifications",
+  "settings.rows.reminder": "Rappel avant une réunion",
+  "settings.rows.reminderHint": "Vous recevez une notification avec un bouton « Rejoindre »",
+  "settings.options.reminderNever": "Jamais",
+  "settings.options.reminder60": "1 heure avant",
+  "settings.options.reminder30": "30 minutes avant",
+  "settings.options.reminder15": "15 minutes avant",
+  "settings.options.reminder5": "5 minutes avant",
+  "notifications.reminderBody": "Commence à {{time}}",
+  "notifications.joinAction": "Rejoindre"
 }

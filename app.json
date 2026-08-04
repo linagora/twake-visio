@@ -3,7 +3,8 @@
     "name": "Twake Visio",
     "slug": "twake-visio",
     "scheme": "twakevisio",
-    "version": "0.8.0",
+    "version": "0.8.1",
+    "icon": "./assets/icon.png",
     "orientation": "default",
     "plugins": [
       "expo-router",
@@ -18,7 +19,15 @@
         }
       ],
       "expo-font",
-      "./plugins/withAndroidReleaseSigning"
+      "./plugins/withAndroidReleaseSigning",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#00AD5C"
+        }
+      ],
+      "expo-background-task"
     ],
     "android": {
       "package": "com.linagora.twakevisio",
@@ -44,7 +53,11 @@
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundImage": "./assets/adaptive-icon-background.png"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.linagora.twakevisio",

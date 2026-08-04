@@ -194,5 +194,15 @@
   "home.agendaSignedOut": "Phiên của bạn đã hết hạn. Hãy đăng nhập lại để xem lịch.",
   "home.agendaUnreachable": "Lịch không phản hồi. Sẽ thử lại sau một phút.",
   "home.agendaUnsupported": "Máy chủ này không cung cấp lịch.",
-  "home.agendaSignIn": "Đăng nhập lại"
+  "home.agendaSignIn": "Đăng nhập lại",
+  "settings.groups.notifications": "Thông báo",
+  "settings.rows.reminder": "Nhắc trước cuộc họp",
+  "settings.rows.reminderHint": "Bạn nhận được thông báo kèm nút Tham gia",
+  "settings.options.reminderNever": "Không bao giờ",
+  "settings.options.reminder60": "1 giờ trước",
+  "settings.options.reminder30": "30 phút trước",
+  "settings.options.reminder15": "15 phút trước",
+  "settings.options.reminder5": "5 phút trước",
+  "notifications.reminderBody": "Bắt đầu lúc {{time}}",
+  "notifications.joinAction": "Tham gia"
 }

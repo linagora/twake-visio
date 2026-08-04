@@ -194,5 +194,15 @@
   "home.agendaSignedOut": "Tu sesión ha caducado. Vuelve a iniciar sesión para ver tu agenda.",
   "home.agendaUnreachable": "La agenda no responde. Se reintentará en un minuto.",
   "home.agendaUnsupported": "Esta instancia no ofrece agenda.",
-  "home.agendaSignIn": "Volver a iniciar sesión"
+  "home.agendaSignIn": "Volver a iniciar sesión",
+  "settings.groups.notifications": "Notificaciones",
+  "settings.rows.reminder": "Aviso antes de una reunión",
+  "settings.rows.reminderHint": "Recibes una notificación con un botón Unirse",
+  "settings.options.reminderNever": "Nunca",
+  "settings.options.reminder60": "1 hora antes",
+  "settings.options.reminder30": "30 minutos antes",
+  "settings.options.reminder15": "15 minutos antes",
+  "settings.options.reminder5": "5 minutos antes",
+  "notifications.reminderBody": "Empieza a las {{time}}",
+  "notifications.joinAction": "Unirse"
 }

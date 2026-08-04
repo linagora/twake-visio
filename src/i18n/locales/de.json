@@ -194,5 +194,15 @@
   "home.agendaSignedOut": "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an, um Ihren Kalender zu sehen.",
   "home.agendaUnreachable": "Der Kalender antwortet nicht. Neuer Versuch in einer Minute.",
   "home.agendaUnsupported": "Diese Instanz bietet keinen Kalender.",
-  "home.agendaSignIn": "Erneut anmelden"
+  "home.agendaSignIn": "Erneut anmelden",
+  "settings.groups.notifications": "Benachrichtigungen",
+  "settings.rows.reminder": "Erinnerung vor einem Meeting",
+  "settings.rows.reminderHint": "Sie erhalten eine Benachrichtigung mit einer Schaltfläche „Beitreten“",
+  "settings.options.reminderNever": "Nie",
+  "settings.options.reminder60": "1 Stunde vorher",
+  "settings.options.reminder30": "30 Minuten vorher",
+  "settings.options.reminder15": "15 Minuten vorher",
+  "settings.options.reminder5": "5 Minuten vorher",
+  "notifications.reminderBody": "Beginnt um {{time}}",
+  "notifications.joinAction": "Beitreten"
 }
