@@ -719,9 +719,24 @@ export function CallScreen(): React.ReactElement {
         // L'effet lui-même n'a pas à être retransmis : le processeur natif est
         // unique et garde le dernier `setEffect`. Publier la bonne piste suffit
         // à retrouver le choix fait au pré-join.
+        // **Et si la piste à effet échoue, on publie la caméra ORDINAIRE.**
+        //
+        // Sans ce repli, un module natif qui jette emporte toute la vidéo :
+        // l'exception remonte au `catch` de cette chaîne, qui affiche
+        // « Connexion impossible » — pour une séance dont la connexion est
+        // parfaitement établie. Perdre un fond est un désagrément ; perdre la
+        // caméra est une panne.
+        //
+        // Le cas n'est pas théorique : `areEffectsSupported()` rend vrai sur
+        // iOS depuis que le module Vision existe, et ce module n'a JAMAIS
+        // tourné — il compile, c'est tout.
+        let published = false;
         if (camera !== '0' && areEffectsSupported()) {
-          await publishEffectCamera(session.getRoom());
-        } else {
+          published = await publishEffectCamera(session.getRoom())
+            .then((track) => track !== null)
+            .catch(() => false);
+        }
+        if (!published) {
           await setCameraEnabled(session.getRoom(), camera !== '0');
         }
       })

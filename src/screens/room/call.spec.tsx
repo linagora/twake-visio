@@ -645,7 +645,10 @@ describe('CallScreen', () => {
   describe("la caméra publiée à l'entrée", () => {
     it('passe par la piste à EFFET quand la plateforme la porte', async () => {
       jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(true);
-      const publish = jest.spyOn(effects, 'publishEffectCamera').mockResolvedValue(null);
+      // Une piste NON nulle : `null` veut désormais dire « pas publiée », et
+      // fait donc retomber sur le chemin ordinaire — c'est le repli, pas le
+      // cas nominal.
+      const publish = jest.spyOn(effects, 'publishEffectCamera').mockResolvedValue({} as never);
 
       await renderCall();
 
@@ -654,6 +657,35 @@ describe('CallScreen', () => {
       // piste, par `getUserMedia`, où le décorateur de segmentation n'est pas.
       // Appeler les deux publierait deux caméras.
       expect(media.setCameraEnabled).not.toHaveBeenCalled();
+    });
+
+    // Le repli, et c'est le test qui compte le plus des trois : sans lui, un
+    // module natif qui jette emporte TOUTE la vidéo, pour une séance dont la
+    // connexion est parfaitement établie. Perdre un fond est un désagrément ;
+    // perdre la caméra est une panne.
+    it('publie la caméra ordinaire quand la piste à effet échoue', async () => {
+      jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(true);
+      jest
+        .spyOn(effects, 'publishEffectCamera')
+        .mockRejectedValue(new Error('module natif absent'));
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true));
+      // Et surtout PAS d'écran d'erreur : la séance est ouverte.
+      expect(screen.queryByTestId('call-error')).toBe(null);
+    });
+
+    // L'autre forme d'échec : la piste rend `null` plutôt que de jeter. Les
+    // deux arrivent — `publishEffectCamera` rend `null` quand le module est
+    // absent, et jette quand il est présent mais refuse.
+    it('publie la caméra ordinaire quand la piste à effet rend null', async () => {
+      jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(true);
+      jest.spyOn(effects, 'publishEffectCamera').mockResolvedValue(null);
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true));
     });
 
     it('retombe sur le chemin ordinaire sans module natif', async () => {
