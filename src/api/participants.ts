@@ -112,6 +112,26 @@ export async function removeParticipant(
   );
 }
 
+/**
+ * Change le rôle d'un participant.
+ *
+ * **`update-participant/`, jamais `update-participant-role/`.** Le second
+ * n'existe pas : mesuré le 2026-08-04 sur l'instance réelle, il rend la page
+ * HTML de Django — exactement comme une route inventée pour l'occasion —, quand
+ * le premier rend un 401 JSON. Le plan du périmètre B avait écrit le nom long,
+ * son test l'avait figé, et « passer administrateur » échouait depuis.
+ *
+ * C'est le CORPS qui distingue les deux 404, jamais le statut : une route
+ * absente et un salon introuvable rendent le même code. Le commentaire de
+ * `muteParticipant` ci-dessus le disait déjà, et listait même
+ * `update-participant/` parmi les routes qui répondent 401 — la bonne réponse
+ * était écrite vingt lignes plus haut que le défaut.
+ *
+ * Réserve honnête : le NOM de la route est mesuré, la charge utile ne l'est
+ * pas. `participant_identity` et `role` viennent du plan, et un serializer qui
+ * en attendrait d'autres rendrait un 400 avec son motif — lisible, lui, à la
+ * différence du 404 muet qu'on remplace.
+ */
 export async function updateParticipantRole(
   account: Account,
   roomId: string,
@@ -119,7 +139,7 @@ export async function updateParticipantRole(
   role: ParticipantRole,
 ): Promise<ApiResult<void>> {
   return toVoid(
-    await post(account, roomId, 'update-participant-role', {
+    await post(account, roomId, 'update-participant', {
       participant_identity: identity,
       role,
     }),
