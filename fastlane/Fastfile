@@ -127,7 +127,20 @@ platform :ios do
       output_directory: "ios/build",
       output_name: "TwakeVisio.ipa",
       clean: true,
-      xcargs: "DEVELOPMENT_TEAM='#{ENV["APPLE_TEAM_ID"]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution'",
+      # **`PROVISIONING_PROFILE_SPECIFIER` est OBLIGATOIRE ici, et c'est la
+      # différence avec `twake-drive-mobile`.** Là-bas, le commentaire d'origine
+      # explique qu'on ne le passe PAS globalement, chaque cible portant son
+      # propre profil dans le `pbxproj` — un script l'y écrit, et ce `pbxproj`
+      # est versionné.
+      #
+      # Ici `ios/` est régénéré par `expo prebuild` à chaque exécution : le
+      # projet ne porte AUCUN profil. En signature manuelle, `xcodebuild`
+      # échoue alors sur « TwakeVisio requires a provisioning profile », après
+      # trente secondes d'archivage — mesuré le 2026-08-04.
+      #
+      # Reprendre le commentaire de Drive sans reprendre sa CONDITION, c'était
+      # hériter d'une conclusion sans son hypothèse.
+      xcargs: "DEVELOPMENT_TEAM='#{ENV["APPLE_TEAM_ID"]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='match AppStore #{APP_IDENTIFIER}'",
       export_options: {
         teamID: ENV["APPLE_TEAM_ID"],
         signingStyle: "manual",

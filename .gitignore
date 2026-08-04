@@ -16,3 +16,11 @@ node_modules
 
 # Les valeurs des secrets de publication, jamais dans git.
 .release-secrets.env
+
+# Sorties de fastlane : documentation régénérée à chaque lane, rapports
+# d’exécution, et profils téléchargés par match. Rien de tout cela ne décrit
+# une décision — tout est reproductible depuis le Fastfile.
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+*.mobileprovision
