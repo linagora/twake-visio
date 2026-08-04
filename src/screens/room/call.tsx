@@ -21,7 +21,12 @@ import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
 import { handPosition, isHandRaised, otherRaisedHands, raisedHands } from 'src/call/hands';
-import { applyEffect, areEffectsSupported, type BackgroundEffect } from 'src/call/backgroundEffect';
+import {
+  applyEffect,
+  areEffectsSupported,
+  publishEffectCamera,
+  type BackgroundEffect,
+} from 'src/call/backgroundEffect';
 import { useInterruptionRecovery } from 'src/call/interruption';
 import type { ParticipantView, Tile } from 'src/call/layout';
 import { setCameraEnabled, setMicrophoneEnabled, type FacingMode } from 'src/call/media';
@@ -683,7 +688,24 @@ export function CallScreen(): React.ReactElement {
         // Les choix faits au pré-écran arrivent par l'URL : entrer micro ouvert
         // quand la personne l'avait coupé la ferait parler sans le savoir.
         await setMicrophoneEnabled(session.getRoom(), mic !== '0');
-        await setCameraEnabled(session.getRoom(), camera !== '0');
+
+        // **La caméra à EFFET, quand la plateforme la porte.**
+        //
+        // `setCameraEnabled` demande à LiveKit de fabriquer sa propre piste,
+        // par `getUserMedia` : le décorateur de segmentation n'y est pas, donc
+        // aucun effet ne peut y apparaître. Le pré-join, lui, montrait bien le
+        // flou — il monte la piste à effet pour son aperçu —, et c'est ce qui
+        // rendait le défaut si déroutant : on choisissait un fond, on le
+        // voyait, puis il disparaissait en entrant.
+        //
+        // L'effet lui-même n'a pas à être retransmis : le processeur natif est
+        // unique et garde le dernier `setEffect`. Publier la bonne piste suffit
+        // à retrouver le choix fait au pré-join.
+        if (camera !== '0' && areEffectsSupported()) {
+          await publishEffectCamera(session.getRoom());
+        } else {
+          await setCameraEnabled(session.getRoom(), camera !== '0');
+        }
       })
       .catch(() => {
         if (!cancelled) setFailure('error.network');

@@ -15,6 +15,7 @@ import * as accounts from 'src/auth/accounts';
 import * as audioRoute from 'src/call/audioRoute';
 import { CHAT_TOPIC } from 'src/call/chat';
 import type { CameraChoice } from 'src/call/devices';
+import * as effects from 'src/call/backgroundEffect';
 import * as media from 'src/call/media';
 import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
 import { CallScreen } from './call';
@@ -632,6 +633,37 @@ describe('CallScreen', () => {
     await waitFor(() => {
       expect(media.setMicrophoneEnabled).toHaveBeenCalledWith(mockRoom, true);
       expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true);
+    });
+  });
+
+  // Les DEUX polarités de la même conditionnelle, et il les faut toutes les
+  // deux : sans module natif — le cas de Jest par défaut, et celui d'iOS —
+  // `areEffectsSupported()` est faux, donc un test unique aurait laissé la
+  // branche à effet totalement inobservée. C'est exactement ce qui s'est
+  // passé : le défaut a vécu jusqu'à ce que le propriétaire choisisse un fond
+  // au pré-join et le voie disparaître en entrant.
+  describe("la caméra publiée à l'entrée", () => {
+    it('passe par la piste à EFFET quand la plateforme la porte', async () => {
+      jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(true);
+      const publish = jest.spyOn(effects, 'publishEffectCamera').mockResolvedValue(null);
+
+      await renderCall();
+
+      await waitFor(() => expect(publish).toHaveBeenCalledWith(mockRoom));
+      // Et SURTOUT pas l'autre : `setCameraEnabled` demande à LiveKit sa propre
+      // piste, par `getUserMedia`, où le décorateur de segmentation n'est pas.
+      // Appeler les deux publierait deux caméras.
+      expect(media.setCameraEnabled).not.toHaveBeenCalled();
+    });
+
+    it('retombe sur le chemin ordinaire sans module natif', async () => {
+      jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(false);
+      const publish = jest.spyOn(effects, 'publishEffectCamera');
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true));
+      expect(publish).not.toHaveBeenCalled();
     });
   });
 

@@ -96,7 +96,6 @@ export function HomeScreen(): React.ReactElement {
         {upcoming.status === 'unavailable' ? (
           <UpcomingUnavailable
             cause={upcoming.cause}
-            detail={upcoming.reason}
             onSignIn={() => router.push('/welcome')}
             testID="upcoming-unavailable"
           />

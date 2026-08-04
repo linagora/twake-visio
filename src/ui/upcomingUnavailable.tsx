@@ -8,10 +8,6 @@ import { tokens } from 'src/ui/tokens';
 
 type Props = {
   readonly cause: UpcomingCause;
-  // Le détail technique — code HTTP, audience de jeton. Rendu SEULEMENT en
-  // développement, et jamais à la place de la phrase : les deux publics ne sont
-  // pas les mêmes.
-  readonly detail: string;
   readonly onSignIn: () => void;
   readonly testID: string;
 };
@@ -42,12 +38,7 @@ const COPY: Readonly<Record<UpcomingCause, { readonly key: string; readonly acti
  * ne se réparera jamais. Trois phrases, et un bouton pour la seule qui en
  * appelle un.
  */
-export function UpcomingUnavailable({
-  cause,
-  detail,
-  onSignIn,
-  testID,
-}: Props): React.ReactElement {
+export function UpcomingUnavailable({ cause, onSignIn, testID }: Props): React.ReactElement {
   const { t } = useTranslation();
   const copy = COPY[cause];
 
@@ -81,18 +72,6 @@ export function UpcomingUnavailable({
           </Text>
         </Pressable>
       ) : null}
-
-      {/* Le détail technique survit, mais en DÉVELOPPEMENT seulement et sous la
-          phrase, jamais à sa place. C'est lui qui a permis de distinguer « le
-          service a refusé le jeton » de « le panneau n'apparaît pas » — les
-          logs JavaScript n'atteignent pas logcat et le débogueur de Metro
-          refuse les connexions. Le perdre en gagnant une belle phrase serait
-          un mauvais échange. */}
-      {__DEV__ ? (
-        <Text style={styles.detail} testID={`${testID}-detail`}>
-          {detail}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -112,9 +91,6 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.xs,
     padding: tokens.spacing.md,
   },
-  // Secondaire par la TAILLE, jamais par un gris trop clair : le détail est
-  // technique, pas illisible.
-  detail: { color: tokens.color.textSectionLabel, fontSize: 11, marginTop: tokens.spacing.xs },
   header: { alignItems: 'center', flexDirection: 'row', gap: tokens.spacing.xs },
   message: { color: tokens.color.textSecondary, fontSize: 13, lineHeight: 18 },
   title: { color: tokens.color.textLight, fontFamily: tokens.font.bold, fontSize: 15 },
