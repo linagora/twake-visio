@@ -6,6 +6,7 @@ import { mediaDevices } from '@livekit/react-native-webrtc';
 
 import * as rooms from 'src/api/rooms';
 import * as audioRoute from 'src/call/audioRoute';
+import * as effectsModule from 'src/call/backgroundEffect';
 import * as accounts from 'src/auth/accounts';
 import { tokens } from 'src/ui/tokens';
 import { PrejoinScreen } from './prejoin';
@@ -457,5 +458,31 @@ describe('PrejoinScreen — sortie audio', () => {
 
     expect(picker).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('audio-output-note')).toBe(null);
+  });
+});
+
+// Cette garde a SAUTÉ en regroupant les boutons par sens, et rien ne l'a dit :
+// aucun test ne la couvrait. Sur iOS, le bouton se serait affiché et n'aurait
+// rien fait — le pendant Vision n'existe pas.
+describe("PrejoinScreen — bouton d'effets", () => {
+  it('ne le rend pas là où le module natif manque', async () => {
+    jest.spyOn(effectsModule, 'areEffectsSupported').mockReturnValue(false);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('camera-switch')).toBeTruthy());
+    expect(screen.queryByTestId('prejoin-effects-btn')).toBe(null);
+  });
+
+  it('le rend là où il existe', async () => {
+    // L'autre borne : sans elle, un composant qui ne rendrait JAMAIS le bouton
+    // passerait le test ci-dessus.
+    jest.spyOn(effectsModule, 'areEffectsSupported').mockReturnValue(true);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-effects-btn')).toBeTruthy());
   });
 });

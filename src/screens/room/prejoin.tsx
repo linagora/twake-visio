@@ -48,12 +48,16 @@ const styles = StyleSheet.create({
   bar: {
     bottom: 16,
     flexDirection: 'row',
-    gap: 12,
+    // 28 entre les GROUPES, 12 à l'intérieur : c'est ce rapport qui fait lire
+    // deux blocs plutôt que quatre boutons. Un écart identique partout et le
+    // regroupement ne se voit pas ; trop grand, la rangée se disloque.
+    gap: 28,
     justifyContent: 'center',
     left: 0,
     position: 'absolute',
     right: 0,
   },
+  group: { flexDirection: 'row', gap: 12 },
   control: {
     alignItems: 'center',
     backgroundColor: CONTROL_SURFACE,
@@ -290,63 +294,69 @@ export function PrejoinScreen(): React.ReactElement {
           <RTCView mirror objectFit="cover" streamURL={previewUrl} style={styles.video} />
         )}
 
+        {/* DEUX groupes, séparés par un écart plus large que celui qui sépare
+            deux boutons d'un même groupe : le son à gauche, l'image à droite.
+            L'ordre d'avant les entrelaçait — micro, caméra, effets, son — et
+            rien ne disait que le dernier bouton commandait la même chose que le
+            premier. Demande du propriétaire, faite en regardant la rangée. */}
         <View style={styles.bar}>
-          {/* Masqué là où le natif n'existe pas — iOS attend son pendant
-              Vision. Une commande qu'on ne peut pas honorer coûte plus cher que
-              son absence. */}
-          <Pressable
-            accessibilityLabel={t('call.muted')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: micOff }}
-            onPress={() => setMicOff((previous) => !previous)}
-            style={[styles.control, micOff ? styles.controlOff : null]}
-            testID="mic-switch"
-          >
-            <MaterialCommunityIcons
-              color={tokens.color.textDark}
-              name={micOff ? 'microphone-off' : 'microphone'}
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={t('prejoin.cameraOff')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: cameraOff }}
-            onPress={() => setCameraOff((previous) => !previous)}
-            style={[styles.control, cameraOff ? styles.controlOff : null]}
-            testID="camera-switch"
-          >
-            <MaterialCommunityIcons
-              color={tokens.color.textDark}
-              name={cameraOff ? 'video-off' : 'video'}
-              size={24}
-            />
-          </Pressable>
-          {effectsOn ? (
+          <View style={styles.group}>
             <Pressable
-              accessibilityLabel={t('effects.open')}
-              accessibilityRole="button"
-              onPress={() => setEffectsOpen(true)}
-              style={styles.control}
-              testID="prejoin-effects-btn"
+              accessibilityLabel={t('call.muted')}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: micOff }}
+              onPress={() => setMicOff((previous) => !previous)}
+              style={[styles.control, micOff ? styles.controlOff : null]}
+              testID="mic-switch"
             >
-              <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
+              <MaterialCommunityIcons
+                color={tokens.color.textDark}
+                name={micOff ? 'microphone-off' : 'microphone'}
+                size={24}
+              />
             </Pressable>
-          ) : null}
-          {/* La sortie audio, ici comme dans la barre. Le propriétaire a branché
-              son casque Bluetooth SUR CET ÉCRAN et n'avait aucun moyen d'y
-              choisir la destination du son : le réglage n'existait qu'une fois
-              la séance ouverte, c'est-à-dire trop tard pour la seule personne
-              qui voulait le vérifier avant d'entrer. */}
-          <Pressable
-            accessibilityLabel={t('call.audioOutput')}
-            accessibilityRole="button"
-            onPress={audio.onOpen}
-            style={styles.control}
-            testID="prejoin-audio-btn"
-          >
-            <MaterialCommunityIcons color={tokens.color.textDark} name="volume-high" size={20} />
-          </Pressable>
+            <Pressable
+              accessibilityLabel={t('call.audioOutput')}
+              accessibilityRole="button"
+              onPress={audio.onOpen}
+              style={styles.control}
+              testID="prejoin-audio-btn"
+            >
+              <MaterialCommunityIcons color={tokens.color.textDark} name="volume-high" size={20} />
+            </Pressable>
+          </View>
+
+          <View style={styles.group}>
+            <Pressable
+              accessibilityLabel={t('prejoin.cameraOff')}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: cameraOff }}
+              onPress={() => setCameraOff((previous) => !previous)}
+              style={[styles.control, cameraOff ? styles.controlOff : null]}
+              testID="camera-switch"
+            >
+              <MaterialCommunityIcons
+                color={tokens.color.textDark}
+                name={cameraOff ? 'video-off' : 'video'}
+                size={24}
+              />
+            </Pressable>
+            {/* Masqué là où le natif n'existe pas — iOS attend son pendant
+                Vision. Une commande qu'on ne peut pas honorer coûte plus cher
+                que son absence. Cette garde a SAUTÉ en regroupant les boutons,
+                et rien ne l'a dit : aucun test ne la couvrait. */}
+            {effectsOn ? (
+              <Pressable
+                accessibilityLabel={t('effects.open')}
+                accessibilityRole="button"
+                onPress={() => setEffectsOpen(true)}
+                style={styles.control}
+                testID="prejoin-effects-btn"
+              >
+                <MaterialCommunityIcons color={tokens.color.textDark} name="blur" size={20} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       </View>
 
