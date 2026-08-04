@@ -658,4 +658,21 @@ describe('le pré-join avec un compte', () => {
 
     expect(journal.rememberVisit).toHaveBeenCalled();
   });
+
+  // La borne manquante du couple géré par `handleJoin` : un compte NE DOIT
+  // PAS écrire dans le magasin de noms invité. `getVisitor()` peut rendre un
+  // compte alors qu'une session invité traîne encore (voir son commentaire de
+  // tête) — un régression ici écraserait le nom mémorisé d'un AUTRE invité sur
+  // le même appareil, la même classe de fuite que le journal ci-dessus.
+  it("n'appelle PAS rememberGuestName pour un compte", async () => {
+    const remember = jest.spyOn(guest, 'rememberGuestName');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(remember).not.toHaveBeenCalled();
+  });
 });
