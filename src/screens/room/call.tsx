@@ -17,6 +17,8 @@ import {
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
+import { endGuestSession } from 'src/auth/guest';
+import { getVisitor, visitorServerUrl } from 'src/auth/visitor';
 import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
@@ -153,11 +155,16 @@ function toDisconnectMessage(reason: string): MessageKey {
 }
 
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
-// chaque rendu, y compris quand personne n'est connecté. `access` — qui
-// gouverne la garde juste en dessous — ne se remplit que depuis l'effet de
-// connexion, lui-même arrêté dès qu'il constate l'absence de compte : ce
-// repli ne sert donc jamais de véritable requête, il ne fait que satisfaire le
-// typage d'un appel de Hook qui ne peut pas être conditionnel.
+// chaque rendu, y compris quand personne n'est connecté. Ce repli ne sert
+// donc jamais de véritable requête, il ne fait que satisfaire le typage d'un
+// appel de Hook qui ne peut pas être conditionnel — mais PAS pour la raison
+// qu'on pourrait croire : `access` ne dépend plus de la présence d'un compte
+// depuis que l'effet de connexion lit `getVisitor()`, et un invité en obtient
+// un lui aussi. La garde réelle est `canModerate`, qui exige
+// `access.isAdministrable` : le serveur rend `is_administrable: false` pour
+// un appelant anonyme (mesuré sur meet.linagora.com le 2026-08-04), donc ce
+// repli reste inerte pour un invité — la conclusion tient, ce n'est plus pour
+// l'ancienne raison.
 const NO_ACCOUNT: Account = {
   id: '',
   instance: {
@@ -238,11 +245,12 @@ export function CallScreen(): React.ReactElement {
   // minuteur pendant la négociation, alors que la réunion n'a pas commencé.
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Sans compte actif, il n'y a pas de jeton à demander. L'état de départ le
-  // dit dès le premier rendu : le poser depuis l'effet appellerait setState de
-  // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
+  // Sans visiteur — ni compte ni session invité —, il n'y a pas de jeton à
+  // demander. L'état de départ le dit dès le premier rendu : le poser depuis
+  // l'effet appellerait setState de façon synchrone, ce que
+  // `react-hooks/set-state-in-effect` refuse.
   const [failure, setFailure] = useState<MessageKey | null>(() =>
-    getActiveAccount() === null ? 'error.unauthorized' : null,
+    getVisitor() === null ? 'error.unauthorized' : null,
   );
 
   // Le SDK n'expose pas la face courante d'une piste : c'est l'écran qui la
@@ -439,10 +447,11 @@ export function CallScreen(): React.ReactElement {
     setFullscreen(null);
   }, []);
 
-  // Un compte frais à chaque rendu, comme au premier rendu de `failure`
-  // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
-  // un état — c'est le même accesseur que l'effet de connexion et que
-  // `handleShare` lisent déjà chacun de leur côté.
+  // Un compte frais à chaque rendu, jamais `getVisitor()` : les trois actions
+  // de modération plus bas et le repli `NO_ACCOUNT` n'ont de sens que pour un
+  // compte, jamais pour un invité, qui n'a aucun droit de modération —
+  // `canModerate` l'exclut déjà par `access.isAdministrable`. Il ne change pas
+  // en cours de séance, mais rien ne le fige dans un état.
   const account = getActiveAccount();
 
   // L'accès complet, pas seulement ses morceaux : la salle d'attente et le
@@ -649,12 +658,16 @@ export function CallScreen(): React.ReactElement {
     // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
     // est relu à chaque rendu — les confondre masquerait laquelle des deux
     // valeurs alimente vraiment `fetchRoomAccess`.
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
+    //
+    // `getVisitor()` et non `getActiveAccount()` : un invité doit pouvoir
+    // réellement ENTRER en séance, pas seulement consulter le pré-join — c'est
+    // tout le sujet de cette tâche.
+    const currentVisitor = getVisitor();
+    if (currentVisitor === null) return;
 
     let cancelled = false;
 
-    fetchRoomAccess({ kind: 'account', account: activeAccount }, slug)
+    fetchRoomAccess(currentVisitor, slug)
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {
@@ -749,9 +762,9 @@ export function CallScreen(): React.ReactElement {
     };
   }, [session, slug, camera, mic]);
 
-  // Le lien porte sur l'instance du compte, jamais sur une constante : une
-  // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
-  // mène pas à sa réunion.
+  // Le lien porte sur l'instance du VISITEUR, jamais sur une constante : une
+  // personne connectée ailleurs — ou un invité entré par un autre serveur —
+  // partagerait sinon un lien qui ne mène pas à sa réunion.
   /**
    * Copie le lien de la réunion, et le DIT.
    *
@@ -760,9 +773,9 @@ export function CallScreen(): React.ReactElement {
    * la commande, pas une politesse.
    */
   const handleCopyLink = async (): Promise<void> => {
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
-    await Clipboard.setStringAsync(`${activeAccount.instance.serverUrl}/${slug}`);
+    const current = getVisitor();
+    if (current === null) return;
+    await Clipboard.setStringAsync(`${visitorServerUrl(current)}/${slug}`);
     postNotice('link', 'call.linkCopied');
   };
 
@@ -770,9 +783,9 @@ export function CallScreen(): React.ReactElement {
     // Nom distinct du `account` de plus haut pour la même raison que dans
     // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
     // à chaque rendu.
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
-    const url = `${activeAccount.instance.serverUrl}/${slug}`;
+    const current = getVisitor();
+    if (current === null) return;
+    const url = `${visitorServerUrl(current)}/${slug}`;
     try {
       await Share.share({ message: url, url });
     } catch {
@@ -787,7 +800,14 @@ export function CallScreen(): React.ReactElement {
     session
       .disconnect()
       .catch(() => undefined)
-      .finally(() => router.replace('/home'));
+      .finally(() => {
+        // `endGuestSession` AVANT la navigation : `/welcome` ne consulte pas la
+        // session, mais un lien profond ouvert juste après reprendrait sinon le
+        // serveur de la réunion qu'on vient de quitter.
+        const current = getVisitor();
+        if (current?.kind === 'guest') endGuestSession();
+        router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
+      });
   };
 
   // L'état du bouton suit l'attribut, jamais l'appui : c'est le seul affichage

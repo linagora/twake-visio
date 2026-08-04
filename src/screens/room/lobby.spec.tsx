@@ -3,6 +3,7 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
+import * as visitor from 'src/auth/visitor';
 import { LobbyScreen } from './lobby';
 
 // Le nom doit commencer par `mock` : babel-plugin-jest-hoist remonte
@@ -29,6 +30,14 @@ const ACCOUNT = {
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
+};
+
+// Le nom mémorisé d'un précédent passage : c'est celui que `requestEntry` doit
+// porter, exactement comme `account.displayName` le fait pour un compte.
+const GUEST: visitor.Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: 'Camille',
 };
 
 beforeEach(() => {
@@ -438,5 +447,64 @@ describe('LobbyScreen, la sortie', () => {
     await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
 
     expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+});
+
+// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` aux trois points
+// d'entrée de cet écran, exactement comme la Tâche 7 l'a fait pour le
+// pré-join. Pour un invité, `access === null` n'est PLUS un échec : c'est le
+// cas nominal, la personne n'a simplement encore reçu aucune réponse.
+describe("la salle d'attente en invité", () => {
+  it('demande son entrée sous le nom mémorisé', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() =>
+      expect(entry).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'guest' }),
+        'reunion',
+        'Camille',
+      ),
+    );
+  });
+
+  it("n'annonce PLUS « session expirée » faute de compte", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeOnTheScreen());
+    expect(screen.queryByTestId('lobby-error')).toBe(null);
+  });
+
+  // La branche qui reste : NI compte NI session invité.
+  it("annonce toujours l'échec quand il n'y a aucun visiteur", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+
+    await render(<LobbyScreen />);
+
+    expect(screen.getByTestId('lobby-error')).toBeOnTheScreen();
+  });
+
+  it("ramène un invité à l'accueil public", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+    await render(<LobbyScreen />);
+
+    await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
   });
 });

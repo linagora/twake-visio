@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
-import { getActiveAccount } from 'src/auth/accounts';
+import { getVisitor, visitorName } from 'src/auth/visitor';
 import { tokens } from 'src/ui/tokens';
 
 // « Personne ne peut ouvrir » est un état du salon, pas une panne : c'est la
@@ -55,20 +55,21 @@ export function LobbyScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  // Sans compte actif, personne n'est à annoncer au salon. L'état de départ le
-  // dit dès le premier rendu : le poser depuis l'effet appellerait setState de
-  // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
+  // Sans visiteur — ni compte ni session invité —, personne n'est à annoncer
+  // au salon. L'état de départ le dit dès le premier rendu : le poser depuis
+  // l'effet appellerait setState de façon synchrone, ce que
+  // `react-hooks/set-state-in-effect` refuse.
   const [state, setState] = useState<LobbyState>(() =>
-    getActiveAccount() === null
+    getVisitor() === null
       ? { kind: 'failed', message: 'error.unauthorized' }
       : { kind: 'requesting' },
   );
 
   useEffect(() => {
-    const account = getActiveAccount();
-    if (account === null) return;
+    const currentVisitor = getVisitor();
+    if (currentVisitor === null) return;
 
-    requestEntry({ kind: 'account', account }, slug, account.displayName)
+    requestEntry(currentVisitor, slug, visitorName(currentVisitor))
       .then((result) =>
         setState(result.ok ? { kind: 'waiting' } : toFailedOrNoModerator(result.error)),
       )
@@ -82,12 +83,12 @@ export function LobbyScreen(): React.ReactElement {
 
   useEffect(() => {
     if (!awaitingAdmission) return;
-    const account = getActiveAccount();
-    if (account === null) return;
+    const currentVisitor = getVisitor();
+    if (currentVisitor === null) return;
 
     let stopped = false;
     const timer = setInterval(() => {
-      void requestEntry({ kind: 'account', account }, slug, account.displayName)
+      void requestEntry(currentVisitor, slug, visitorName(currentVisitor))
         .then((result) => {
           if (stopped) return;
           if (!result.ok) {
@@ -119,6 +120,15 @@ export function LobbyScreen(): React.ReactElement {
       clearInterval(timer);
     };
   }, [awaitingAdmission, slug, router]);
+
+  // Même choix de destination que `handleLeave` dans `call.tsx` : un invité
+  // n'a pas de compte à retrouver, l'accueil authentifié n'a donc rien à lui
+  // montrer. Contrairement à `call.tsx`, il n'y a ici aucune séance LiveKit à
+  // fermer avant de naviguer — la salle d'attente n'en a jamais ouvert.
+  const handleLeave = (): void => {
+    const current = getVisitor();
+    router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
+  };
 
   // Les cinq états rendent leur CONTENU seul, jamais le cadre. Le bouton de
   // sortie est posé une fois, après — sinon chaque état est une occasion de
@@ -179,7 +189,7 @@ export function LobbyScreen(): React.ReactElement {
       <Button
         buttonColor={tokens.color.brandStrong}
         mode="contained"
-        onPress={() => router.replace('/home')}
+        onPress={handleLeave}
         testID="lobby-leave-btn"
         textColor={tokens.color.onBrand}
       >

@@ -12,6 +12,8 @@ import * as participants from 'src/api/participants';
 import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
+import * as guest from 'src/auth/guest';
+import * as visitor from 'src/auth/visitor';
 import * as audioRoute from 'src/call/audioRoute';
 import { CHAT_TOPIC } from 'src/call/chat';
 import type { CameraChoice } from 'src/call/devices';
@@ -453,10 +455,24 @@ const ACCOUNT = {
     issuer: 'https://sso.linagora.com',
     clientId: 'twake-visio',
     livekitUrl: 'https://livekit.linagora.com',
-    features: { recording: true, subtitle: true, telephony: false },
+    // `calendar` a rejoint `InstanceFeatures` après l'écriture de cette
+    // fixture : sans lui, `ACCOUNT` ne satisfait plus `Account`, et un
+    // `Visitor` construit dessus (Tâche 8, ci-dessous) exige `as never`, ce
+    // que ce fichier évite déjà pour `getActiveAccount`. Même correctif que
+    // `prejoin.spec.tsx` à la Tâche 7.
+    features: { recording: true, subtitle: true, telephony: false, calendar: false },
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
+};
+
+// Un invité, sur un AUTRE serveur que celui du compte : c'est ce qui distingue
+// les deux dans chaque assertion d'URL ci-dessous — `meet.acme.com` ne peut
+// venir que du visiteur invité, jamais d'une constante recopiée d'`ACCOUNT`.
+const GUEST: visitor.Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: 'Camille',
 };
 
 const GRANTED = {
@@ -3472,4 +3488,88 @@ describe("CallScreen — barre d'état", () => {
   // branches garantissent est déjà couvert ailleurs : elles rendent
   // `call-error` ou `call-connecting`, jamais `call-root`, et la déclaration
   // `light` ne vit que dans `call-root`.
+});
+
+// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` à l'état de départ,
+// dans l'effet de connexion, dans `handleLeave`, `handleCopyLink` et
+// `handleShare` — SIX sites, pas quatre, le recensement d'origine ayant raté
+// `handleCopyLink`, arrivé d'amont pendant ce lot. `account` (lu par rendu)
+// reste `getActiveAccount()` : les actions de modération plus bas et le repli
+// `NO_ACCOUNT` n'ont de sens que pour un compte, jamais pour un invité, qui
+// n'a aucun droit de modération.
+describe('la sortie de séance', () => {
+  it("ramène un COMPTE à l'accueil", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+
+  it("ramène un INVITÉ à l'écran d'accueil public", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+  });
+
+  it('referme la session invité en sortant', async () => {
+    const end = jest.spyOn(guest, 'endGuestSession');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(end).toHaveBeenCalled();
+  });
+});
+
+describe('le partage du lien', () => {
+  it("porte le serveur de l'INVITÉ, pas une constante", async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'dismissedAction' });
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('call-header-share'));
+
+    expect(share).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://meet.acme.com/reunion' }),
+    );
+  });
+});
+
+// LA COMMANDE QUE LE PLAN D'ORIGINE AVAIT MANQUÉE. `handleCopyLink` est arrivé
+// en amont pendant ce lot et sortait tôt sur un compte nul : sans ce test, un
+// invité appuie sur « Copier le lien » et il ne se passe RIEN — pas même la
+// Snackbar, dont le commentaire de `call.tsx` dit pourtant qu'elle EST la
+// commande. Un échec silencieux, donc le pire des deux.
+describe('la copie du lien', () => {
+  it("copie le lien avec le serveur de l'INVITÉ", async () => {
+    const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
+    clipboard.setStringAsync.mockClear();
+    clipboard.setStringAsync.mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    expect(clipboard.setStringAsync).toHaveBeenCalledWith('https://meet.acme.com/reunion');
+  });
+
+  // Deuxième INSTRUCTION du même gestionnaire : le recensement par
+  // instructions l'exige, et c'est elle qui rend la commande visible.
+  it("annonce la copie à l'invité, comme à un compte", async () => {
+    const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
+    clipboard.setStringAsync.mockClear();
+    clipboard.setStringAsync.mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    await waitFor(() => expect(screen.getByText('call.linkCopied')).toBeOnTheScreen());
+  });
 });
