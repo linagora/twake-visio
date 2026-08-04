@@ -661,14 +661,23 @@ git add -A && git commit -m "feat(welcome): Offrir de rejoindre une réunion san
 - Modify: `src/screens/room/prejoin.spec.tsx`
 - Modify: `src/i18n/locales/*.json`
 
-- [ ] **Step 1 : clés i18n**
+- [ ] **Step 1 : clés i18n — UNE seule**
 
-`en` : `"prejoin.yourNamePrompt": "Enter your name"`,
-`"guest.signInRequired": "This meeting requires an account."`,
-`"guest.signIn": "Sign in"`
-`fr` : `"prejoin.yourNamePrompt": "Saisissez votre nom"`,
-`"guest.signInRequired": "Cette réunion demande un compte."`,
-`"guest.signIn": "Se connecter"`
+`en` : `"prejoin.yourNamePrompt": "Enter your name"`
+`fr` : `"prejoin.yourNamePrompt": "Saisissez votre nom"`
+
+> **CORRECTION du 2026-08-04, postérieure à la rédaction du plan.** Ce Step
+> demandait aussi `guest.signInRequired` et `guest.signIn`, pour un cas 401/403
+> sur un salon `trusted`. La lecture du code amont de meet montre que **ce cas
+> n'existe pas** : `RoomPermissions.has_permission` rend `True` pour toute
+> méthode sûre, et `RoomSerializer.to_representation` se contente d'omettre le
+> bloc `livekit`. Un anonyme reçoit donc **200 sans jeton**, ce que
+> `fetchRoomAccess` traduit déjà en salle d'attente.
+>
+> **Ne pas ajouter ces deux clés, et ne câbler aucune branche « il faut un
+> compte ».** Une branche qu'aucune réponse n'atteint est du code mort
+> qu'aucun test ne peut distinguer d'une branche vivante. Détail et citations
+> dans la spec, section « Le cas non public ».
 
 - [ ] **Step 2 : écrire les tests qui échouent**
 
@@ -1074,10 +1083,16 @@ git commit -m "feat(navigation): Ouvrir un lien de réunion sans compte, en invi
 
 ## Task 10 : la mesure qui manque, et le passage sur appareil
 
-- [ ] **Step 1 : trancher le cas non mesuré**
+- [ ] **Step 1 : CONFIRMER sur l'instance le cas tranché par la source**
 
-Créer depuis l'app un salon `trusted`, puis un `restricted`, et exécuter **sans
-en-tête d'autorisation** :
+Déjà tranché **par lecture du code amont** le 2026-08-04 : un anonyme reçoit
+**200 sans bloc `livekit`** sur `trusted` et `restricted`, donc la salle
+d'attente, et jamais 401/403. Consigné dans la spec, section « Le cas non
+public », avec les trois citations.
+
+Il reste à le **confirmer sur l'instance** — la source dit ce que le code fait,
+pas ce que cette instance déploie. Créer depuis l'app un salon `trusted`, puis un
+`restricted`, et exécuter **sans en-tête d'autorisation** :
 
 ```sh
 curl -s -i "https://meet.linagora.com/api/v1.0/rooms/<slug>/?username=Test" | head -20
@@ -1085,11 +1100,8 @@ curl -s -i -X POST "https://meet.linagora.com/api/v1.0/rooms/<slug>/request-entr
      -H 'content-type: application/json' -d '{"username":"Test"}' | head -20
 ```
 
-- **200 sans bloc `livekit`** → rien à écrire, la salle d'attente marche déjà.
-- **401 / 403** → brancher `guest.signInRequired` + une action `guest.signIn` sur
-  l'écran de pré-join, pour les deux `kind` `unauthorized` et `forbidden`.
-
-**Consigner le résultat dans la spec**, section « Un point NON MESURÉ ».
+Attendu : 200, pas de `livekit`. Si l'instance contredit la source, revenir vers
+le partenaire humain — c'est un écart de version, pas un détail d'implémentation.
 
 - [ ] **Step 2 : essai sur appareil Android**
 

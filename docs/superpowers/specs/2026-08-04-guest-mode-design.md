@@ -289,13 +289,48 @@ onglet, et `rememberVisit` écrit dans un magasin local à l'appareil : les entr
 ressortiraient dans l'Historique de la personne qui se connectera ensuite sur ce
 téléphone.
 
-### Un point NON MESURÉ, à trancher avant d'écrire le code
+### Le cas non public : tranché par la SOURCE, pas par une mesure
 
-Toutes les mesures portent sur un salon `access_level: "public"`. Créer un salon
-`trusted` ou `restricted` demande un compte : **ce que le serveur rend à un
-anonyme sur un tel salon n'a pas pu être observé.**
+**Distinction qui compte, et qu'il ne faut pas laisser s'effacer** : tout ce qui
+précède a été mesuré sur l'instance ; ce qui suit a été **lu dans le code amont**
+de meet le 2026-08-04. C'est autorité sur le chemin de code, ce n'est pas une
+observation du serveur en production — une instance peut porter une version
+différente.
 
-À exécuter dès qu'un salon non public existe :
+Créer un salon `trusted` ou `restricted` demande un compte, donc le comportement
+n'a pas pu être observé directement. Trois lectures le déterminent :
+
+```python
+# core/api/permissions.py — RoomPermissions.has_permission
+if request.method in permissions.SAFE_METHODS:
+    return True                      # → jamais de 403 sur un GET, anonyme ou non
+
+# core/models.py — Resource.get_role
+if not user or not user.is_authenticated:
+    return None                      # → un anonyme n'a AUCUN rôle
+
+# core/api/serializers.py — RoomSerializer.to_representation
+should_access_room = (
+    (instance.access_level == models.RoomAccessLevel.TRUSTED
+     and request.user.is_authenticated)
+    or role is not None
+    or instance.is_public
+)
+```
+
+Pour un anonyme sur un salon `trusted` ou `restricted`, les trois clauses sont
+fausses. **Le serveur rend donc 200 SANS bloc `livekit`** — jamais 401, jamais
+403. `fetchRoomAccess` traduit déjà cette absence en `{ kind: 'lobby' }`, et la
+salle d'attente prend le relais : **il n'y a rien de particulier à écrire.**
+
+Une conséquence à ne pas manquer : `retrieve` porte aussi un repli
+`ALLOW_UNREGISTERED_ROOMS` qui délivrerait un jeton pour un salon **inexistant**.
+Il est désactivé sur `meet.linagora.com` — mesuré, `GET /rooms/zzz-zzzz-zzz/`
+rend 404. Sur une instance qui l'activerait, un code saisi au hasard ouvrirait un
+salon vide au lieu de dire « réunion introuvable ».
+
+Reste à confirmer **sur l'instance** dès qu'un salon non public existe — la
+lecture de source dit ce que le code fait, pas ce que cette instance-là déploie :
 
 ```sh
 # Sans aucun en-tête d'autorisation, sur un salon trusted PUIS restricted :
@@ -304,13 +339,13 @@ curl -s -i -X POST "https://meet.linagora.com/api/v1.0/rooms/<slug>/request-entr
      -H 'content-type: application/json' -d '{"username":"Test"}' | head -20
 ```
 
-Les deux issues sont traitées, et **aucune n'est supposée** :
-
-- **200 sans bloc `livekit`** → `fetchRoomAccess` rend déjà `{ kind: 'lobby' }`,
-  et la salle d'attente scrute `request-entry`. Rien à écrire.
-- **401 / 403** → un message « cette réunion demande un compte » **avec une
-  action « Se connecter »**, et non un « accès refusé » muet qui laisserait la
-  personne sans issue.
+Attendu : **200 sans bloc `livekit`**, donc la salle d'attente. Si l'instance
+rendait 401 ou 403 — ce que la source exclut —, il faudrait alors un message
+« cette réunion demande un compte » avec une action « Se connecter » ; les clés
+`guest.signInRequired` et `guest.signIn` sont prévues pour ce cas et **ne servent
+à rien tant que la source dit vrai**. Ne pas les câbler par précaution : une
+branche qu'aucune réponse n'atteint est du code mort qu'aucun test ne peut
+distinguer d'une branche vivante.
 
 ---
 
