@@ -1,8 +1,10 @@
 # Twake Visio
 
-Client mobile de visioconférence pour les instances
-[`suitenumerique/meet`](https://github.com/suitenumerique/meet) — Android et iOS,
-en React Native, adossé au SDK officiel [LiveKit](https://livekit.io).
+Client mobile de visioconférence pour les instances de Twake Visio s'appuyant
+sur le commun numérique
+[meet](https://github.com/suitenumerique/meet) de LaSuite de la DINUM :
+Android et iOS, en React Native, adossé au SDK officiel
+[LiveKit](https://livekit.io).
 
 [![ci](https://github.com/linagora/twake-visio/actions/workflows/ci.yml/badge.svg)](https://github.com/linagora/twake-visio/actions/workflows/ci.yml)
 [![version](https://img.shields.io/github/v/release/linagora/twake-visio?include_prereleases&sort=semver)](https://github.com/linagora/twake-visio/releases)
@@ -14,24 +16,25 @@ meet gère les salons et les droits, LiveKit transporte les flux.
 
 ## Ce que l'application fait
 
-**Avant d'entrer** — un écran de pré-accueil où l'on choisit sa caméra, son
+**Avant d'entrer** : un écran de pré-accueil où l'on choisit sa caméra, son
 micro, sa **sortie audio** (écouteur, haut-parleur, casque Bluetooth) et son
 **arrière-plan** avant que quiconque ne vous voie. Un salon fermé place dans une
 salle d'attente jusqu'à ce qu'un organisateur admette.
 
-**Pendant la réunion** — grille de participants, épinglage, affichage du
+**Pendant la réunion** : grille de participants, épinglage, affichage du
 **partage d'écran** d'un autre participant, **chat**, **réactions**, **main
 levée**, et un bandeau qui signale un enregistrement en cours. La barre de
 commandes tient micro, caméra, réactions, main et le reste sur une seule ligne.
 
-**Effets d'arrière-plan** — flou ou image, calculés **sur l'appareil** : MLKit
-Selfie Segmentation sur Android, Vision (`VNGeneratePersonSegmentationRequest`)
-sur iOS. Aucune image ne quitte le téléphone pour être segmentée.
+**Effets d'arrière-plan** : flou ou image, calculés **sur l'appareil**, par
+MLKit Selfie Segmentation sur Android et Vision
+(`VNGeneratePersonSegmentationRequest`) sur iOS. Aucune image ne quitte le
+téléphone pour être segmentée.
 
-**Modération** — admettre ou refuser à l'entrée, couper le micro d'un
+**Modération** : admettre ou refuser à l'entrée, couper le micro d'un
 participant, l'exclure, le passer administrateur.
 
-**Autour** — création de salon avec le niveau d'accès expliqué en clair,
+**Autour** : création de salon avec le niveau d'accès expliqué en clair,
 historique, prochaines réunions tirées de l'agenda, réglages (langue, caméra et
 micro par défaut), session qui survit à la fermeture de l'application.
 
@@ -41,14 +44,14 @@ italien, russe, vietnamien.
 ## État
 
 `v0.8.0` est la première version destinée aux magasins. Elle est distribuée en
-test — TestFlight côté Apple, Firebase App Distribution côté Android — et n'est
-**pas encore publiée** sur l'App Store ni sur Google Play.
+test, par TestFlight côté Apple et Firebase App Distribution côté Android, et
+n'est **pas encore publiée** sur l'App Store ni sur Google Play.
 
 ## Démarrer
 
-**Prérequis** — Node 20, et une **compilation de développement** : Expo Go ne
-fonctionne pas, LiveKit exige du code natif. Pour Android, un **JDK 21** ; le 24
-casse la configuration CMake d'AGP et le 17 ne couvre pas Expo 57. Pour iOS,
+**Prérequis** : Node 20, et une **compilation de développement**, car Expo Go ne
+fonctionne pas et LiveKit exige du code natif. Pour Android, un **JDK 21** ; le
+24 casse la configuration CMake d'AGP et le 17 ne couvre pas Expo 57. Pour iOS,
 **Xcode 26.4 minimum** ; sous 26.3 une source d'Expo SDK 57 ne compile pas.
 
 ```bash
@@ -91,17 +94,17 @@ Les trois doivent être verts. `lefthook` les enchaîne avant chaque commit, et
 
 | dossier    | rôle                                                                                    |
 | ---------- | --------------------------------------------------------------------------------------- |
-| `app/`     | routes expo-router, **une ligne chacune** — elles réexportent un écran de `src/screens` |
+| `app/`     | routes expo-router, **une ligne chacune**, qui réexportent un écran de `src/screens`    |
 | `src/`     | tout le code : `api`, `auth`, `call`, `calendar`, `rooms`, `screens`, `ui`, `i18n`      |
-| `modules/` | modules natifs Expo maison — segmentation, périphériques audio, service de premier plan |
+| `modules/` | modules natifs Expo maison : segmentation, périphériques audio, service de premier plan |
 | `plugins/` | plugins de configuration Expo, seule façon de modifier le natif ici                     |
 | `docs/`    | spécifications, plans d'implémentation, runbooks                                        |
 
 Deux choses expliquent l'essentiel de la structure :
 
 **`android/` et `ios/` ne sont pas versionnés.** Ils sont régénérés par
-`expo prebuild`, donc toute configuration native passe par un plugin — sans
-quoi elle disparaît à la prochaine régénération.
+`expo prebuild`, donc toute configuration native passe par un plugin, sans quoi
+elle disparaît à la prochaine régénération.
 
 **Les écrans vivent dans `src/screens`, pas dans `app/`.** expo-router tire
 _tout_ `.tsx` sous `app/` dans le bundle ; un fichier de test qui y serait
@@ -114,10 +117,10 @@ Le design system est **local** : `src/ui/tokens` est la source unique de style,
 
 ## Configuration hors dépôt
 
-L'application est un **client OIDC public** — PKCE, jamais de `client_secret`,
+L'application est un **client OIDC public** : PKCE, jamais de `client_secret`,
 redirection `twakevisio://callback`. Le client et sa redirection doivent être
-déclarés côté SSO, et `lasuite.oidc_resource_server` activé côté meet : sans
-cela la connexion échoue **après** l'authentification.
+déclarés côté SSO, et `lasuite.oidc_resource_server` activé côté meet, sans quoi
+la connexion échoue **après** l'authentification.
 
 Le détail, avec les erreurs mesurées qui permettent de distinguer les deux
 déclarations manquantes : [`docs/oidc-registration.md`](docs/oidc-registration.md).
@@ -131,16 +134,16 @@ scripts/release.sh 0.8.1
 ```
 
 iOS part vers TestFlight, Android vers Firebase App Distribution, et l'APK comme
-l'IPA sont attachés à la Release GitHub. Le runbook complet — secrets, keystore,
-`match`, pièges relevés — est dans
+l'IPA sont attachés à la Release GitHub. Le runbook complet, avec les secrets, le
+keystore, `match` et les pièges relevés, est dans
 [`docs/ci-cd-signed-release.md`](docs/ci-cd-signed-release.md).
 
 ## Contribuer
 
 Les contributions sont bienvenues. Tout est dans
 [`CONTRIBUTING.md`](CONTRIBUTING.md) : monter l'environnement, ce que la
-relecture attend, et les pièges déjà payés ici — plusieurs sont invisibles à la
-lecture et ne se voient qu'à l'exécution.
+relecture attend, et les pièges déjà payés ici, dont plusieurs sont invisibles à
+la lecture et ne se voient qu'à l'exécution.
 
 L'essentiel en quatre points :
 
@@ -155,8 +158,7 @@ L'essentiel en quatre points :
 
 Les tests sont colocalisés en `*.spec.ts(x)`, sans instantanés.
 
-La participation vaut acceptation du
-[code de conduite](CODE_OF_CONDUCT.md).
+La participation vaut acceptation du [code de conduite](CODE_OF_CONDUCT.md).
 
 ## Sécurité
 
@@ -166,13 +168,13 @@ plutôt que du client sont dans [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 
-[GNU Affero General Public License v3.0](LICENSE) — AGPL-3.0-only.
+[GNU Affero General Public License v3.0](LICENSE), AGPL-3.0-only.
 
 L'amont, [`suitenumerique/meet`](https://github.com/suitenumerique/meet), est
 sous licence MIT ; ce client mobile est un travail distinct, sous AGPL.
 
 ## Liens
 
-- [`suitenumerique/meet`](https://github.com/suitenumerique/meet) — le serveur
-- [LiveKit](https://livekit.io) — le transport temps réel
-- [Expo](https://expo.dev) — SDK 57, React Native 0.86
+- [`suitenumerique/meet`](https://github.com/suitenumerique/meet), le serveur
+- [LiveKit](https://livekit.io), le transport temps réel
+- [Expo](https://expo.dev), SDK 57 et React Native 0.86
