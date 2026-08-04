@@ -77,11 +77,20 @@ function readScreen(participant: Participant): VideoTrackRef | null {
   // corrections opposées, et les journaux JavaScript n'atteignent pas logcat —
   // seule la sortie de Metro les porte.
   if (__DEV__) {
-    const sources = participant
-      .getTrackPublications()
+    // `getTrackPublications` n'existe pas sur les doubles de `participants.spec`,
+    // qui ne portent que ce que le module lit vraiment. La sonde vérifie donc
+    // avant d'appeler : une sonde qui casse la suite ne mesure plus rien, elle
+    // empêche de mesurer.
+    const list =
+      typeof participant.getTrackPublications === 'function'
+        ? participant.getTrackPublications()
+        : [];
+    const sources = list
       .map(
-        (p) =>
-          `${String(p.source)}:${p.track === undefined ? 'non-souscrit' : 'souscrit'}${p.isMuted ? ':coupé' : ''}`,
+        (item) =>
+          `${String(item.source)}:${item.track === undefined ? 'non-souscrit' : 'souscrit'}${
+            item.isMuted ? ':coupé' : ''
+          }`,
       )
       .join(' ');
     // eslint-disable-next-line no-console
