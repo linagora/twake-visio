@@ -154,8 +154,36 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 - **Le premier dépôt sur Google Play se fait à la MAIN.** `supply` échoue tant
   qu'aucun binaire n'a été déposé par la console : c'est ce dépôt-là qui fixe le
   nom de paquet de la fiche. Lancez `release-android.yml` avec **Produire l'AAB
-  en artefact**, téléchargez l'artefact, déposez-le dans _Tests internes_. Les
-  envois suivants passent par `publish_to_play_store`.
+  en artefact**, téléchargez l'artefact, déposez-le dans _Tests internes_.
+- **Le compte de service Firebase n'a PAS de droits sur Play**, et ce sont deux
+  autorisations distinctes malgré le fichier unique. Mesuré le 2026-08-04 :
+  `firebase-adminsdk-fbsvc@visio-mobile-android` distribue bien sur Firebase App
+  Distribution, et se fait renvoyer « The caller does not have permission » par
+  l'API Play. **Tant que ce droit manque, `publish_to_play_store` échouera même
+  après le premier dépôt manuel.** À corriger dans la console : _Utilisateurs et
+  autorisations_ → inviter l'adresse du compte de service → droits sur
+  l'application, au minimum _Gérer les versions de test_.
+
+  Les messages de l'API séparent d'ailleurs deux causes qu'on confondrait :
+
+  | réponse                               | ce qu'elle dit                                       |
+  | ------------------------------------- | ---------------------------------------------------- |
+  | `Package not found: …`                | le compte est authentifié, le paquet lui est inconnu |
+  | `The caller does not have permission` | le paquet **existe**, ce compte n'y a pas accès      |
+
+  Interroger un paquet **dont on sait qu'il n'est pas là** est donc le contrôle
+  positif qui distingue « pas de droits » de « pas d'application ».
+
+- **Le lien d'inscription des testeurs internes n'existe que dans la console.**
+  L'API ne l'expose pas : _Tests internes_ → onglet _Testeurs_ → « Comment les
+  testeurs rejoignent votre test ». Il ne sert qu'une fois la liste enregistrée
+  **et** une version publiée sur la piste.
+- **Une liste de testeurs Play n'accepte que des comptes Google.** Une adresse
+  professionnelle qui n'est pas dans un domaine Google Workspace, et sur
+  laquelle personne n'a créé de compte Google, est refusée — et une seule entrée
+  invalide empêche d'enregistrer toute la liste. Firebase App Distribution, lui,
+  invite n'importe quelle adresse : c'est la voie courte pour faire essayer un
+  build.
 - **JDK 21, ni 17 ni 24.** Le 24 casse la configuration CMake d'AGP sur ce
   projet — mesuré le 2026-08-03, `configureCMakeDebug` échoue sur « a restricted
   method in java.lang.System has been called ». Le 17 ne couvre pas Expo 57.
