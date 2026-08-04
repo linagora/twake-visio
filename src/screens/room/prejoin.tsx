@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
-import { rememberGuestName } from 'src/auth/guest';
+import { endGuestSession, rememberGuestName } from 'src/auth/guest';
 import { getVisitor, visitorName } from 'src/auth/visitor';
 import type { RoomAccess } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
@@ -239,6 +239,26 @@ export function PrejoinScreen(): React.ReactElement {
     router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
   };
 
+  // Les DEUX sorties de cet écran — le chevron de l'en-tête et le bouton de
+  // l'écran d'erreur — et la même règle que `call.tsx:804-810` et
+  // `lobby.tsx:136-140` : la session invité se referme AVANT la navigation, et
+  // un invité repart vers `/welcome`, jamais vers `/home`.
+  //
+  // C'est ici que le manque coûtait le plus cher : le pré-join est le PREMIER
+  // écran qu'un invité atteint, et le seul qu'il atteigne quand le code est
+  // faux. On le déposait alors sur l'accueil authentifié — un nom vide, une
+  // carte « Nouvelle réunion » qui rendra 401, un Historique qui n'est pas le
+  // sien, un onglet Réglages qui propose de se déconnecter — pendant que la
+  // session invité restait ouverte dans MMKV.
+  //
+  // `getVisitor()` relu plutôt que le `visitor` du montage, pour que les trois
+  // écrans portent la même forme et se retrouvent d'un `grep`.
+  const handleExit = (): void => {
+    const current = getVisitor();
+    if (current?.kind === 'guest') endGuestSession();
+    router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
+  };
+
   // Les encoches sont appliquées ICI, sur la racine QUI PEINT LE FOND : un
   // rembourrage est peint par la vue qui le porte, donc les deux bandes
   // prennent la couleur de l'écran au lieu du blanc de la vue système. C'était
@@ -263,7 +283,7 @@ export function PrejoinScreen(): React.ReactElement {
             `call.tsx` : l'en-tête est masqué par le Stack, donc sans ce bouton
             l'écran est un cul-de-sac dont on ne sort qu'en tuant
             l'application. */}
-        <Button mode="contained" testID="prejoin-leave-btn" onPress={() => router.replace('/home')}>
+        <Button mode="contained" testID="prejoin-leave-btn" onPress={handleExit}>
           {t('call.leave')}
         </Button>
       </View>
@@ -281,7 +301,7 @@ export function PrejoinScreen(): React.ReactElement {
       <View style={styles.header}>
         <Pressable
           accessibilityLabel={t('prejoin.back')}
-          onPress={() => router.replace('/home')}
+          onPress={handleExit}
           style={styles.back}
           testID="prejoin-back-btn"
         >

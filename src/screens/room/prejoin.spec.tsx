@@ -676,3 +676,88 @@ describe('le pré-join avec un compte', () => {
     expect(remember).not.toHaveBeenCalled();
   });
 });
+
+// Les DEUX sorties de cet écran, chacune pour les DEUX familles de visiteurs.
+//
+// C'est le trou le plus cher du lot : le pré-join est le PREMIER écran qu'un
+// invité atteint, et le seul qu'il atteigne quand le code est faux. Les deux
+// sorties poussaient `/home` sans condition — l'accueil AUTHENTIFIÉ, avec un
+// nom vide, une carte « Nouvelle réunion » qui rendra 401, un Historique qui
+// n'est pas le sien et un onglet Réglages qui propose de se déconnecter —
+// pendant que la session invité restait ouverte dans MMKV. `call.tsx` et
+// `lobby.tsx` branchaient déjà, le pré-join non.
+describe('les sorties du pré-join', () => {
+  // `endGuestSession` est espionné SANS bouchon : le vrai écrit dans le faux
+  // MMKV du dépôt, donc l'appel est sûr. Motif hérité de `lobby.spec.tsx`.
+  async function reachError(): Promise<void> {
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'not-found' } });
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeOnTheScreen());
+  }
+
+  async function reachScreen(): Promise<void> {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-back-btn')).toBeOnTheScreen());
+  }
+
+  describe("le bouton de l'écran d'erreur — le code mal tapé", () => {
+    it("ramène un INVITÉ à l'accueil public", async () => {
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/welcome');
+    });
+
+    it("referme la session invité avant de s'en aller", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(end).toHaveBeenCalled();
+    });
+
+    it("ramène un COMPTE à l'accueil, sans toucher à aucune session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/home');
+      expect(end).not.toHaveBeenCalled();
+    });
+  });
+
+  // Le chevron de l'en-tête. Ce n'est pas le même site d'appel que le bouton
+  // ci-dessus, et rien ne les tient d'accord : chacun veut ses deux polarités.
+  describe("le chevron de l'en-tête", () => {
+    it("ramène un INVITÉ à l'accueil public, et referme sa session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ ...GUEST, displayName: 'Camille' });
+      await reachScreen();
+
+      await fireEvent.press(screen.getByTestId('prejoin-back-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/welcome');
+      expect(end).toHaveBeenCalled();
+    });
+
+    it("ramène un COMPTE à l'accueil, sans toucher à aucune session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+      await reachScreen();
+
+      await fireEvent.press(screen.getByTestId('prejoin-back-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/home');
+      expect(end).not.toHaveBeenCalled();
+    });
+  });
+});
