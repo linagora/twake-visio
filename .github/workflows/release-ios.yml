@@ -28,19 +28,39 @@ permissions:
 
 jobs:
   release-ios:
-    runs-on: macos-15
+    # **`macos-26`, et non `macos-15` : c'est une contrainte du COMPILATEUR, pas
+    # du SDK.** `macos-15` plafonne à Xcode 26.3, sous lequel une source d'Expo
+    # SDK 57 ne compile pas :
+    #
+    #     expo-modules-jsi/…/JavaScriptCodable+Date.swift:53:50:
+    #     error: type of expression is ambiguous without a type annotation
+    #
+    # Mesuré le 2026-08-04, et sur la source PUBLIÉE — un `npm pack` du même
+    # 57.0.4 rend un fichier identique au nôtre, donc rien n'était modifié
+    # localement. Le même extrait passe le typecheck sous Xcode 26.6, que porte
+    # `macos-26`. Une erreur de type dans une DÉPENDANCE n'est pas une erreur
+    # dans notre code : la corriger reviendrait à rustiner `node_modules`.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # App Store Connect refuse un binaire compilé avec un SDK trop ancien.
-      # macos-15 embarque Xcode 26 à côté du défaut : on le sélectionne
-      # explicitement plutôt que de dépendre de ce que l'image promeut.
+      # App Store Connect refuse un binaire compilé avec un SDK trop ancien, et
+      # Expo 57 exige en plus un Swift récent (voir `runs-on` ci-dessus). On
+      # sélectionne donc le PLUS HAUT Xcode 26 de l'image, jamais celui qu'elle
+      # promeut par défaut. Un plancher explicite : sous 26.4, on s'arrête ici
+      # avec un message qui nomme la cause, plutôt que deux minutes plus loin
+      # sur une erreur de type dans une dépendance.
       - name: Sélectionner Xcode 26 (SDK iOS 26 exigé par l'App Store)
         run: |
           XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$XCODE" ]; then echo "::error::Aucun Xcode 26 sur le runner"; ls -d /Applications/Xcode_*.app; exit 1; fi
           echo "Sélection de $XCODE"; sudo xcode-select -s "$XCODE"; xcodebuild -version
+          MINEUR=$(basename "$XCODE" .app | sed 's/^Xcode_26\.//' | cut -d. -f1)
+          if [ "${MINEUR:-0}" -lt 4 ]; then
+            echo "::error::Xcode 26.$MINEUR est trop ancien pour Expo SDK 57 (26.4 minimum) — voir le commentaire sur runs-on"
+            exit 1
+          fi
 
       - name: Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6

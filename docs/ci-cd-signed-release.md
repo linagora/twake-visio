@@ -137,6 +137,25 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 
 ## Pièges relevés, et ce qu'ils coûtent
 
+- **`macos-26` et Xcode 26.4 au minimum, pour le COMPILATEUR.** `macos-15`
+  plafonne à Xcode 26.3, sous lequel une source d'Expo SDK 57 ne compile pas —
+  `JavaScriptCodable+Date.swift:53:50`, dans `expo-modules-jsi` :
+
+  ```
+  error: type of expression is ambiguous without a type annotation
+  ```
+
+  Mesuré le 2026-08-04, et sur la source **publiée** : un `npm pack` du même
+  57.0.4 rend un fichier identique au nôtre, donc rien n'était rustiné
+  localement. Le même extrait passe le typecheck sous Xcode 26.6. Le workflow
+  s'arrête désormais avec un message qui nomme la cause si l'image ne propose
+  que 26.3.
+
+- **Le premier dépôt sur Google Play se fait à la MAIN.** `supply` échoue tant
+  qu'aucun binaire n'a été déposé par la console : c'est ce dépôt-là qui fixe le
+  nom de paquet de la fiche. Lancez `release-android.yml` avec **Produire l'AAB
+  en artefact**, téléchargez l'artefact, déposez-le dans _Tests internes_. Les
+  envois suivants passent par `publish_to_play_store`.
 - **JDK 21, ni 17 ni 24.** Le 24 casse la configuration CMake d'AGP sur ce
   projet — mesuré le 2026-08-03, `configureCMakeDebug` échoue sur « a restricted
   method in java.lang.System has been called ». Le 17 ne couvre pas Expo 57.
@@ -159,9 +178,15 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
 
 ## Ce qui n'est pas fait
 
-- Aucune de ces chaînes n'a **jamais tourné** sur ce dépôt. Elles sont
-  transposées d'un dépôt où elles fonctionnent, et adaptées à une arborescence
-  native régénérée — c'est précisément la partie qui n'a pas d'équivalent chez
-  Drive, donc celle qui demandera une première exécution attentive.
+- **Android est vérifié de bout en bout** sur un runner GitHub, le 2026-08-03 :
+  `prebuild`, keystore décodé, `assembleRelease` en 1661 s, APK signé livré à
+  Firebase App Distribution en 14 s.
+- **iOS ne l'est pas encore.** Deux causes ont été levées — le profil de
+  provisionnement absent du projet régénéré, puis l'Xcode trop ancien de
+  `macos-15` — mais aucune exécution n'est allée jusqu'à `pilot`. La première
+  qui ira demandera d'être lue en entier plutôt que crue sur son seul état
+  vert : le tronçon `gym` → TestFlight n'a jamais été emprunté ici.
+- **Le premier dépôt Play n'a pas eu lieu.** La fiche existe, le nom de paquet
+  n'est donc pas encore fixé côté Play.
 - Les métadonnées App Store et Play (descriptions, captures) ne sont pas
   reprises : elles décrivent Drive. La lane `deliver` n'est donc pas câblée ici.

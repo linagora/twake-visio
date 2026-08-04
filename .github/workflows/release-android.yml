@@ -13,8 +13,13 @@ on:
         description: 'Notes de version pour les testeurs Firebase'
         required: false
         default: ''
+      build_aab:
+        description: 'Produire l’AAB en artefact (à déposer À LA MAIN sur Play — obligatoire pour le tout premier dépôt)'
+        required: false
+        type: boolean
+        default: false
       publish_to_play_store:
-        description: 'Envoyer aussi l’AAB sur Google Play (piste interne)'
+        description: 'Envoyer aussi l’AAB sur Google Play (piste interne) — ne marche qu’APRÈS le premier dépôt manuel'
         required: false
         type: boolean
         default: false
@@ -113,6 +118,29 @@ jobs:
           VERSION_NAME: ${{ steps.version.outputs.marketing }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: bundle exec fastlane android distribute
+
+      # L'AAB, construit SANS envoi. Play refuse `supply` tant que le premier
+      # binaire n'a pas été déposé par la console — c'est ce dépôt-là qui fixe
+      # le nom de paquet de la fiche. D'où une étape qui ne fait que produire
+      # l'artefact, séparée de celle qui l'envoie.
+      - name: AAB signé (artefact, dépôt manuel)
+        if: inputs.build_aab == true
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ steps.version.outputs.marketing }}
+        run: bundle exec fastlane android aab
+
+      - name: Publier l'AAB en artefact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        if: inputs.build_aab == true
+        with:
+          name: twake-visio-android-aab-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 14
 
       - name: AAB signé → Play interne (optionnel)
         if: inputs.publish_to_play_store == true
