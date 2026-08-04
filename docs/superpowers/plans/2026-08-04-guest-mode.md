@@ -1111,18 +1111,43 @@ export function resolveDeepLink(
   const route = `/room/${slug}/prejoin`;
   if (signedIn) return { route, guestServerUrl: null };
 
-  // L'hôte du LIEN, pas le serveur par défaut : le lien dit sur quelle
-  // instance la réunion se tient, et c'est la seule source qui le sache.
-  let host: string;
-  try {
-    host = new URL(url).host;
-  } catch {
-    // Le schéma applicatif n'a pas d'hôte utilisable — `twakevisio://room/x`.
+  // `new URL` ne peut plus jeter ici : `parseMeetingLink` a déjà validé l'URL.
+  const { protocol, host } = new URL(url);
+  if (protocol === `${APP_SCHEME}:`) {
+    // Le schéma applicatif ne porte AUCUN hôte : `twakevisio://room/<slug>` a
+    // pour `host` le littéral « room », un mot fixe du schéma, pas une
+    // instance. Et rien dans cette application n'émet de tels liens pour le
+    // partage — `handleShare` et `handleCopyLink` écrivent tous deux
+    // `https://<serveur>/<slug>`. Il n'y a donc pas d'hôte à récupérer, et
+    // aucune meilleure supposition que le défaut.
     return { route, guestServerUrl: DEFAULT_SERVER_URL };
   }
+  // L'hôte du LIEN, pas le serveur par défaut : le lien dit sur quelle
+  // instance la réunion se tient, et c'est la seule source qui le sache.
   return { route, guestServerUrl: `https://${host}` };
 }
 ```
+
+> **CORRECTION du 2026-08-05 — ce Step portait un BUG, trouvé par l'implémenteur
+> qui a refusé de recopier le plan sans le vérifier.** La version d'origine
+> enveloppait `new URL(url)` dans un `try`/`catch` et rendait
+> `DEFAULT_SERVER_URL` depuis le `catch`, en croyant que le schéma applicatif
+> faisait jeter. **Il ne jette pas.** Mesuré :
+>
+> ```
+> new URL("twakevisio://room/abc-defg-hij")  → protocol=twakevisio:  host="room"
+> new URL("https://meet.acme.com/abc-…")     → protocol=https:       host="meet.acme.com"
+> new URL("pas une url")                     → JETTE TypeError
+> ```
+>
+> Les seules chaînes qui font jeter sont celles que `parseMeetingLink` a déjà
+> rejetées, donc le `catch` était **structurellement inatteignable**. Un invité
+> ouvrant un lien `twakevisio://` aurait reçu `startGuestSession('https://room')`
+> — un hôte absurde, en silence, produisant l'échec « indiscernable d'un lien
+> cassé » que ce même plan dénonce ailleurs.
+>
+> C'est aussi pourquoi le quatrième test (schéma applicatif, non connecté) n'est
+> pas facultatif : c'est lui qui a fait tomber le bug.
 
 - [ ] **Step 4 : câbler `app/_layout.tsx`**
 
