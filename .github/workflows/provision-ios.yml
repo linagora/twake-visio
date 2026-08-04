@@ -1,0 +1,60 @@
+name: Provisionner iOS (créer les profils match manquants)
+
+# À lancer UNE FOIS, à la main, avant la première publication iOS — et à
+# nouveau le jour où l'application gagne une extension.
+#
+# La lane de publication tourne en `readonly` : la CI ne fabrique jamais de
+# certificat, elle ne fait que consommer ceux du dépôt match. Ce workflow-ci est
+# la seule exception, et c'est pourquoi il n'est jamais déclenché
+# automatiquement — créer un profil est un effet de bord sur le compte Apple de
+# toute l'équipe.
+#
+# PRÉALABLE : l'App ID `com.linagora.twakevisio` doit déjà exister dans le
+# portail Apple, avec ses capacités. `match` provisionne des profils ; il
+# n'active PAS de capacités.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  provision-ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Dépendances JavaScript
+        run: npm ci
+
+      - name: Ruby (fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      # ÉCRITURE, ici : cette clé doit pouvoir pousser dans le dépôt match.
+      # C'est la différence avec la lane de publication, et la raison pour
+      # laquelle ce workflow reste manuel.
+      - name: Autoriser l'accès au dépôt de certificats match
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_DEPLOY_KEY }}
+
+      - name: Créer les profils manquants
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bundle exec fastlane ios provision

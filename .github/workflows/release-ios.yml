@@ -1,0 +1,135 @@
+name: Release iOS (signé → TestFlight)
+
+# IPA signé + envoi TestFlight, par fastlane (match + gym + pilot). Se déclenche
+# sur un tag vX.Y.Z — posé par scripts/release.sh — ou à la main.
+# Runbook : docs/ci-cd-signed-release.md.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Notes de version pour les testeurs TestFlight'
+        required: false
+        default: ''
+      publish_to_app_store:
+        description: 'Pousser aussi les métadonnées App Store (fastlane deliver)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # attacher l'IPA signé à la Release GitHub, comme pour Android
+
+jobs:
+  release-ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # App Store Connect refuse un binaire compilé avec un SDK trop ancien.
+      # macos-15 embarque Xcode 26 à côté du défaut : on le sélectionne
+      # explicitement plutôt que de dépendre de ce que l'image promeut.
+      - name: Sélectionner Xcode 26 (SDK iOS 26 exigé par l'App Store)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then echo "::error::Aucun Xcode 26 sur le runner"; ls -d /Applications/Xcode_*.app; exit 1; fi
+          echo "Sélection de $XCODE"; sudo xcode-select -s "$XCODE"; xcodebuild -version
+
+      - name: Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Dépendances JavaScript
+        run: npm ci
+
+      # **`ios/` n'est pas versionné ici**, à la différence de
+      # twake-drive-mobile : il est régénéré à chaque exécution. `prebuild` pose
+      # aussi le Podfile, donc il précède forcément `pod install`.
+      - name: Générer le projet iOS
+        run: npx expo prebuild --platform ios --no-install
+
+      # Le cache est indexé sur le Podfile.lock, qui vient d'être régénéré :
+      # une clé qui rate retombe sur la restauration partielle, et `pod install`
+      # fait le reste.
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ios/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: |
+            pods-
+
+      - name: CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Ruby (fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      # Les certificats et profils `match` vivent dans un dépôt git privé ;
+      # cette clé de déploiement donne à la CI un accès en LECTURE.
+      - name: Autoriser l'accès au dépôt de certificats match
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_DEPLOY_KEY }}
+
+      - name: Déduire la version marketing du tag
+        id: version
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          if [[ "$REF" == v* ]]; then
+            echo "marketing=${REF#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "marketing=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Lancé depuis la RACINE : le Fastfile y vit, parce qu'un Fastfile posé
+      # dans `ios/` disparaîtrait au prochain `prebuild`.
+      - name: IPA signé + envoi TestFlight
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: bundle exec fastlane ios distribute
+
+      - name: Publier l'IPA en artefact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        if: always()
+        with:
+          name: twake-visio-ios-ipa-${{ github.run_number }}
+          path: ios/build/TwakeVisio.ipa
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Parité avec Android : l'IPA rejoint la Release GitHub du tag. TestFlight
+      # reste la vraie distribution iOS ; ceci est de l'archivage.
+      - name: Attacher l'IPA à une Release GitHub
+        if: startsWith(github.ref, 'refs/tags/') && hashFiles('ios/build/TwakeVisio.ipa') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="${{ github.event.inputs.release_notes }}"
+          [ -z "$NOTES" ] && NOTES="Release ${GITHUB_REF_NAME}"
+          gh release create "${GITHUB_REF_NAME}" ios/build/TwakeVisio.ipa \
+            --title "Twake Visio ${GITHUB_REF_NAME}" --notes "$NOTES" --prerelease \
+          || gh release upload "${GITHUB_REF_NAME}" ios/build/TwakeVisio.ipa --clobber

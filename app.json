@@ -17,7 +17,8 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./plugins/withAndroidReleaseSigning"
     ],
     "android": {
       "package": "com.linagora.twakevisio",

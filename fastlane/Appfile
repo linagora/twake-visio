@@ -1,0 +1,9 @@
+# L'identité de l'application, pour les deux plateformes. `app_identifier` et
+# `package_name` valent la même chaîne ici — c'est voulu : un seul identifiant à
+# retenir, et une divergence entre les stores serait invisible jusqu'au premier
+# dépôt.
+app_identifier("com.linagora.twakevisio")
+package_name("com.linagora.twakevisio")
+
+# L'équipe Apple, partagée avec twake-drive-mobile et l'ancien visio-mobile.
+team_id(ENV["APPLE_TEAM_ID"] || "KUT463DS29")

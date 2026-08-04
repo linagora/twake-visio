@@ -1,0 +1,153 @@
+name: Release Android (signé → Firebase/Play)
+
+# APK signé + Firebase App Distribution, et AAB optionnel vers la piste interne
+# de Google Play. Se déclenche sur un tag vX.Y.Z — posé par scripts/release.sh —
+# ou à la main. Runbook : docs/ci-cd-signed-release.md.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Notes de version pour les testeurs Firebase'
+        required: false
+        default: ''
+      publish_to_play_store:
+        description: 'Envoyer aussi l’AAB sur Google Play (piste interne)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # créer la Release GitHub et y attacher l'APK signé
+
+jobs:
+  release-android:
+    runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_COMPILERCHECK: content
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime,pch_defines
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # JDK 21 et non 17 : le JDK 24 casse la configuration CMake d'AGP sur ce
+      # projet, mesuré le 2026-08-03, et 17 ne couvre pas Expo 57. Vingt et un
+      # est la seule version vérifiée ici.
+      - name: JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: android-ccache
+          max-size: 2G
+
+      # `npm ci` et non `npm install` : la version doit venir du lock, et
+      # `.npmrc` porte `legacy-peer-deps=true` — voir AGENTS.md pour la raison
+      # bornée et pour la sonde à lancer quand un module « introuvable » surgit.
+      - name: Dépendances JavaScript
+        run: npm ci
+
+      - name: Ruby (fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      # **`android/` n'est pas versionné ici** — à la différence de
+      # twake-drive-mobile. Il est régénéré à chaque exécution, et c'est ce qui
+      # fait passer la configuration de signature par un plugin
+      # (`plugins/withAndroidReleaseSigning.js`) plutôt que par un build.gradle
+      # commité.
+      - name: Générer le projet Android
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Décoder le keystore de release
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+
+      - name: Décoder le compte de service Firebase / Play
+        run: echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BASE64 }}" | base64 -d > "${{ runner.temp }}/gcp-sa.json"
+
+      - name: Déduire la version marketing du tag
+        id: version
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          if [[ "$REF" == v* ]]; then
+            echo "marketing=${REF#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "marketing=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: APK signé + Firebase App Distribution
+        env:
+          # Chemin ABSOLU : les lanes passent `project_dir: "android"`, donc
+          # Gradle tourne dans ce sous-dossier et un chemin relatif s'y
+          # résoudrait deux fois.
+          KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ steps.version.outputs.marketing }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: bundle exec fastlane android distribute
+
+      - name: AAB signé → Play interne (optionnel)
+        if: inputs.publish_to_play_store == true
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SUPPLY_JSON_KEY_PATH: ${{ runner.temp }}/gcp-sa.json
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ steps.version.outputs.marketing }}
+        run: bundle exec fastlane android release
+
+      - name: Localiser l'APK signé
+        id: apk
+        if: always()
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -n "$APK" ]; then echo "path=$APK" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Publier l'APK en artefact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        if: steps.apk.outputs.path != ''
+        with:
+          name: twake-visio-android-signe-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 14
+
+      - name: Attacher l'APK à une Release GitHub
+        if: startsWith(github.ref, 'refs/tags/') && steps.apk.outputs.path != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="${{ github.event.inputs.release_notes }}"
+          [ -z "$NOTES" ] && NOTES="Release ${GITHUB_REF_NAME}"
+          gh release create "${GITHUB_REF_NAME}" "${{ steps.apk.outputs.path }}" \
+            --title "Twake Visio ${GITHUB_REF_NAME}" --notes "$NOTES" --prerelease \
+          || gh release upload "${GITHUB_REF_NAME}" "${{ steps.apk.outputs.path }}" --clobber

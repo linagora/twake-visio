@@ -13,3 +13,6 @@ modules/*/android/build/
 .expo/
 node_modules
 *.log
+
+# Les valeurs des secrets de publication, jamais dans git.
+.release-secrets.env
