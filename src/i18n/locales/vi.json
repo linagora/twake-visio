@@ -2,6 +2,7 @@
   "welcome.signIn": "Đăng nhập",
   "welcome.signUp": "Đăng ký",
   "welcome.orgServer": "Đăng nhập bằng tổ chức của tôi",
+  "welcome.joinAsGuest": "Tham gia mà không cần tài khoản",
   "server.prompt": "Địa chỉ máy chủ của bạn",
   "server.emailPrompt": "Địa chỉ email của bạn",
   "server.emailInvalid": "Nhập một địa chỉ email hợp lệ",

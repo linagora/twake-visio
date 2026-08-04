@@ -2,6 +2,7 @@
   "welcome.signIn": "Войти",
   "welcome.signUp": "Зарегистрироваться",
   "welcome.orgServer": "Войти через мою организацию",
+  "welcome.joinAsGuest": "Присоединиться без аккаунта",
   "server.prompt": "Адрес вашего сервера",
   "server.emailPrompt": "Ваш адрес электронной почты",
   "server.emailInvalid": "Введите действительный адрес электронной почты",
