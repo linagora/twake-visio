@@ -70,11 +70,10 @@ describe('parsePastedMeeting', () => {
     });
   });
 
-  // ATTENTION : ces deux tests décrivent Node, pas l'appareil. Le schéma
-  // applicatif ne s'analyse PAS sur un téléphone — voir « sous l'URL de
-  // l'APPAREIL » plus bas, qui le mesure, et `deepLinks.ts:49` qui le
-  // documente à la source. Ils gardent le contrat de la fonction, ils ne
-  // prouvent rien du comportement livré.
+  // Ces deux tests tournent sous le `URL` de Node, mais ils valent désormais
+  // pour l'appareil AUSSI : le schéma applicatif ne passe plus par `URL` du
+  // tout — `slugFromAppLink` lit la chaîne brute. Leurs jumeaux du bloc « sous
+  // l'URL de l'APPAREIL », en fin de fichier, le prouvent sur l'autre moteur.
   describe('le schéma applicatif', () => {
     it("rend le slug SANS hôte : le lien n'en porte aucun", () => {
       expect(parsePastedMeeting('twakevisio://room/abc-defg-hij')).toEqual({
@@ -168,19 +167,35 @@ describe("le collage, sous l'URL de l'APPAREIL", () => {
     expect(parsePastedMeeting('https://MEET.ACME.com/abc-defg-hij')?.host).toBe('meet.acme.com');
   });
 
-  // Le RELEVÉ d'un chemin mort, pas un comportement qu'on souhaite.
-  //
-  // `fromUrl` compare `parsed.host` à « room », or les getters d'hôte de React
-  // Native n'admettent que `http(s)` : sur un téléphone ils rendent la chaîne
-  // vide pour `twakevisio://`, la branche ne s'exécute jamais, et les deux
-  // tests du bloc « le schéma applicatif » plus haut n'y prouvent rien. Même
-  // chemin mort dans `parseMeetingLink` — un lien profond `twakevisio://` ne
-  // s'ouvre donc pas sur appareil. PRÉ-EXISTANT, hors du périmètre de ce lot,
-  // et laissé tel quel par décision explicite.
-  //
-  // Si ce chemin est réparé un jour, ce test DOIT rougir : c'est son but.
-  it('ne reconnaît PAS le schéma applicatif — le chemin est mort sur appareil', () => {
-    expect(parsePastedMeeting('twakevisio://room/abc-defg-hij')).toBe(null);
+  /**
+   * Ce test gardait un chemin MORT. Il rougit désormais parce qu'on l'a
+   * réparé — c'était exactement son but, écrit ainsi le 2026-08-05.
+   *
+   * Le défaut : `fromUrl` lisait l'hôte et le chemin par `URL`, or les
+   * accesseurs de React Native sont des regex ancrées sur `^https?://`
+   * (`Libraries/Blob/URL.js:130-141`). Pour `twakevisio://room/<slug>` elles ne
+   * correspondent à rien : `host` valait la chaîne vide ET `pathname` valait
+   * « / ». Ce n'était donc pas seulement l'hôte qui manquait, c'était aussi le
+   * slug — irrécupérable. Sous Node, où tourne Jest, les deux valaient « room »
+   * et « /abc-defg-hij », d'où des tests verts contre du code que personne
+   * n'exécutait.
+   *
+   * `slugFromAppLink` lit la chaîne brute par une regex, sans `URL` : le seul
+   * moyen que les deux moteurs se comportent pareil.
+   */
+  it('reconnaît le schéma applicatif, sur appareil AUSSI', () => {
+    expect(parsePastedMeeting('twakevisio://room/abc-defg-hij')).toEqual({
+      slug: 'abc-defg-hij',
+      host: null,
+    });
+  });
+
+  it('refuse un segment réservé porté par le schéma applicatif', () => {
+    expect(parsePastedMeeting('twakevisio://room/callback')).toBe(null);
+  });
+
+  it('refuse un hôte autre que « room », sur appareil aussi', () => {
+    expect(parsePastedMeeting('twakevisio://callback/abc-defg-hij')).toBe(null);
   });
 
   // Le pendant du prédicat de `joinSheet.tsx` : ici, sur appareil, rien ne

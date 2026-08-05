@@ -352,9 +352,15 @@ Trois conséquences, toutes constatées :
   sous Node. Un test qui le gardait a été supprimé ici comme « vide » : il l'était
   sous Node, il ne l'est pas sur appareil. La mesure était juste, le moteur
   mesuré était le mauvais.
-- **Une branche sur un schéma non-http est MORTE sur appareil**, et son test unitaire
-  est donc vide là où ça compte. C'est le cas de `twakevisio://` dans
-  `deepLinks.ts` : `host` y vaut `''`, jamais `'room'`.
+- **`URL` ne sait rien lire d'un schéma non-http sur appareil** — ni l'hôte, ni le
+  CHEMIN. Pour `twakevisio://room/abc-defg-hij`, React Native rend `protocol`
+  correctement, mais `host = ''` et `pathname = '/'` : le slug lui-même est
+  irrécupérable. Une branche bâtie dessus est morte, et son test unitaire vert.
+  C'était le cas de `twakevisio://` dans `deepLinks.ts` jusqu'au 2026-08-05.
+  **Corrigé** en n'utilisant plus `URL` du tout pour ce cas : `slugFromAppLink`
+  lit la chaîne brute par une regex, seule façon que les deux moteurs se
+  comportent pareil. `protocol` est le seul accesseur de ce polyfill qui ne soit
+  pas ancré sur `^https?://`, donc le seul auquel on puisse se fier.
 
 > **Donc : quand une logique dépend de `URL`, teste-la contre le moteur de
 > React Native.** Il se charge sous Jest —

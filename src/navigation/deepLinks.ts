@@ -36,35 +36,49 @@ function isRoomSegment(segment: string): boolean {
 // n'a de sens que rapporté à une instance connue. Sans ce contrôle, n'importe
 // quel site — ou un mailto: — fait ouvrir un salon dans l'application, et
 // l'utilisateur ne peut rien y faire sans désinstaller.
+
+/**
+ * Le slug d'un lien `twakevisio://room/<slug>`, lu SANS passer par `URL`.
+ *
+ * **`URL` ne sait pas lire ce schéma sur l'appareil.** Mesuré le 2026-08-05
+ * en chargeant le polyfill de React Native sous Jest
+ * (`Libraries/Blob/URL.js`, posé en global par `Libraries/Core/setUpXHR.js:35`) :
+ *
+ *   twakevisio://room/abc-defg-hij  →  protocol « twakevisio: »   ✓
+ *                                      host     « »               ✗
+ *                                      pathname « / »             ✗
+ *
+ * Ses accesseurs `host` et `pathname` sont des regex ancrées sur `^https?://`
+ * (`URL.js:130-141`) : pour un schéma personnalisé elles ne correspondent à
+ * rien. Ce n'est donc pas seulement l'hôte qui manquait, c'est aussi LE CHEMIN
+ * — le slug était irrécupérable. Sous Node, où tourne Jest, les deux valent
+ * « room » et « /abc-defg-hij », d'où des tests verts contre du code mort.
+ *
+ * Une regex sur la chaîne brute ne dépend d'aucun moteur, et c'est la seule
+ * façon de faire marcher ce chemin sur les deux.
+ */
+const APP_ROOM_LINK = new RegExp(`^${APP_SCHEME}://room/([^/?#]+)`, 'i');
+
+function slugFromAppLink(url: string): string | null {
+  const found = APP_ROOM_LINK.exec(url.trim());
+  const segment = found?.[1];
+  if (segment === undefined) return null;
+  return isRoomSegment(segment) ? segment : null;
+}
+
 export function parseMeetingLink(url: string, allowedHosts: readonly string[]): string | null {
+  // Le schéma applicatif est traité AVANT `new URL`, qui ne sait pas le lire
+  // sur l'appareil — voir `slugFromAppLink`. Aucune allowlist ici : ce lien ne
+  // porte pas d'hôte, il ne peut donc désigner qu'un salon, et c'est le système
+  // qui garantit que seul notre paquet reçoit ce schéma.
+  const fromApp = slugFromAppLink(url);
+  if (fromApp !== null) return fromApp;
+
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return null;
-  }
-
-  if (parsed.protocol === `${APP_SCHEME}:`) {
-    // twakevisio://room/<slug> — l'hôte porte « room ».
-    //
-    // **MORT SUR APPAREIL, et ses tests unitaires y sont donc vides de sens.**
-    // Cette comparaison n'est vraie que sous le `URL` WHATWG de Node, celui de
-    // Jest. Celui que React Native installe (`polyfillGlobal('URL', …)`,
-    // `Libraries/Core/setUpXHR.js:35`) tire son hôte d'une regex ancrée sur
-    // `^https?://` (`Libraries/Blob/URL.js:130-140`) : pour `twakevisio://`
-    // elle ne correspond à rien, `parsed.host` vaut la CHAÎNE VIDE, et la
-    // fonction rend `null`. Un lien profond `twakevisio://room/<slug>` ne
-    // s'ouvre donc pas sur un téléphone. Mesuré le 2026-08-05, relevé dans
-    // `pasted.spec.ts` (bloc « sous l'URL de l'APPAREIL »), qui garde ce fait
-    // par un test.
-    //
-    // PRÉ-EXISTANT et hors du périmètre du mode invité — consigné plutôt que
-    // corrigé, par décision explicite. Un chemin mort que personne ne sait
-    // mort est pire qu'un chemin mort.
-    if (parsed.host !== 'room') return null;
-    const candidate = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
-    if (candidate === undefined) return null;
-    return isRoomSegment(candidate) ? candidate : null;
   }
 
   if (parsed.protocol !== 'https:') return null;
@@ -101,21 +115,16 @@ const EMBEDDED_URL = /https:\/\/[^\s<>"']+/i;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/;
 
 function fromUrl(candidate: string): PastedTarget | null {
+  // Même raison que dans `parseMeetingLink` : `URL` ne lit pas ce schéma sur
+  // l'appareil. `host: null` — un lien applicatif n'en porte aucun.
+  const fromApp = slugFromAppLink(candidate);
+  if (fromApp !== null) return { slug: fromApp, host: null };
+
   let parsed: URL;
   try {
     parsed = new URL(candidate);
   } catch {
     return null;
-  }
-
-  if (parsed.protocol === `${APP_SCHEME}:`) {
-    // MÊME CHEMIN MORT sur appareil que dans `parseMeetingLink` ci-dessus, et
-    // pour la même raison : lire son commentaire, qui porte la mesure. Coller
-    // un `twakevisio://` ne remplit donc pas les cases sur un téléphone.
-    if (parsed.host !== 'room') return null;
-    const segment = parsed.pathname.split('/').filter((s) => s.length > 0)[0];
-    if (segment === undefined) return null;
-    return isRoomSegment(segment) ? { slug: segment, host: null } : null;
   }
 
   if (parsed.protocol !== 'https:') return null;
