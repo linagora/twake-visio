@@ -347,23 +347,29 @@ Il est désactivé sur `meet.linagora.com` — mesuré, `GET /rooms/zzz-zzzz-zzz
 rend 404. Sur une instance qui l'activerait, un code saisi au hasard ouvrirait un
 salon vide au lieu de dire « réunion introuvable ».
 
-Reste à confirmer **sur l'instance** dès qu'un salon non public existe — la
-lecture de source dit ce que le code fait, pas ce que cette instance-là déploie :
+**CONFIRMÉ SUR L'INSTANCE le 2026-08-05.** La lecture de source disait vrai.
+Mesuré sans en-tête d'autorisation sur `meet.twake-dev.maudet.cloud`, salon
+`zsv-pfri-dfb`, `access_level: restricted` :
 
-```sh
-# Sans aucun en-tête d'autorisation, sur un salon trusted PUIS restricted :
-curl -s -i "https://meet.linagora.com/api/v1.0/rooms/<slug>/?username=Test" | head -20
-curl -s -i -X POST "https://meet.linagora.com/api/v1.0/rooms/<slug>/request-entry/" \
-     -H 'content-type: application/json' -d '{"username":"Test"}' | head -20
+```
+GET  /api/v1.0/rooms/zsv-pfri-dfb/?username=Test
+  → 200   access_level=restricted   is_administrable=false   bloc livekit ABSENT
+
+POST /api/v1.0/rooms/zsv-pfri-dfb/request-entry/  {"username":"Test"}
+  → 200   {"status":"waiting", "livekit":null, …}
 ```
 
-Attendu : **200 sans bloc `livekit`**, donc la salle d'attente. Si l'instance
-rendait 401 ou 403 — ce que la source exclut —, il faudrait alors un message
-« cette réunion demande un compte » avec une action « Se connecter » ; les clés
-`guest.signInRequired` et `guest.signIn` sont prévues pour ce cas et **ne servent
-à rien tant que la source dit vrai**. Ne pas les câbler par précaution : une
-branche qu'aucune réponse n'atteint est du code mort qu'aucun test ne peut
-distinguer d'une branche vivante.
+Jamais 401, jamais 403 — la source et l'instance concordent. Un anonyme **peut**
+se mettre en file d'attente sur un salon restreint, et son jeton n'arrive qu'à
+l'ADMISSION : `livekit` vaut `null` tant qu'il attend.
+
+Cette dernière ligne est celle qui compte pour le code : c'est parce que le
+jeton n'existe qu'au moment de l'admission que la salle d'attente doit le
+transmettre à la séance plutôt que de la laisser le redemander. Voir la
+correction ci-dessus.
+
+Les clés `guest.signInRequired` et `guest.signIn`, prévues pour un 401/403 qui
+n'arrive jamais, restent donc annulées à juste titre.
 
 ---
 
