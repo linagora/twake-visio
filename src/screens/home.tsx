@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { getActiveAccount } from 'src/auth/accounts';
 import { useUpcomingMeetings } from 'src/calendar/useUpcoming';
 import { calendarEventUrl } from 'src/calendar/webCalendar';
+import { DEFAULT_SERVER_URL } from 'src/constants';
 import { agendaHosts, parseMeetingLink } from 'src/navigation/deepLinks';
 import { JoinSheet } from 'src/screens/joinSheet';
 import { ActionCard } from 'src/ui/actionCard';
@@ -19,6 +20,34 @@ const styles = StyleSheet.create({
   content: { gap: 12, padding: 18 },
   root: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
+
+// L'hôte à montrer dans la feuille « Rejoindre ». `new URL` GARDÉ, comme
+// `agendaHosts` (`deepLinks.ts`) et `toSamePath` le font déjà : cet appel se
+// produit à CHAQUE rendu de l'écran principal, pour une valeur que l'écran
+// n'utilise même pas — `home.tsx` ne passe pas `onHostChange`, donc la rangée
+// de serveur ne se rend pas ici.
+//
+// CE QUE CE GARDE-FOU ATTRAPE, exactement : sous Node — donc sous Jest — un
+// `serverUrl` illisible fait JETER `new URL`, et sans lui tout l'accueil
+// tomberait. Sur APPAREIL il ne jette pas : le `URL` de React Native rend une
+// chaîne vide, et le repli n'est jamais atteint. Voir la section « Jest et
+// l'application n'exécutent PAS le même `URL` » d'`AGENTS.md`. Le garde reste
+// — il coûte trois lignes et couvre le cas où l'un des deux moteurs change —
+// mais il ne faut pas lui prêter une protection qu'il n'exerce pas là où la
+// personne se trouve.
+//
+// Le repli est le NOM D'HÔTE par défaut, pas la chaîne fautive : la feuille
+// affiche un hôte, jamais un URL.
+function hostLabel(serverUrl: string): string {
+  try {
+    return new URL(serverUrl).hostname;
+  } catch {
+    // Un simple retrait de schéma, PAS un second `new URL` : celui-là
+    // demanderait à son tour un garde-fou, et un repli qui peut échouer n'en
+    // est pas un.
+    return DEFAULT_SERVER_URL.replace(/^https?:\/\//, '');
+  }
+}
 
 /**
  * L'accueil : deux actions, et les prochaines visioconférences.
@@ -130,8 +159,13 @@ export function HomeScreen(): React.ReactElement {
         ) : null}
       </ScrollView>
 
+      {/* Pas d'`onHostChange` : une personne connectée n'a aucun serveur à
+          choisir, celui de son compte est le seul qui vaille. La rangée de
+          serveur de la feuille ne se rend donc pas ici — c'est le cas invité,
+          hors de cet écran, qui la fait apparaître. */}
       <JoinSheet
-        onJoinRoom={(slug) => {
+        host={hostLabel(account?.instance.serverUrl ?? DEFAULT_SERVER_URL)}
+        onJoinRoom={({ slug }) => {
           setJoinOpen(false);
           router.push(`/room/${slug}/prejoin`);
         }}

@@ -1,18 +1,26 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { startGuestSession } from 'src/auth/guest';
 import { signIn } from 'src/auth/login';
 import { DEFAULT_SERVER_URL } from 'src/constants';
+import { JoinSheet } from 'src/screens/joinSheet';
 import { BrandTile } from 'src/ui/brandTile';
 import { tokens } from 'src/ui/tokens';
 
 export function WelcomeScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
+  const [joinOpen, setJoinOpen] = useState(false);
+  // L'hôte visé par une session invité. Initialisé au serveur par défaut, et
+  // modifiable depuis l'échappatoire « Changer » de la feuille — Décision 3 du
+  // partenaire humain : à la différence de `home.tsx`, cet écran passe
+  // `onHostChange`, donc la rangée de serveur s'y rend.
+  const [host, setHost] = useState(() => new URL(DEFAULT_SERVER_URL).hostname);
 
   const handleSignIn = async (): Promise<void> => {
     const result = await signIn(DEFAULT_SERVER_URL);
@@ -58,6 +66,24 @@ export function WelcomeScreen(): React.ReactElement {
           Rien ne gardait ce choix — le spec d'origine n'assertait que la
           présence des trois boutons —, d'où les deux tests ajoutés. */}
       <View style={styles.actions}>
+        {/* L'entrée invité vient EN TÊTE, au-dessus des trois actions de
+            compte, et le filet la sépare d'elles.
+            Décision de Michel-Marie le 2026-08-05, APRÈS l'avoir vue sur un
+            Pixel : la veille elle était détachée SOUS les trois boutons, et
+            l'écran réel a montré qu'elle s'y lisait comme une note de bas de
+            page. Quelqu'un qui reçoit un lien n'a rien à faire des trois
+            autres, et c'est lui qui arrive ici sans rien connaître de
+            l'application. */}
+        <Button
+          mode="text"
+          onPress={() => setJoinOpen(true)}
+          testID="join-as-guest-btn"
+          textColor={tokens.color.brandStrong}
+        >
+          {t('welcome.joinAsGuest')}
+        </Button>
+        <View style={styles.divider} />
+
         <Button
           buttonColor={tokens.color.brandStrong}
           mode="contained"
@@ -86,6 +112,30 @@ export function WelcomeScreen(): React.ReactElement {
           {t('welcome.orgServer')}
         </Button>
       </View>
+
+      {/* Décision 2 : cette entrée ne vit QUE sur l'accueil, jamais sur
+          `/server` — `JoinSheet` n'est montée nulle part ailleurs.
+          Décision 3 : le serveur par défaut est `DEFAULT_SERVER_URL`, avec
+          l'échappatoire « Changer » de la feuille restant disponible — donc
+          `onHostChange` EST fourni ici, à la différence de `home.tsx` qui ne
+          le passe pas (une personne connectée n'a aucun serveur à choisir). */}
+      <JoinSheet
+        host={host}
+        onHostChange={setHost}
+        onJoinRoom={({ slug, host: chosen }) => {
+          setJoinOpen(false);
+          // `host` parle en NOM D'HÔTE (`meet.linagora.com`), `startGuestSession`
+          // attend une URL COMPLÈTE : convertir ICI, à la frontière. Le
+          // manquer laisserait une session invité dont le `serverUrl` est un
+          // hôte nu, et tout appel réseau ultérieur construirait une URL
+          // malformée en silence.
+          startGuestSession(`https://${chosen}`);
+          router.push(`/room/${slug}/prejoin`);
+        }}
+        onSheetDismiss={() => setJoinOpen(false)}
+        testID="welcome-join-sheet"
+        visible={joinOpen}
+      />
     </View>
   );
 }
@@ -93,6 +143,16 @@ export function WelcomeScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   actions: { gap: 12, paddingBottom: 34, paddingHorizontal: 22 },
   button: { borderRadius: 14 },
+  // Le filet qui sépare l'entrée invité, au-dessus, des trois actions de
+  // compte. DÉCORATIF — il ne porte aucune information nécessaire pour
+  // identifier une commande — donc WCAG 1.4.11 ne s'applique pas.
+  //
+  // `fieldBorder` et NON `rowSeparator` : mesuré sur `appBackground`, le
+  // premier donne 1,17:1 et le second 1,04:1. À 1,04 le trait n'existe pas à
+  // l'œil, et la revue finale l'avait relevé — le détachement ne tenait alors
+  // qu'à l'espacement. Michel-Marie a demandé « un petit liseré gris » qu'on
+  // VOIE : 1,17 reste discret, mais il est là.
+  divider: { backgroundColor: tokens.color.fieldBorder, height: 1 },
   identity: {
     alignItems: 'center',
     flex: 1,

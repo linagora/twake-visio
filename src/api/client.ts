@@ -55,9 +55,14 @@ function mapStatus(status: number): ApiResult<never> {
   return { ok: false, error: { kind: 'server', status } };
 }
 
-// La lecture de la réponse, partagée par les deux appelants ci-dessous : même
-// mappage de statut, même distinction entre un 400 de validation et le reste.
-async function readResponse<T>(response: Response): Promise<ApiResult<T>> {
+// La lecture de la réponse, partagée par les TROIS appelants : même mappage de
+// statut, même distinction entre un 400 de validation et le reste.
+//
+// Exportée pour `src/api/anon.ts`, qui n'a ni porteur ni rafraîchissement mais
+// lit exactement les mêmes réponses. Deux lectures divergentes feraient dire à
+// l'écran d'un invité autre chose qu'à celui d'une personne connectée, sur le
+// même corps de réponse.
+export async function readResponse<T>(response: Response): Promise<ApiResult<T>> {
   if (response.status === 400) return await readValidation(response);
   if (!response.ok) return mapStatus(response.status);
 

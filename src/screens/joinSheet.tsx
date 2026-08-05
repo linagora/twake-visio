@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { listKnownHosts } from 'src/instance/knownInstances';
-import { parseMeetingLink } from 'src/navigation/deepLinks';
+import { parsePastedMeeting } from 'src/navigation/deepLinks';
 import {
   CODE_GROUPS,
   formatCodeSlug,
@@ -14,12 +14,22 @@ import {
 import { FormSheet } from 'src/ui/formSheet';
 import { tokens } from 'src/ui/tokens';
 
+// Le couple remonté à la validation. `host` accompagne désormais `slug` :
+// un salon rejoint depuis un lien collé peut viser une instance différente de
+// celle par défaut, et l'appelant doit savoir laquelle interroger.
+type JoinTarget = { readonly slug: string; readonly host: string };
+
 type Props = {
   readonly visible: boolean;
   readonly onSheetDismiss: () => void;
-  // Remonte le SLUG, pas une route : la navigation appartient à l'appelant,
+  // Remonte un COUPLE, pas une route : la navigation appartient à l'appelant,
   // qui sait d'où il vient. Cette feuille ne connaît pas expo-router.
-  readonly onJoinRoom: (slug: string) => void;
+  readonly onJoinRoom: (target: JoinTarget) => void;
+  readonly host: string;
+  // ABSENT = la rangée n'est pas rendue. UNE prop porte la capacité ET le
+  // rappel : deux props à tenir d'accord seraient une de trop, et `home.tsx`
+  // n'a aucun serveur à choisir.
+  readonly onHostChange?: (host: string) => void;
   readonly testID: string;
 };
 
@@ -33,16 +43,83 @@ const SEPARATOR_AFTER = CODE_GROUPS.reduce<readonly number[]>((marks, size) => {
 
 const TOTAL_CELLS = CODE_GROUPS.reduce((total, size) => total + size, 0);
 
+// Un schéma en tête, quel qu'il soit. Capturé pour être COMPARÉ, pas seulement
+// retiré : la conception ne veut que `https` (« un scheme autre que https ou un
+// chemin sont refusés »), et retirer aveuglément ferait accepter
+// `twakevisio://room` comme l'hôte « room ».
+const SCHEME_PREFIX = /^([a-z][a-z\d+\-.]*):\/\//i;
+
+// Ce qu'est un hôte, port compris. Volontairement étroit : lettres, chiffres,
+// points et tirets, puis un port décimal. Ni IPv6 entre crochets, ni IDN
+// non-ASCII — aucune instance meet connue n'en porte, et l'élargir demanderait
+// de savoir ce qu'on en ferait ensuite.
+const HOST_WITH_PORT = /^[a-z0-9.-]+(:\d+)?$/i;
+
+// Valide une adresse saisie À LA MAIN dans la rangée de serveur, quand on
+// appuie sur « Changer ».
+//
+// Un PRÉDICAT explicite, et surtout PAS `new URL()` dans un `try`/`catch`
+// comme avant : **`URL` n'est pas le même objet sous Jest et sur l'appareil.**
+// React Native installe le sien (`polyfillGlobal('URL', …)`,
+// `Libraries/Core/setUpXHR.js:35`), un jeu de regex qui NE JETTE JAMAIS pour
+// une chaîne sans schéma et dont la classe de caractères de l'hôte
+// (`/^https?:\/\/(?:[^@]+@)?([^:\/?#]+)/`, `Libraries/Blob/URL.js:130-140`)
+// ACCEPTE LES ESPACES. Mesuré le 2026-08-05 en chargeant ce polyfill sous
+// Jest : `new URL('https://mon serveur').hostname` rend « mon serveur » sur
+// appareil, et lève sous Node.
+//
+// La version d'avant ne refusait donc RIEN sur un téléphone : quelqu'un tapait
+// « mon serveur », la feuille l'acceptait, `welcome.tsx:128` ouvrait une
+// session invité dessus, et tout appel réseau ultérieur échouait en disant
+// « connexion impossible » à une personne dont c'était l'ADRESSE qui était
+// fausse. Elle ne rejetait que ce que Node rejette — c'est-à-dire rien de ce
+// que voit l'utilisateur.
+//
+// Le PORT est CONSERVÉ, comme le fait déjà le collage (`deepLinks.ts:127` lit
+// `parsed.host`, jamais `hostname`) : sans cela, la même personne qui héberge
+// son instance sur `:8443` marchait en COLLANT un lien et se retrouvait
+// silencieusement sur `:443` en TAPANT la même adresse.
+//
+// Conséquence assumée : un chemin n'est plus toléré. `https://meet.acme.com/x`
+// était accepté et son `/x` jeté sans un mot ; il est désormais refusé, ce que
+// demande la conception.
+function normalizeHostInput(raw: string): string | null {
+  const trimmed = raw.trim();
+
+  const scheme = SCHEME_PREFIX.exec(trimmed);
+  if (scheme !== null && scheme[1]?.toLowerCase() !== 'https') return null;
+  const host = scheme === null ? trimmed : trimmed.slice(scheme[0].length);
+
+  if (!HOST_WITH_PORT.test(host)) return null;
+  // Un point en tête, en queue, ou deux à la suite passent la classe de
+  // caractères ci-dessus et ne forment pourtant aucun nom de domaine.
+  const name = host.split(':')[0] ?? '';
+  if (name.startsWith('.') || name.endsWith('.') || name.includes('..')) return null;
+
+  // Explicite, et non plus offert par `URL` : le polyfill de React Native ne
+  // normalise PAS la casse — `new URL('https://MEET.ACME.com/x').hostname`
+  // rend « MEET.ACME.com » sur appareil là où Node rend « meet.acme.com ».
+  return host.toLowerCase();
+}
+
 export function JoinSheet({
   visible,
   onSheetDismiss,
   onJoinRoom,
+  host,
+  onHostChange,
   testID,
 }: Props): React.ReactElement {
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [pasteFailed, setPasteFailed] = useState(false);
   const [focused, setFocused] = useState(false);
+  // L'édition manuelle de l'hôte : un brouillon distinct de `host`, qui reste
+  // la prop tant que rien n'a été confirmé. Une saisie abandonnée ne doit pas
+  // affecter ce que la feuille affiche ou remonte ailleurs.
+  const [hostEditing, setHostEditing] = useState(false);
+  const [hostDraft, setHostDraft] = useState('');
+  const [hostInvalid, setHostInvalid] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // La case où le prochain caractère atterrira. `code.length` la donne
@@ -59,6 +136,11 @@ export function JoinSheet({
   // focus.
   const caretIndex = focused ? code.length : -1;
 
+  // Hors allowlist : `listKnownHosts()` sert ici de RÉFÉRENCE d'affichage, pas
+  // de filtre. La Décision 1 du partenaire humain accepte tout hôte collé —
+  // elle demande seulement de dire quand il n'est pas reconnu.
+  const hostKnown = listKnownHosts().includes(host.toLowerCase());
+
   function handleChange(raw: string): void {
     setCode(normalizeCodeInput(raw));
     setPasteFailed(false);
@@ -66,20 +148,46 @@ export function JoinSheet({
 
   async function handlePaste(): Promise<void> {
     const clip = await Clipboard.getStringAsync();
-    // La MÊME allowlist que celle des liens profonds. Sans elle, n'importe quel
-    // site collé ferait ouvrir un salon d'une instance étrangère.
-    const slug = parseMeetingLink(clip, listKnownHosts());
-    if (slug === null) {
+    // `parsePastedMeeting`, PAS `parseMeetingLink` : coller est un geste
+    // délibéré dont l'hôte sera montré, un lien profond ne l'est pas. Les deux
+    // fonctions existent pour cette raison ; ne pas les confondre.
+    const target = parsePastedMeeting(clip);
+    if (target === null) {
       setPasteFailed(true);
       return;
     }
-    setCode(normalizeCodeInput(slug));
+    setCode(normalizeCodeInput(target.slug));
     setPasteFailed(false);
+    // `host: null` veut dire « le collage ne portait aucun hôte » — un code nu,
+    // ou le schéma applicatif. On garde alors le courant.
+    if (target.host !== null) onHostChange?.(target.host);
   }
 
   function handleSubmit(): void {
     const slug = formatCodeSlug(code);
-    if (slug !== null) onJoinRoom(slug);
+    if (slug !== null) onJoinRoom({ slug, host });
+  }
+
+  function handleHostChangePress(): void {
+    // Le brouillon repart de l'hôte COURANT, pas de celui du dernier montage :
+    // un collage a pu le faire avancer entre-temps.
+    setHostDraft(host);
+    setHostEditing(true);
+  }
+
+  function handleHostDraftChange(raw: string): void {
+    setHostDraft(raw);
+    setHostInvalid(false);
+  }
+
+  function handleHostConfirm(): void {
+    const normalized = normalizeHostInput(hostDraft);
+    if (normalized === null) {
+      setHostInvalid(true);
+      return;
+    }
+    onHostChange?.(normalized);
+    setHostEditing(false);
   }
 
   return (
@@ -92,6 +200,53 @@ export function JoinSheet({
       <Text style={styles.instructions} testID={`${testID}-instructions`}>
         {t('join.instructions')}
       </Text>
+
+      {/* Absente sans `onHostChange` : `home.tsx` ne passe pas ce rappel, une
+          personne connectée n'a aucun serveur à choisir. */}
+      {onHostChange === undefined ? null : (
+        <View style={styles.hostRow}>
+          <Text style={styles.hostLabel}>{t('join.server')}</Text>
+
+          {hostEditing ? (
+            <View style={styles.hostEdit}>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                onChangeText={handleHostDraftChange}
+                onSubmitEditing={handleHostConfirm}
+                placeholder={t('join.serverPrompt')}
+                style={styles.hostInput}
+                testID={`${testID}-host-input`}
+                value={hostDraft}
+              />
+              {hostInvalid ? (
+                <Text style={styles.error} testID={`${testID}-host-error`}>
+                  {t('join.serverInvalid')}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.hostDisplay}>
+              <View style={styles.hostValueGroup}>
+                <Text style={styles.hostValue} testID={`${testID}-host`}>
+                  {host}
+                </Text>
+                {/* Un FAIT à lire, pas une erreur : `textMeta`, jamais `danger`
+                    — Décision 3 du partenaire humain. */}
+                {hostKnown ? null : (
+                  <Text style={styles.hostUnknown} testID={`${testID}-host-unknown`}>
+                    {t('join.serverUnknown')}
+                  </Text>
+                )}
+              </View>
+              <Pressable onPress={handleHostChangePress} testID={`${testID}-host-change`}>
+                <Text style={styles.hostChangeLabel}>{t('join.serverChange')}</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* La saisie réelle est un `TextInput` TRANSPARENT superposé aux cases —
           la technique du mockup. Elle donne un curseur système et une seule
@@ -148,6 +303,21 @@ export function JoinSheet({
       <Pressable onPress={handlePaste} style={styles.paste} testID={`${testID}-paste`}>
         <Text style={styles.pasteLabel}>{t('join.paste')}</Text>
       </Pressable>
+
+      {/* Ce que « Coller » fait vraiment, dit sous le bouton qui le fait.
+          Sans cette ligne, rien n'annonce que le code se remplit tout seul :
+          la personne voit dix cases vides et suppose qu'il faut les saisir.
+
+          DEUX formulations, et ce n'est pas une coquetterie. La promesse « le
+          serveur aussi » n'est tenue QUE là où la rangée de serveur existe —
+          c'est-à-dire là où `onHostChange` est fourni, donc en mode invité.
+          Sur l'accueil connecté, `home.tsx` ne le passe pas : un lien collé
+          d'une autre instance y remplit le code et GARDE le serveur du compte,
+          ce qui est le comportement voulu. Promettre le serveur là-bas serait
+          faux, et un texte faux coûte plus cher qu'un texte absent. */}
+      <Text style={styles.pasteHelp} testID={`${testID}-paste-help`}>
+        {t(onHostChange === undefined ? 'join.pasteHelp' : 'join.pasteHelpWithServer')}
+      </Text>
 
       {pasteFailed ? (
         <Text style={styles.error} testID={`${testID}-paste-error`}>
@@ -225,11 +395,66 @@ const styles = StyleSheet.create({
     fontFamily: tokens.font.semiBold,
     fontSize: 12.5,
   },
+  // Le libellé « Changer », de la même famille que `pasteLabel` mais coloré
+  // comme une action plutôt qu'un contenu : c'est la seule commande de cette
+  // rangée.
+  hostChangeLabel: {
+    color: tokens.color.brandStrong,
+    fontFamily: tokens.font.bold,
+    fontSize: 13,
+  },
+  hostDisplay: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  hostEdit: { flex: 1, gap: 6 },
+  hostInput: {
+    borderColor: tokens.color.fieldBorder,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: tokens.color.textPrimary,
+    flex: 1,
+    fontFamily: tokens.font.medium,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  hostLabel: {
+    color: tokens.color.textSecondary,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 13,
+  },
+  hostRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  // Le marqueur d'hôte inconnu : une INFORMATION, pas une erreur, donc
+  // `textMeta` — jamais `danger`. Voir la Décision 3 du partenaire humain.
+  hostUnknown: {
+    color: tokens.color.textMeta,
+    fontFamily: tokens.font.medium,
+    fontSize: 11.5,
+  },
+  hostValue: {
+    color: tokens.color.textPrimary,
+    fontFamily: tokens.font.bold,
+    fontSize: 14,
+  },
+  hostValueGroup: { gap: 2 },
   instructions: {
     color: tokens.color.textSecondary,
     fontFamily: tokens.font.medium,
     fontSize: 14,
     lineHeight: 20,
+  },
+  // L'explication sous le bouton « Coller ». Plus petite et plus discrète que
+  // le libellé du bouton : elle informe, elle n'appelle pas à l'action.
+  // Couleur EXPLICITE comme tout texte de cette feuille.
+  pasteHelp: {
+    color: tokens.color.textSectionLabel,
+    fontFamily: tokens.font.medium,
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   paste: {
     alignItems: 'center',

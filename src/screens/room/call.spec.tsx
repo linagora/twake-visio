@@ -12,6 +12,8 @@ import * as participants from 'src/api/participants';
 import * as rooms from 'src/api/rooms';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
+import * as guest from 'src/auth/guest';
+import * as visitor from 'src/auth/visitor';
 import * as audioRoute from 'src/call/audioRoute';
 import { CHAT_TOPIC } from 'src/call/chat';
 import type { CameraChoice } from 'src/call/devices';
@@ -453,10 +455,24 @@ const ACCOUNT = {
     issuer: 'https://sso.linagora.com',
     clientId: 'twake-visio',
     livekitUrl: 'https://livekit.linagora.com',
-    features: { recording: true, subtitle: true, telephony: false },
+    // `calendar` a rejoint `InstanceFeatures` après l'écriture de cette
+    // fixture : sans lui, `ACCOUNT` ne satisfait plus `Account`, et un
+    // `Visitor` construit dessus (Tâche 8, ci-dessous) exige `as never`, ce
+    // que ce fichier évite déjà pour `getActiveAccount`. Même correctif que
+    // `prejoin.spec.tsx` à la Tâche 7.
+    features: { recording: true, subtitle: true, telephony: false, calendar: false },
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
+};
+
+// Un invité, sur un AUTRE serveur que celui du compte : c'est ce qui distingue
+// les deux dans chaque assertion d'URL ci-dessous — `meet.acme.com` ne peut
+// venir que du visiteur invité, jamais d'une constante recopiée d'`ACCOUNT`.
+const GUEST: visitor.Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: 'Camille',
 };
 
 const GRANTED = {
@@ -625,6 +641,26 @@ describe('CallScreen', () => {
     await publish({ status: 'disconnected', reason: 'closed' });
 
     expect(screen.getByTestId('call-error')).toHaveTextContent('call.ended');
+  });
+
+  // La variante d'`ApiError` que `toApiErrorMessage` n'avait pas, et la seule
+  // qui arrive par `fetchRoomAccess` plutôt que par une action de modération.
+  //
+  // Elle retombait sur `error.network` — « Connexion impossible » — alors que
+  // le réseau marchait, la réponse étant arrivée. Et ce n'est pas un cas rare
+  // depuis le mode invité : meet ne rend jamais de bloc livekit à un appelant
+  // anonyme sur un salon `trusted` ou `restricted`, donc TOUT invité d'un tel
+  // salon atterrit ici.
+  it("dit qu'une validation est requise, et jamais que le réseau a lâché", async () => {
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
+
+    await renderCall();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('call-error')).toHaveTextContent('lobby.approvalRequired'),
+    );
   });
 
   it("applique les choix du pré-écran à l'entrée en séance", async () => {
@@ -2125,6 +2161,51 @@ describe('CallScreen, main levée', () => {
     );
   });
 
+  // L'AUTRE polarité de celui du dessus, et le défaut qu'elle referme.
+  //
+  // `handleToggleHand` gardait `account === null`, alors que `toggleHand` ne
+  // prend aucun compte et que `callControlBar.tsx:389-402` rend `hand-toggle`
+  // sans condition : un invité appuyait sur la commande et il ne se passait
+  // RIEN — ni état, ni message. La conception range pourtant la main levée
+  // parmi ce qu'un invité GARDE.
+  //
+  // `getActiveAccount` est rendu NUL ici, contrairement aux autres tests
+  // invité de ce fichier : c'est l'état réel d'un téléphone sans compte, et
+  // c'est le seul qui reproduise l'échec — avec le compte du `beforeEach`, la
+  // version fautive appelait bien `toggleHand`, seulement sur le mauvais
+  // serveur.
+  it("lève la main d'un INVITÉ, sur le serveur de sa session", async () => {
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith('https://meet.acme.com', 'r-7', 'jwt-de-salle', true),
+    );
+  });
+
+  // La clause de garde qu'un test PEUT atteindre. `current === null` n'en est
+  // pas une : sans visiteur, `failure` vaut `error.unauthorized` dès le
+  // premier rendu et la barre n'est jamais montée, donc rien à presser.
+  // `access === null`, lui, se produit avec la barre à l'écran — la réponse du
+  // serveur n'est pas encore arrivée — et c'est la même sortie anticipée.
+  it("ne demande rien tant que le serveur n'a pas rendu l'accès", async () => {
+    const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
+    // Jamais résolue : `access` reste nul pendant tout le test.
+    jest.spyOn(rooms, 'fetchRoomAccess').mockReturnValue(new Promise(() => undefined));
+
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('hand-toggle'));
+
+    expect(toggle).not.toHaveBeenCalled();
+  });
+
   it('propose de BAISSER dans la barre quand sa propre main est levée', async () => {
     // La commande est passée du menu à la BARRE, en un appui : c'est un signal
     // qu'on donne pendant que quelqu'un parle, donc au moment précis où l'on ne
@@ -3472,4 +3553,99 @@ describe("CallScreen — barre d'état", () => {
   // branches garantissent est déjà couvert ailleurs : elles rendent
   // `call-error` ou `call-connecting`, jamais `call-root`, et la déclaration
   // `light` ne vit que dans `call-root`.
+});
+
+// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` à l'état de départ,
+// dans l'effet de connexion, dans `handleLeave`, `handleCopyLink` et
+// `handleShare` — SIX sites, pas quatre, le recensement d'origine ayant raté
+// `handleCopyLink`, arrivé d'amont pendant ce lot. `account` (lu par rendu)
+// reste `getActiveAccount()` : les actions de modération plus bas et le repli
+// `NO_ACCOUNT` n'ont de sens que pour un compte, jamais pour un invité, qui
+// n'a aucun droit de modération.
+describe('la sortie de séance', () => {
+  it("ramène un COMPTE à l'accueil", async () => {
+    // L'autre polarité de `endGuestSession` (Revue Tâche 8, Minor) : un compte
+    // n'en appelle jamais une, et sans cette assertion, retirer la garde
+    // `current?.kind === 'guest'` de `handleLeave` passait toute la suite.
+    const end = jest.spyOn(guest, 'endGuestSession');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+    expect(end).not.toHaveBeenCalled();
+  });
+
+  it("ramène un INVITÉ à l'écran d'accueil public", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+  });
+
+  it('referme la session invité en sortant', async () => {
+    const end = jest.spyOn(guest, 'endGuestSession');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('leave-btn'));
+
+    expect(end).toHaveBeenCalled();
+  });
+});
+
+describe('le partage du lien', () => {
+  it("porte le serveur de l'INVITÉ, pas une constante", async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'dismissedAction' });
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-share')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('call-header-share'));
+
+    expect(share).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://meet.acme.com/reunion' }),
+    );
+  });
+});
+
+// LA COMMANDE QUE LE PLAN D'ORIGINE AVAIT MANQUÉE. `handleCopyLink` est arrivé
+// en amont pendant ce lot et sortait tôt sur un compte nul : sans ce test, un
+// invité appuie sur « Copier le lien » et il ne se passe RIEN — pas même la
+// Snackbar, dont le commentaire de `call.tsx` dit pourtant qu'elle EST la
+// commande. Un échec silencieux, donc le pire des deux.
+describe('la copie du lien', () => {
+  it("copie le lien avec le serveur de l'INVITÉ", async () => {
+    const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
+    clipboard.setStringAsync.mockClear();
+    clipboard.setStringAsync.mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-copy')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    expect(clipboard.setStringAsync).toHaveBeenCalledWith('https://meet.acme.com/reunion');
+  });
+
+  // Deuxième INSTRUCTION du même gestionnaire : le recensement par
+  // instructions l'exige, et c'est elle qui rend la commande visible.
+  it("annonce la copie à l'invité, comme à un compte", async () => {
+    const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
+    clipboard.setStringAsync.mockClear();
+    clipboard.setStringAsync.mockResolvedValue(true);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    await renderCall();
+    await waitFor(() => expect(screen.getByTestId('call-header-copy')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('call-header-copy'));
+
+    await waitFor(() => expect(screen.getByText('call.linkCopied')).toBeOnTheScreen());
+  });
 });

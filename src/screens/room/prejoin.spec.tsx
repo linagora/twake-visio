@@ -8,6 +8,8 @@ import * as rooms from 'src/api/rooms';
 import * as audioRoute from 'src/call/audioRoute';
 import * as effectsModule from 'src/call/backgroundEffect';
 import * as accounts from 'src/auth/accounts';
+import * as guest from 'src/auth/guest';
+import * as visitor from 'src/auth/visitor';
 import { tokens } from 'src/ui/tokens';
 import { PrejoinScreen } from './prejoin';
 
@@ -74,7 +76,11 @@ const ACCOUNT = {
     issuer: 'https://sso.linagora.com',
     clientId: 'twake-visio',
     livekitUrl: 'https://livekit.linagora.com',
-    features: { recording: true, subtitle: true, telephony: false },
+    // `calendar` a rejoint `InstanceFeatures` après l'écriture de cette
+    // fixture : sans lui, `ACCOUNT` ne satisfait plus `Account` et un
+    // `Visitor` construit dessus (Tâche 7) exige `as never`, ce que ce
+    // fichier évite déjà pour `getActiveAccount`.
+    features: { recording: true, subtitle: true, telephony: false, calendar: false },
   },
   email: 'ada@linagora.com',
   displayName: 'Ada',
@@ -89,6 +95,15 @@ const GRANTED = {
     isAdministrable: false,
   },
 } as const;
+
+// Un invité DE NOM VIDE : l'état d'un premier passage, avant que rien n'ait
+// été mémorisé. `readRememberedGuestName` rend '' dans ce cas, jamais
+// `undefined` — voir `src/auth/guest.ts`.
+const GUEST: visitor.Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: '',
+};
 
 beforeEach(() => {
   jest.restoreAllMocks();
@@ -297,6 +312,36 @@ describe('PrejoinScreen', () => {
         color: tokens.color.muted,
       });
     });
+
+    // PAS `ready()` : un invité de nom vide ne rend JAMAIS `join-call-btn`,
+    // que ce garde-fou attendrait indéfiniment. `prejoin-name-input` suffit à
+    // dire l'écran monté.
+    it('pose la couleur explicite du champ de nom de l’invité', async () => {
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+      await render(prejoin());
+      await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+
+      expect(screen.getByTestId('prejoin-name-input')).toHaveStyle({
+        color: tokens.color.textDark,
+      });
+    });
+
+    // Le texte indicatif ne suit PAS `color` : RN le prend sur
+    // `placeholderTextColor`, une prop distincte du style — précédent
+    // `searchField.spec.tsx`. Sans elle, il retomberait sur un gris système
+    // hors de notre contrôle.
+    it('pose la couleur explicite du texte indicatif de l’invité', async () => {
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+      await render(prejoin());
+      await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+
+      expect(screen.getByTestId('prejoin-name-input')).toHaveProp(
+        'placeholderTextColor',
+        tokens.color.muted,
+      );
+    });
   });
 
   describe('les Réglages gouvernent l’état de départ', () => {
@@ -484,5 +529,304 @@ describe("PrejoinScreen — bouton d'effets", () => {
     await render(prejoin());
 
     await waitFor(() => expect(screen.getByTestId('prejoin-effects-btn')).toBeTruthy());
+  });
+});
+
+// Tâche 7 : `getVisitor()` remplace `getActiveAccount()` aux deux points
+// d'entrée de l'écran (montage, effet) — c'est LUI qui distingue les deux
+// familles de tests ci-dessous, pas un double de `accounts`.
+//
+// `prejoin()`, jamais `<PrejoinScreen />` nu : l'accès accordé monte
+// `AudioOutputSheet` et `EffectsSheet`, deux feuilles sous `Portal`, qui
+// jettent un `AggregateError` sans `PaperProvider` ancêtre — même raison que
+// le commentaire en tête de fichier.
+describe('le pré-join en invité', () => {
+  it('rend un champ de nom à la place du texte figé', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+  });
+
+  // Ce que la Tâche 7 remplace : `prejoin.tsx` appelait `fetchRoomAccess`
+  // avec un wrapper `{ kind: 'account', account }` codé en dur, temporaire et
+  // délibéré (Tâche 4). `fetchRoomAccess` étant doublé, rien d'autre ne
+  // prouverait qu'il reçoit VRAIMENT le visiteur invité et non ce wrapper.
+  it('interroge le serveur avec le visiteur invité, pas un compte', async () => {
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(fetchAccess).toHaveBeenCalledWith(GUEST, 'reunion'));
+  });
+
+  // Masquer, jamais griser : AGENTS.md interdit `disabled` sur cet écran sombre.
+  it('ne rend PAS « Rejoindre » tant que le nom est vide', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+
+    expect(screen.queryByTestId('join-call-btn')).toBe(null);
+  });
+
+  it('rend « Rejoindre » dès que le nom est saisi', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+    await fireEvent.changeText(screen.getByTestId('prejoin-name-input'), 'Camille');
+
+    expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen();
+  });
+
+  it('mémorise le nom au moment de rejoindre', async () => {
+    const remember = jest.spyOn(guest, 'rememberGuestName');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+    await fireEvent.changeText(screen.getByTestId('prejoin-name-input'), 'Camille');
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(remember).toHaveBeenCalledWith('Camille');
+  });
+
+  // Le bouton se rend sur `name.trim()`, mais c'est `name` BRUT qui partait
+  // dans le magasin — puis, de là, dans le `?username=` que `fetchRoomAccess`
+  // envoie à meet, qui en fait le `name` du jeton LiveKit. « ␣Camille␣ » se
+  // serait affiché tel quel sur la vignette de tous les autres participants.
+  it('détoure le nom avant de le mémoriser', async () => {
+    const remember = jest.spyOn(guest, 'rememberGuestName');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+    await fireEvent.changeText(screen.getByTestId('prejoin-name-input'), '  Camille  ');
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(remember).toHaveBeenCalledWith('Camille');
+  });
+
+  it("n'écrit RIEN dans l'historique pour un invité", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-name-input')).toBeOnTheScreen());
+    await fireEvent.changeText(screen.getByTestId('prejoin-name-input'), 'Camille');
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(journal.rememberVisit).not.toHaveBeenCalled();
+  });
+
+  it('pré-remplit le champ du nom mémorisé', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ ...GUEST, displayName: 'Camille' });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('prejoin-name-input')).toHaveProp('value', 'Camille'),
+    );
+  });
+});
+
+describe('le pré-join avec un compte', () => {
+  it('garde le nom en texte figé, sans champ', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('prejoin-name')).toBeOnTheScreen());
+    expect(screen.queryByTestId('prejoin-name-input')).toBe(null);
+  });
+
+  // L'autre borne du test symétrique de « le pré-join en invité » : sans
+  // elle, un écran qui enverrait TOUJOURS un visiteur invité — ou l'inverse —
+  // passerait les deux à la fois, `fetchRoomAccess` étant doublé dans les deux
+  // cas.
+  it('interroge le serveur avec le compte, pas un visiteur invité', async () => {
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+
+    await render(prejoin());
+
+    await waitFor(() =>
+      expect(fetchAccess).toHaveBeenCalledWith({ kind: 'account', account: ACCOUNT }, 'reunion'),
+    );
+  });
+
+  // LA régression que la garde de nom vide avait introduite sur le chemin
+  // authentifié. Elle a été écrite pour un invité — lui seul dispose du champ
+  // qui le sortirait de là —, mais elle s'appliquait à TOUT visiteur.
+  //
+  // Un compte peut porter un nom vide : `users.ts:22` calcule
+  // `full_name ?? short_name ?? email`, et `??` ne rattrape pas `""` — or un
+  // utilisateur Django sans prénom ni nom a précisément un `full_name` vide.
+  // Un tel compte obtenait un pré-join SANS bouton « Rejoindre » et SANS champ
+  // pour se nommer : un cul-de-sac sur l'unique route qui mène à une réunion.
+  it('rend « Rejoindre » à un COMPTE dont le nom est vide', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({
+      kind: 'account',
+      account: { ...ACCOUNT, displayName: '' },
+    });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    await waitFor(() => expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen());
+  });
+
+  it("écrit BIEN dans l'historique pour un compte", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(journal.rememberVisit).toHaveBeenCalled();
+  });
+
+  // La borne manquante du couple géré par `handleJoin` : un compte NE DOIT
+  // PAS écrire dans le magasin de noms invité. `getVisitor()` peut rendre un
+  // compte alors qu'une session invité traîne encore (voir son commentaire de
+  // tête) — un régression ici écraserait le nom mémorisé d'un AUTRE invité sur
+  // le même appareil, la même classe de fuite que le journal ci-dessus.
+  it("n'appelle PAS rememberGuestName pour un compte", async () => {
+    const remember = jest.spyOn(guest, 'rememberGuestName');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('join-call-btn')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('join-call-btn'));
+
+    expect(remember).not.toHaveBeenCalled();
+  });
+});
+
+// Les DEUX sorties de cet écran, chacune pour les DEUX familles de visiteurs.
+//
+// C'est le trou le plus cher du lot : le pré-join est le PREMIER écran qu'un
+// invité atteint, et le seul qu'il atteigne quand le code est faux. Les deux
+// sorties poussaient `/home` sans condition — l'accueil AUTHENTIFIÉ, avec un
+// nom vide, une carte « Nouvelle réunion » qui rendra 401, un Historique qui
+// n'est pas le sien et un onglet Réglages qui propose de se déconnecter —
+// pendant que la session invité restait ouverte dans MMKV. `call.tsx` et
+// `lobby.tsx` branchaient déjà, le pré-join non.
+// LE sablier éternel, sur l'écran même que ce lot dit en débarrasser.
+//
+// `lobby.tsx:63-67` et `call.tsx:271-273` posent tous deux `error.unauthorized`
+// comme état de DÉPART quand `getVisitor()` rend `null` ; le pré-join ne le
+// faisait pas. Son effet sortait alors sans rien poser, `access` restait nul,
+// et le rendu tombait sur l'`ActivityIndicator` — sans message, sans sortie,
+// sans retour.
+describe('le pré-join sans aucun visiteur', () => {
+  it('dit pourquoi, au lieu de tourner à jamais', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+
+    await render(prejoin());
+
+    expect(screen.getByTestId('prejoin-error')).toHaveTextContent('error.unauthorized');
+    expect(screen.queryByTestId('prejoin-loading')).toBe(null);
+    // Et rien n'est parti sur le réseau : il n'y avait personne à annoncer.
+    expect(fetchAccess).not.toHaveBeenCalled();
+  });
+
+  it('laisse une sortie, comme les autres états terminaux', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    await render(prejoin());
+
+    await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+});
+
+describe('les sorties du pré-join', () => {
+  // `endGuestSession` est espionné SANS bouchon : le vrai écrit dans le faux
+  // MMKV du dépôt, donc l'appel est sûr. Motif hérité de `lobby.spec.tsx`.
+  async function reachError(): Promise<void> {
+    jest
+      .spyOn(rooms, 'fetchRoomAccess')
+      .mockResolvedValue({ ok: false, error: { kind: 'not-found' } });
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeOnTheScreen());
+  }
+
+  async function reachScreen(): Promise<void> {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    await render(prejoin());
+    await waitFor(() => expect(screen.getByTestId('prejoin-back-btn')).toBeOnTheScreen());
+  }
+
+  describe("le bouton de l'écran d'erreur — le code mal tapé", () => {
+    it("ramène un INVITÉ à l'accueil public", async () => {
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/welcome');
+    });
+
+    it("referme la session invité avant de s'en aller", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(end).toHaveBeenCalled();
+    });
+
+    it("ramène un COMPTE à l'accueil, sans toucher à aucune session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+      await reachError();
+
+      await fireEvent.press(screen.getByTestId('prejoin-leave-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/home');
+      expect(end).not.toHaveBeenCalled();
+    });
+  });
+
+  // Le chevron de l'en-tête. Ce n'est pas le même site d'appel que le bouton
+  // ci-dessus, et rien ne les tient d'accord : chacun veut ses deux polarités.
+  describe("le chevron de l'en-tête", () => {
+    it("ramène un INVITÉ à l'accueil public, et referme sa session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ ...GUEST, displayName: 'Camille' });
+      await reachScreen();
+
+      await fireEvent.press(screen.getByTestId('prejoin-back-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/welcome');
+      expect(end).toHaveBeenCalled();
+    });
+
+    it("ramène un COMPTE à l'accueil, sans toucher à aucune session", async () => {
+      const end = jest.spyOn(guest, 'endGuestSession');
+      jest.spyOn(visitor, 'getVisitor').mockReturnValue({ kind: 'account', account: ACCOUNT });
+      await reachScreen();
+
+      await fireEvent.press(screen.getByTestId('prejoin-back-btn'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/home');
+      expect(end).not.toHaveBeenCalled();
+    });
   });
 });

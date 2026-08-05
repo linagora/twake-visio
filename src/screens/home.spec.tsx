@@ -108,6 +108,35 @@ describe('HomeScreen', () => {
     expect(screen.getByTestId('home-join-sheet-input')).toBeTruthy();
   });
 
+  // Décision 2 du partenaire humain : la rangée de serveur est réservée au
+  // mode invité. `JoinSheet` ne la rend que si `onHostChange` lui est fourni
+  // (`joinSheet.spec.tsx` le garde à sa source) ; ce test garde le SITE
+  // D'APPEL — qu'une personne connectée ne passe jamais ce rappel.
+  it("ne rend pas la rangée de serveur : une personne connectée n'a pas de serveur à choisir", async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
+
+    await renderHome();
+    await fireEvent.press(screen.getByTestId('home-join'));
+
+    expect(screen.queryByTestId('home-join-sheet-host')).toBe(null);
+  });
+
+  // `new URL` sur une valeur qui vient du magasin de comptes, à CHAQUE rendu
+  // de l'écran principal, et pour un hôte que cet écran n'affiche même pas —
+  // il ne passe pas `onHostChange`, donc la rangée de serveur ne s'y rend pas.
+  // Sans garde-fou, un `serverUrl` illisible faisait tomber tout l'accueil : le
+  // pire échange possible. Le dépôt garde déjà ses autres `new URL`
+  // (`agendaHosts`, `toSamePath`).
+  it('rend quand même l’accueil si le serveur du compte est illisible', async () => {
+    jest
+      .spyOn(accounts, 'getActiveAccount')
+      .mockReturnValue({ ...ACCOUNT, instance: { ...ACCOUNT.instance, serverUrl: '' } } as never);
+
+    await renderHome();
+
+    expect(screen.getByTestId('home-join')).toBeOnTheScreen();
+  });
+
   // La conditionnelle prend ses deux valeurs : fermée au départ.
   it('ne monte pas la feuille tant qu’on ne l’ouvre pas', async () => {
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);

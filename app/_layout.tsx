@@ -13,10 +13,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { getActiveAccount } from 'src/auth/accounts';
+import { startGuestSession } from 'src/auth/guest';
 import { useSessionGuard } from 'src/auth/sessionGuard';
 import { initI18n } from 'src/i18n';
 import { listKnownHosts } from 'src/instance/knownInstances';
-import { parseMeetingLink } from 'src/navigation/deepLinks';
+import { resolveDeepLink } from 'src/navigation/openMeeting';
 // Importé pour son EFFET DE BORD : `defineTask` doit être appelée au chargement
 // du module, hors de tout composant, parce que le système peut réveiller
 // l'application directement dans la tâche et cherche alors une définition déjà
@@ -55,9 +57,17 @@ export default function RootLayout(): React.ReactElement | null {
   useEffect(() => {
     const allowedHosts = listKnownHosts();
 
+    // Un lien profond ne présuppose plus un compte : sans lui, `prejoin.tsx`
+    // sortait de son effet et rendait un sablier ÉTERNEL, sans message ni
+    // sortie. `resolveDeepLink` dit alors sur quel serveur ouvrir la session
+    // invité — voir ce module pour le détail par schéma — et cet appel doit
+    // précéder la navigation : `prejoin.tsx` interroge le serveur dès son
+    // montage.
     const openSlug = (url: string): void => {
-      const slug = parseMeetingLink(url, allowedHosts);
-      if (slug !== null) router.push(`/room/${slug}/prejoin`);
+      const target = resolveDeepLink(url, allowedHosts, getActiveAccount() !== null);
+      if (target === null) return;
+      if (target.guestServerUrl !== null) startGuestSession(target.guestServerUrl);
+      router.push(target.route);
     };
 
     Linking.getInitialURL()

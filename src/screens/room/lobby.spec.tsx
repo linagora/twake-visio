@@ -3,6 +3,8 @@ import React from 'react';
 
 import * as rooms from 'src/api/rooms';
 import * as accounts from 'src/auth/accounts';
+import * as guest from 'src/auth/guest';
+import * as visitor from 'src/auth/visitor';
 import { LobbyScreen } from './lobby';
 
 // Le nom doit commencer par `mock` : babel-plugin-jest-hoist remonte
@@ -31,6 +33,14 @@ const ACCOUNT = {
   displayName: 'Ada',
 };
 
+// Le nom mémorisé d'un précédent passage : c'est celui que `requestEntry` doit
+// porter, exactement comme `account.displayName` le fait pour un compte.
+const GUEST: visitor.Visitor = {
+  kind: 'guest',
+  serverUrl: 'https://meet.acme.com',
+  displayName: 'Camille',
+};
+
 beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockClear();
@@ -49,7 +59,11 @@ describe('LobbyScreen', () => {
     await waitFor(() => {
       expect(screen.getByTestId('lobby-waiting')).toBeTruthy();
     });
-    expect(rooms.requestEntry).toHaveBeenCalledWith(ACCOUNT, 'reunion', 'Ada');
+    expect(rooms.requestEntry).toHaveBeenCalledWith(
+      { kind: 'account', account: ACCOUNT },
+      'reunion',
+      'Ada',
+    );
   });
 
   it("signale explicitement l'absence de modérateur", async () => {
@@ -171,6 +185,46 @@ describe("LobbyScreen, chemin d'admission", () => {
   }
 
   it('entre en séance dès que le salon délivre un jeton', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    await tick();
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    entry.mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
+    await tick();
+
+    expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
+  });
+
+  // Le troisième `getVisitor()` de cet écran — celui de LA SCRUTATION — n'avait
+  // aucun test sous la fixture invité. C'est le plus facile des trois à
+  // manquer : le premier `requestEntry` (l'effet du dessus) réussit déjà pour
+  // un invité et affiche « en attente », donc rien ne trahit un troisième site
+  // resté sur `getActiveAccount()` — ni au montage, ni à l'oeil. Seul un tick
+  // le prouve. Sans ce site migré, un invité resterait bloqué sur cet écran
+  // pour toujours : jamais admis, jamais refusé, jamais prévenu d'une panne.
+  //
+  // `getActiveAccount` posée à `null`, et pas seulement `getVisitor` posé à
+  // l'invité : un VRAI invité n'a PAS de compte. Sans ce `null` explicite, la
+  // fixture par défaut du fichier (`ACCOUNT`, posée par le `beforeEach` de
+  // tête) reste en place, et un site resté sur `getActiveAccount()` continue
+  // de scruter — avec la mauvaise identité, mais sans jamais rendre ce test
+  // rouge. Mesuré : sans cette ligne, muter ce site en revenant à
+  // `getActiveAccount()` laisse ce test VERT.
+  it('entre en séance dès que le salon délivre un jeton, pour un invité aussi', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
     const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
     await render(<LobbyScreen />);
@@ -434,5 +488,103 @@ describe('LobbyScreen, la sortie', () => {
     await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
 
     expect(mockReplace).toHaveBeenCalledWith('/home');
+  });
+
+  // L'autre polarité de la fermeture de session invitée par la Revue de la
+  // Tâche 8 : un COMPTE n'en a aucune à fermer, et `endGuestSession()` ne doit
+  // JAMAIS être appelée pour lui — sans ce test, retirer la garde
+  // `current?.kind === 'guest'` passerait toute la suite.
+  it("n'appelle PAS endGuestSession pour un compte", async () => {
+    const end = jest.spyOn(guest, 'endGuestSession');
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
+
+    expect(end).not.toHaveBeenCalled();
+  });
+});
+
+// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` aux trois points
+// d'entrée de cet écran, exactement comme la Tâche 7 l'a fait pour le
+// pré-join. Pour un invité, `access === null` n'est PLUS un échec : c'est le
+// cas nominal, la personne n'a simplement encore reçu aucune réponse.
+describe("la salle d'attente en invité", () => {
+  it('demande son entrée sous le nom mémorisé', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() =>
+      expect(entry).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'guest' }),
+        'reunion',
+        'Camille',
+      ),
+    );
+  });
+
+  it("n'annonce PLUS « session expirée » faute de compte", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeOnTheScreen());
+    expect(screen.queryByTestId('lobby-error')).toBe(null);
+  });
+
+  // La branche qui reste : NI compte NI session invité.
+  it("annonce toujours l'échec quand il n'y a aucun visiteur", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(null);
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-error')).toBeOnTheScreen());
+  });
+
+  it("ramène un invité à l'accueil public", async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+  });
+
+  // REVUE Tâche 8, Important 1 : sans `endGuestSession()`, MMKV garde le
+  // serveur de CETTE réunion après qu'on l'a quittée depuis la salle
+  // d'attente — le même mécanisme que `call.tsx` corrige déjà à sa propre
+  // sortie, laissé ouvert sur ce chemin jumeau.
+  it('referme la session invité en sortant', async () => {
+    const end = jest.spyOn(guest, 'endGuestSession');
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
+
+    expect(end).toHaveBeenCalled();
   });
 });

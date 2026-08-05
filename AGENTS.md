@@ -321,6 +321,53 @@ appareil le 2026-08-02 ; le détail est dans
 | `addOnCommunicationDeviceChangedListener`           | un appareil a été branché            | un changement de **route**, et rien d'autre. Pour un branchement, c'est `registerAudioDeviceCallback`                                                      |
 | tout `AppState` autre que `'active'`                | l'application est partie             | `'inactive'` n'est émis **que par iOS**, pour des interactions passagères qui ne retirent aucune capture                                                   |
 | `import { t } from 'i18next'` — que le lint SUGGÈRE | équivalent à `i18next.t(…)`          | une méthode **non liée** (`const t = instance.t`, sans `.bind`) : `this` vaut `undefined` en ESM, et l'appel jette                                         |
+| `new URL(…)` dans un `try`/`catch`                  | valide l'entrée                      | **sous Jest seulement.** L'application exécute un autre `URL` que Node — voir la section ci-dessous, c'est le piège le plus cher de ce dépôt               |
+
+### Jest et l'application n'exécutent PAS le même `URL`
+
+Mesuré le 2026-08-05, et il a coûté quatre défauts d'un coup — dont une
+régression sur le chemin **authentifié**, trouvée seulement par la revue finale.
+
+Jest tourne sur le `URL` de Node, conforme WHATWG. L'application tourne sur celui
+de React Native (`Libraries/Blob/URL.js`), **posé en global** par
+`Libraries/Core/setUpXHR.js:35` (`polyfillGlobal('URL', …)`). Ce dernier est bâti
+sur des expressions régulières, et ses accesseurs valent
+`/^https?:\/\/(?:[^@]+@)?([^:\/?#]+)/` — donc **http(s) uniquement**, et une
+classe de caractères qui **accepte les espaces**.
+
+| entrée                           | Node (ce que Jest teste) | React Native (ce que la personne exécute) |
+| -------------------------------- | ------------------------ | ----------------------------------------- |
+| `https://mon serveur`            | **jette**                | `hostname = "mon serveur"`                |
+| `twakevisio://room/abc-defg-hij` | `host = "room"`          | `host = ""`                               |
+| `https://MEET.ACME.com/x`        | `hostname` MINUSCULÉ     | `hostname = "MEET.ACME.com"`              |
+
+Trois conséquences, toutes constatées :
+
+- **Un `try`/`catch` autour de `new URL` ne refuse presque rien sur appareil.** Une
+  adresse saisie à la main était acceptée avec ses espaces, la session s'ouvrait
+  sur `https://mon serveur`, et l'écran annonçait ensuite une panne **réseau**
+  là où c'était l'adresse qui était fausse. Valider un hôte demande un **prédicat
+  explicite**, jamais l'espoir que `new URL` jette.
+- **Un `.toLowerCase()` sur un hôte est PORTEUR**, alors qu'il paraît redondant
+  sous Node. Un test qui le gardait a été supprimé ici comme « vide » : il l'était
+  sous Node, il ne l'est pas sur appareil. La mesure était juste, le moteur
+  mesuré était le mauvais.
+- **Une branche sur un schéma non-http est MORTE sur appareil**, et son test unitaire
+  est donc vide là où ça compte. C'est le cas de `twakevisio://` dans
+  `deepLinks.ts` : `host` y vaut `''`, jamais `'room'`.
+
+> **Donc : quand une logique dépend de `URL`, teste-la contre le moteur de
+> React Native.** Il se charge sous Jest —
+> `const { URL: RNURL } = require('react-native/Libraries/Blob/URL')` — et se
+> substitue à `globalThis.URL` le temps d'un `describe`, à **restaurer** ensuite,
+> faute de quoi la substitution fuit vers les suites voisines. Précédents :
+> `joinSheet.spec.tsx` et `pasted.spec.ts`.
+
+**Et `src/screens/server.tsx` porte encore ce défaut**, sur le chemin de
+**connexion** : son `normalizeServerUrl` s'appuie sur le même `try`/`catch`, et
+`new URL('https://mon serveur').origin` rend la chaîne au lieu de jeter. Non
+corrigé — antérieur au mode invité, et hors de son périmètre — mais mesuré et
+commenté à l'endroit du code.
 
 **Et le `PID` du journal caméra distingue trois choses qu'il faut distinguer :**
 

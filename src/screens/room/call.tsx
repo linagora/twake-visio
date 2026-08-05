@@ -17,6 +17,8 @@ import {
 import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
+import { endGuestSession } from 'src/auth/guest';
+import { getVisitor, visitorServerUrl } from 'src/auth/visitor';
 import { createChatStore } from 'src/call/chatStore';
 import { createCallSession } from 'src/call/connection';
 import type { Box } from 'src/call/grid';
@@ -72,6 +74,10 @@ type MessageKey =
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
+  // La salle d'attente parle sur CET écran aussi : `fetchRoomAccess` rend
+  // `lobby` quand le serveur n'a pas délivré de jeton, ce qui est le cas
+  // NOMINAL d'un invité sur un salon `trusted` ou `restricted`.
+  | 'lobby.approvalRequired'
   | 'chat.sendFailed'
   | 'call.linkCopied'
   | RecordingMessageKey;
@@ -90,10 +96,23 @@ type MessageKey =
 // l'écran ni celle qui débogue ne pouvaient savoir ce que le serveur avait
 // refusé.
 //
-// `lobby` reste avec `network` : il ne vient d'aucun statut — `fetchRoomAccess`
-// le construit depuis l'absence du bloc livekit — et voudrait dire que l'accès
-// a été retiré entre le pré-écran et ici, un cas qu'aucun retour vers la salle
-// d'attente ne rattrape.
+// `lobby` a sa case, et il n'en avait pas : il retombait sur `error.network`,
+// donc sur « Connexion impossible », alors que le réseau marchait — la réponse
+// était arrivée. C'est exactement le défaut décrit au paragraphe ci-dessus,
+// laissé sur la seule variante qui l'atteint le plus souvent.
+//
+// Car ce n'est PAS un cas rare depuis le mode invité : `fetchRoomAccess`
+// construit `lobby` depuis l'absence du bloc livekit, et meet n'en rend jamais
+// à un appelant anonyme sur un salon `trusted` ou `restricted` (lecture de
+// `serializers.py`, conception du 2026-08-04). Un invité sur un tel salon
+// arrive donc TOUJOURS ici — y compris après que la salle d'attente l'a
+// admis — et s'entendait dire que son réseau avait lâché.
+//
+// Le message dit maintenant ce qui est vrai dans les deux lectures : cet écran
+// n'a pas obtenu de jeton, et ce salon demande une validation. Il ne referme
+// pas pour autant le passage de témoin salle d'attente → séance, qui est une
+// question d'architecture posée séparément au partenaire humain : on cesse
+// seulement de mentir en attendant qu'elle soit tranchée.
 function toApiErrorMessage(error: ApiError): MessageKey {
   switch (error.kind) {
     case 'unauthorized':
@@ -106,6 +125,8 @@ function toApiErrorMessage(error: ApiError): MessageKey {
       return 'error.badRequest';
     case 'server':
       return 'error.serverError';
+    case 'lobby':
+      return 'lobby.approvalRequired';
     default:
       return 'error.network';
   }
@@ -153,11 +174,16 @@ function toDisconnectMessage(reason: string): MessageKey {
 }
 
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
-// chaque rendu, y compris quand personne n'est connecté. `access` — qui
-// gouverne la garde juste en dessous — ne se remplit que depuis l'effet de
-// connexion, lui-même arrêté dès qu'il constate l'absence de compte : ce
-// repli ne sert donc jamais de véritable requête, il ne fait que satisfaire le
-// typage d'un appel de Hook qui ne peut pas être conditionnel.
+// chaque rendu, y compris quand personne n'est connecté. Ce repli ne sert
+// donc jamais de véritable requête, il ne fait que satisfaire le typage d'un
+// appel de Hook qui ne peut pas être conditionnel — mais PAS pour la raison
+// qu'on pourrait croire : `access` ne dépend plus de la présence d'un compte
+// depuis que l'effet de connexion lit `getVisitor()`, et un invité en obtient
+// un lui aussi. La garde réelle est `canModerate`, qui exige
+// `access.isAdministrable` : le serveur rend `is_administrable: false` pour
+// un appelant anonyme (mesuré sur meet.linagora.com le 2026-08-04), donc ce
+// repli reste inerte pour un invité — la conclusion tient, ce n'est plus pour
+// l'ancienne raison.
 const NO_ACCOUNT: Account = {
   id: '',
   instance: {
@@ -238,11 +264,12 @@ export function CallScreen(): React.ReactElement {
   // minuteur pendant la négociation, alors que la réunion n'a pas commencé.
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Sans compte actif, il n'y a pas de jeton à demander. L'état de départ le
-  // dit dès le premier rendu : le poser depuis l'effet appellerait setState de
-  // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
+  // Sans visiteur — ni compte ni session invité —, il n'y a pas de jeton à
+  // demander. L'état de départ le dit dès le premier rendu : le poser depuis
+  // l'effet appellerait setState de façon synchrone, ce que
+  // `react-hooks/set-state-in-effect` refuse.
   const [failure, setFailure] = useState<MessageKey | null>(() =>
-    getActiveAccount() === null ? 'error.unauthorized' : null,
+    getVisitor() === null ? 'error.unauthorized' : null,
   );
 
   // Le SDK n'expose pas la face courante d'une piste : c'est l'écran qui la
@@ -439,10 +466,11 @@ export function CallScreen(): React.ReactElement {
     setFullscreen(null);
   }, []);
 
-  // Un compte frais à chaque rendu, comme au premier rendu de `failure`
-  // ci-dessus : il ne change pas en cours de séance, mais rien ne le fige dans
-  // un état — c'est le même accesseur que l'effet de connexion et que
-  // `handleShare` lisent déjà chacun de leur côté.
+  // Un compte frais à chaque rendu, jamais `getVisitor()` : les trois actions
+  // de modération plus bas et le repli `NO_ACCOUNT` n'ont de sens que pour un
+  // compte, jamais pour un invité, qui n'a aucun droit de modération —
+  // `canModerate` l'exclut déjà par `access.isAdministrable`. Il ne change pas
+  // en cours de séance, mais rien ne le fige dans un état.
   const account = getActiveAccount();
 
   // L'accès complet, pas seulement ses morceaux : la salle d'attente et le
@@ -649,12 +677,16 @@ export function CallScreen(): React.ReactElement {
     // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
     // est relu à chaque rendu — les confondre masquerait laquelle des deux
     // valeurs alimente vraiment `fetchRoomAccess`.
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
+    //
+    // `getVisitor()` et non `getActiveAccount()` : un invité doit pouvoir
+    // réellement ENTRER en séance, pas seulement consulter le pré-join — c'est
+    // tout le sujet de cette tâche.
+    const currentVisitor = getVisitor();
+    if (currentVisitor === null) return;
 
     let cancelled = false;
 
-    fetchRoomAccess(activeAccount, slug)
+    fetchRoomAccess(currentVisitor, slug)
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {
@@ -749,9 +781,9 @@ export function CallScreen(): React.ReactElement {
     };
   }, [session, slug, camera, mic]);
 
-  // Le lien porte sur l'instance du compte, jamais sur une constante : une
-  // personne connectée ailleurs partagerait sinon un lien vers la nôtre, qui ne
-  // mène pas à sa réunion.
+  // Le lien porte sur l'instance du VISITEUR, jamais sur une constante : une
+  // personne connectée ailleurs — ou un invité entré par un autre serveur —
+  // partagerait sinon un lien qui ne mène pas à sa réunion.
   /**
    * Copie le lien de la réunion, et le DIT.
    *
@@ -760,9 +792,9 @@ export function CallScreen(): React.ReactElement {
    * la commande, pas une politesse.
    */
   const handleCopyLink = async (): Promise<void> => {
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
-    await Clipboard.setStringAsync(`${activeAccount.instance.serverUrl}/${slug}`);
+    const current = getVisitor();
+    if (current === null) return;
+    await Clipboard.setStringAsync(`${visitorServerUrl(current)}/${slug}`);
     postNotice('link', 'call.linkCopied');
   };
 
@@ -770,9 +802,9 @@ export function CallScreen(): React.ReactElement {
     // Nom distinct du `account` de plus haut pour la même raison que dans
     // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
     // à chaque rendu.
-    const activeAccount = getActiveAccount();
-    if (activeAccount === null) return;
-    const url = `${activeAccount.instance.serverUrl}/${slug}`;
+    const current = getVisitor();
+    if (current === null) return;
+    const url = `${visitorServerUrl(current)}/${slug}`;
     try {
       await Share.share({ message: url, url });
     } catch {
@@ -787,7 +819,14 @@ export function CallScreen(): React.ReactElement {
     session
       .disconnect()
       .catch(() => undefined)
-      .finally(() => router.replace('/home'));
+      .finally(() => {
+        // `endGuestSession` AVANT la navigation : `/welcome` ne consulte pas la
+        // session, mais un lien profond ouvert juste après reprendrait sinon le
+        // serveur de la réunion qu'on vient de quitter.
+        const current = getVisitor();
+        if (current?.kind === 'guest') endGuestSession();
+        router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
+      });
   };
 
   // L'état du bouton suit l'attribut, jamais l'appui : c'est le seul affichage
@@ -801,11 +840,27 @@ export function CallScreen(): React.ReactElement {
   //
   // La garde porte sur `handBusy` par *valeur* : `disabled` est interdit sur
   // cet écran, Paper le teste avant toute couleur explicite.
+  //
+  // `getVisitor()` et non `account`, comme `handleShare` et `handleCopyLink`
+  // juste au-dessus : `toggleHand` ne prend AUCUN compte — son seul secret est
+  // le jeton de salle (`src/api/hand.ts`) —, `callControlBar.tsx:389-402` rend
+  // `hand-toggle` sans condition, et la conception range la main levée parmi
+  // ce qu'un invité GARDE. Avec `account === null`, un invité appuyait donc
+  // sur le bouton et il ne se passait RIEN : pas d'état, pas de message. Le
+  // même échec silencieux que `handleCopyLink` avait déjà payé, une commande
+  // plus à gauche.
+  //
+  // La branche `current === null` n'est pas atteignable depuis l'écran : sans
+  // visiteur, `failure` vaut `error.unauthorized` dès le premier rendu et la
+  // barre n'est jamais montée. Elle reste pour le typage, et aucun test ne
+  // peut la distinguer — c'est `access === null` qui garde vraiment la même
+  // sortie, et lui a le sien.
   const handleToggleHand = (): void => {
-    if (account === null || access === null || handBusy) return;
+    const current = getVisitor();
+    if (current === null || access === null || handBusy) return;
     setHandBusy(true);
     toggleHand(
-      account.instance.serverUrl,
+      visitorServerUrl(current),
       // `RoomViewSet.get_object()` tente l'UUID puis retombe sur le slug : les
       // deux formes résolvent le même objet, et le repli supprime purement et
       // simplement le cas `room.id === null`.
