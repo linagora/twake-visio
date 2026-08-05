@@ -179,6 +179,21 @@ Pour un build hors tag, utilisez « Run workflow » sur `release-ios.yml` ou
   Interroger un paquet **dont on sait qu'il n'est pas là** est donc le contrôle
   positif qui distingue « pas de droits » de « pas d'application ».
 
+  **Résolu le 2026-08-05, et ce que ça a coûté vaut d'être noté : le même
+  message couvre « aucun droit » et « des droits sur la mauvaise ligne ».** La
+  liste _Utilisateurs et autorisations_ montrait le compte de service « Actif,
+  durée illimitée » — cet état ne dit rien des droits sur une application, et
+  s'est lu comme une preuve que l'invitation suffisait. L'écran des
+  autorisations d'application, ouvert ensuite, montrait bien _Déployer les
+  applications sur des canaux de test_ coché… sur une autre ligne que Twake
+  Visio. Deux relances ont donc échoué à l'identique, sur une cause qu'aucune
+  des deux ne pouvait distinguer.
+
+  Vérifier que la case cochée est bien **sur la ligne de l'application qu'on
+  publie** — pas seulement qu'elle est cochée quelque part. Le compte de
+  service ne doit PAS recevoir _Mettre les applications à disposition de tous
+  les utilisateurs_ : la CI n'a aucune raison de pouvoir publier en production.
+
 - **Le lien d'inscription des testeurs internes n'existe que dans la console.**
   L'API ne l'expose pas : _Tests internes_ → onglet _Testeurs_ → « Comment les
   testeurs rejoignent votre test ». Il ne sert qu'une fois la liste enregistrée
@@ -232,9 +247,6 @@ l'application.
 
 ## Ce qui n'est pas fait
 
-- **Le premier dépôt Play n'a pas eu lieu.** La fiche existe, le nom de paquet
-  n'est donc pas encore fixé côté Play. Voir la note sur le dépôt manuel plus
-  haut.
 - **TestFlight externe** : l'envoi est interne, aucun groupe externe n'est
   câblé. `distribute_external` demande que le premier build passe la revue Beta.
 - Les métadonnées App Store et Play (descriptions, captures) ne sont pas
