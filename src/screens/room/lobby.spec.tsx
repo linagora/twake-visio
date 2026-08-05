@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 
 import * as rooms from 'src/api/rooms';
+import * as pending from 'src/call/pendingAccess';
 import * as accounts from 'src/auth/accounts';
 import * as guest from 'src/auth/guest';
 import * as visitor from 'src/auth/visitor';
@@ -204,6 +205,59 @@ describe("LobbyScreen, chemin d'admission", () => {
     });
     await tick();
 
+    expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
+  });
+
+  /**
+   * LE défaut que ce lot corrige, et il rendait le mode invité inutilisable
+   * sur tout salon non public.
+   *
+   * `request-entry` rend le jeton LiveKit AU MOMENT de l'admission. Cet écran
+   * le jetait et naviguait ; `call.tsx` redemandait l'accès par
+   * `fetchRoomAccess`. Or meet n'inclut le bloc `livekit` pour un anonyme que
+   * sur un salon `public` — son `should_access_room` exige `is_public`, un
+   * rôle, ou un compte authentifié sur un `trusted`. Le second appel ne
+   * rendait donc jamais de jeton : la personne était admise, puis renvoyée à
+   * la salle d'attente. Une boucle dont rien ne sortait.
+   */
+  it("MET DE CÔTÉ le jeton de l'admission avant de naviguer", async () => {
+    const stash = jest.spyOn(pending, 'stashRoomAccess');
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: {
+        participantId: 'p-1',
+        status: 'accepted',
+        livekitUrl: 'wss://livekit.linagora.com',
+        token: 'lk',
+      },
+    });
+
+    await render(<LobbyScreen />);
+    await tick();
+
+    expect(stash).toHaveBeenCalledWith(
+      'reunion',
+      expect.objectContaining({ livekitUrl: 'wss://livekit.linagora.com', token: 'lk' }),
+    );
+  });
+
+  // La polarité fausse : une admission SANS jeton ne met rien de côté. Le
+  // serveur ne devrait pas produire ce cas, mais `EntryOutcome` type les deux
+  // champs en `string | null` — les ignorer laisserait passer un accès dont le
+  // jeton serait `null`, que la séance prendrait pour un accès valide.
+  it("ne met RIEN de côté quand l'admission ne porte pas de jeton", async () => {
+    const stash = jest.spyOn(pending, 'stashRoomAccess');
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'accepted', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+    await tick();
+
+    expect(stash).not.toHaveBeenCalled();
+    // Mais on navigue quand même : `call.tsx` retombera sur `fetchRoomAccess`,
+    // qui est le chemin d'avant et reste juste pour un salon public.
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 
