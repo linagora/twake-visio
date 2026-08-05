@@ -18,7 +18,9 @@ jest.mock(
 
 jest.mock('expo-clipboard', () => ({ getStringAsync: jest.fn() }));
 jest.mock('src/instance/knownInstances', () => ({
-  listKnownHosts: () => ['meet.linagora.com'],
+  // Deux hôtes, comme en vrai : il faut un hôte CONNU mais DIVERGENT du
+  // défaut pour prouver que « diverge » et « inconnu » sont deux choses.
+  listKnownHosts: () => ['meet.linagora.com', 'visio.twake.app'],
 }));
 
 const clipboard = jest.requireMock('expo-clipboard') as { getStringAsync: jest.Mock };
@@ -50,6 +52,14 @@ function sheet(
       {...overrides}
     />,
   );
+}
+
+// Ouvre la saisie d'hôte par le chemin réellement disponible : « Changer »
+// n'existe que si l'hôte diverge déjà du défaut ; sinon c'est le lien discret
+// « Autre serveur ? ».
+async function openHostEdit(): Promise<void> {
+  const lien = screen.queryByTestId('join-other-server');
+  await fireEvent.press(lien ?? screen.getByTestId('join-host-change'));
 }
 
 async function type(text: string): Promise<void> {
@@ -224,15 +234,41 @@ describe('JoinSheet', () => {
       expect(screen.queryByTestId('join-host')).toBe(null);
     });
 
-    it('est rendue avec onHostChange — le cas invité', async () => {
-      await render(sheet({ onHostChange: jest.fn() }));
-
-      expect(screen.getByTestId('join-host')).toHaveTextContent('meet.linagora.com');
-    });
-
-    it('ne marque PAS un hôte connu', async () => {
+    /**
+     * Décision de Michel-Marie le 2026-08-05 : les deux feuilles doivent se
+     * ressembler AU REPOS. On ne montre le serveur qu'au moment où il n'est
+     * PAS celui qu'on suppose. Au serveur par défaut, la rangée disparaît donc
+     * même en mode invité, et c'est le lien discret qui prend le relais.
+     */
+    it("n'est PAS rendue au serveur par DÉFAUT, même en mode invité", async () => {
       await render(sheet({ host: 'meet.linagora.com', onHostChange: jest.fn() }));
 
+      expect(screen.queryByTestId('join-host')).toBe(null);
+      expect(screen.getByTestId('join-other-server')).toBeOnTheScreen();
+    });
+
+    it("est rendue dès que l'hôte DIVERGE du défaut", async () => {
+      await render(sheet({ host: 'meet.acme.com', onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host')).toHaveTextContent('meet.acme.com');
+      // Et le lien discret s'efface : la rangée porte déjà « Changer ».
+      expect(screen.queryByTestId('join-other-server')).toBe(null);
+    });
+
+    it("ne propose PAS d'autre serveur sans onHostChange — le cas de home.tsx", async () => {
+      await render(sheet({ host: 'meet.acme.com' }));
+
+      expect(screen.queryByTestId('join-other-server')).toBe(null);
+      expect(screen.queryByTestId('join-host')).toBe(null);
+    });
+
+    // `visio.twake.app` est CONNU (allowlist) et pourtant différent du défaut :
+    // la rangée se rend donc, sans marqueur. C'est la fixture qui sépare
+    // « diverge » de « inconnu », deux choses distinctes.
+    it('ne marque PAS un hôte connu, même divergent', async () => {
+      await render(sheet({ host: 'visio.twake.app', onHostChange: jest.fn() }));
+
+      expect(screen.getByTestId('join-host')).toBeOnTheScreen();
       expect(screen.queryByTestId('join-host-unknown')).toBe(null);
     });
 
@@ -250,14 +286,14 @@ describe('JoinSheet', () => {
     it('affiche le bouton « Changer », pas de champ de saisie, tant qu’on n’a pas appuyé dessus', async () => {
       await render(sheet({ onHostChange: jest.fn() }));
 
-      expect(screen.getByTestId('join-host-change')).toBeOnTheScreen();
+      expect(screen.getByTestId('join-other-server')).toBeOnTheScreen();
       expect(screen.queryByTestId('join-host-input')).toBe(null);
     });
 
     it('affiche un champ pré-rempli de l’hôte courant après avoir appuyé sur « Changer », et masque le bouton', async () => {
       await render(sheet({ host: 'meet.linagora.com', onHostChange: jest.fn() }));
 
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
 
       expect(screen.getByTestId('join-host-input')).toHaveProp('value', 'meet.linagora.com');
       expect(screen.queryByTestId('join-host-change')).toBe(null);
@@ -266,7 +302,7 @@ describe('JoinSheet', () => {
     it('refuse une saisie qui ne forme pas une adresse, sans remonter le changement', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
 
       await fireEvent.changeText(
         screen.getByTestId('join-host-input'),
@@ -282,7 +318,7 @@ describe('JoinSheet', () => {
 
     it('efface l’erreur dès que la saisie reprend', async () => {
       await render(sheet({ onHostChange: jest.fn() }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(
         screen.getByTestId('join-host-input'),
         'ceci n’est pas une adresse',
@@ -298,7 +334,7 @@ describe('JoinSheet', () => {
     it('adopte une adresse valide, la remonte et referme le champ', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -314,7 +350,7 @@ describe('JoinSheet', () => {
     it('accepte une adresse saisie avec son schéma déjà présent', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'https://meet.acme.com');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -330,7 +366,7 @@ describe('JoinSheet', () => {
     it("conserve le port d'une adresse saisie, comme le fait un lien collé", async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com:8443');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -346,7 +382,7 @@ describe('JoinSheet', () => {
     it("abaisse la casse de l'adresse saisie", async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'MEET.ACME.com');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -359,7 +395,7 @@ describe('JoinSheet', () => {
     it('refuse une adresse qui porte un chemin', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'meet.acme.com/salon');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -374,7 +410,7 @@ describe('JoinSheet', () => {
     it('refuse un schéma autre que https', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'twakevisio://room');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -391,7 +427,7 @@ describe('JoinSheet', () => {
       async (typed) => {
         const onHostChange = jest.fn();
         await render(sheet({ onHostChange }));
-        await fireEvent.press(screen.getByTestId('join-host-change'));
+        await openHostEdit();
         await fireEvent.changeText(screen.getByTestId('join-host-input'), typed);
 
         await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -412,7 +448,7 @@ describe('JoinSheet', () => {
     it('refuse un champ vidé, comme une saisie qui ne forme pas une adresse', async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), '');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -452,7 +488,7 @@ describe('JoinSheet', () => {
     it("REFUSE « mon serveur », que l'URL de React Native rendrait pour un hôte", async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(screen.getByTestId('join-host-input'), 'mon serveur');
 
       await fireEvent(screen.getByTestId('join-host-input'), 'submitEditing');
@@ -466,7 +502,7 @@ describe('JoinSheet', () => {
     it("REFUSE « ceci n'est pas une adresse », pour la même raison", async () => {
       const onHostChange = jest.fn();
       await render(sheet({ onHostChange }));
-      await fireEvent.press(screen.getByTestId('join-host-change'));
+      await openHostEdit();
       await fireEvent.changeText(
         screen.getByTestId('join-host-input'),
         'ceci n’est pas une adresse',

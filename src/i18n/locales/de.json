@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Beginnt um {{time}}",
   "notifications.joinAction": "Beitreten",
   "join.pasteHelp": "Fügen Sie den erhaltenen Link ein – der Code wird automatisch ausgefüllt.",
-  "join.pasteHelpWithServer": "Fügen Sie den erhaltenen Link ein – Server und Code werden automatisch ausgefüllt."
+  "join.pasteHelpWithServer": "Fügen Sie den erhaltenen Link ein – Server und Code werden automatisch ausgefüllt.",
+  "join.or": "oder",
+  "join.otherServer": "Anderer Server?"
 }

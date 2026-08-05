@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Commence à {{time}}",
   "notifications.joinAction": "Rejoindre",
   "join.pasteHelp": "Collez le lien reçu : le code se remplit tout seul.",
-  "join.pasteHelpWithServer": "Collez le lien reçu : le serveur et le code se remplissent tout seuls."
+  "join.pasteHelpWithServer": "Collez le lien reçu : le serveur et le code se remplissent tout seuls.",
+  "join.or": "ou",
+  "join.otherServer": "Autre serveur ?"
 }

@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Starts at {{time}}",
   "notifications.joinAction": "Join",
   "join.pasteHelp": "Paste the link you received — the code fills in automatically.",
-  "join.pasteHelpWithServer": "Paste the link you received — the server and code fill in automatically."
+  "join.pasteHelpWithServer": "Paste the link you received — the server and code fill in automatically.",
+  "join.or": "or",
+  "join.otherServer": "Another server?"
 }

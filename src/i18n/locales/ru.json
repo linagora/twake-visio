@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Начало в {{time}}",
   "notifications.joinAction": "Присоединиться",
   "join.pasteHelp": "Вставьте полученную ссылку — код заполнится сам.",
-  "join.pasteHelpWithServer": "Вставьте полученную ссылку — сервер и код заполнятся сами."
+  "join.pasteHelpWithServer": "Вставьте полученную ссылку — сервер и код заполнятся сами.",
+  "join.or": "или",
+  "join.otherServer": "Другой сервер?"
 }

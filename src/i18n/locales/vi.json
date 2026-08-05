@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Bắt đầu lúc {{time}}",
   "notifications.joinAction": "Tham gia",
   "join.pasteHelp": "Dán liên kết bạn nhận được — mã sẽ tự điền.",
-  "join.pasteHelpWithServer": "Dán liên kết bạn nhận được — máy chủ và mã sẽ tự điền."
+  "join.pasteHelpWithServer": "Dán liên kết bạn nhận được — máy chủ và mã sẽ tự điền.",
+  "join.or": "hoặc",
+  "join.otherServer": "Máy chủ khác?"
 }

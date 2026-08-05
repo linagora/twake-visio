@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Inizia alle {{time}}",
   "notifications.joinAction": "Partecipa",
   "join.pasteHelp": "Incolla il link ricevuto: il codice si compila da solo.",
-  "join.pasteHelpWithServer": "Incolla il link ricevuto: il server e il codice si compilano da soli."
+  "join.pasteHelpWithServer": "Incolla il link ricevuto: il server e il codice si compilano da soli.",
+  "join.or": "oppure",
+  "join.otherServer": "Un altro server?"
 }
