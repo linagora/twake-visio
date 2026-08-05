@@ -158,7 +158,7 @@
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Le tue riunioni, ovunque,\nin tutta sicurezza.",
   "join.title": "Partecipa a una riunione",
-  "join.instructions": "Inserisci il codice della stanza fornito dall’organizzatore.",
+  "join.instructions": "Incolla il link che hai ricevuto, oppure inserisci il codice.",
   "join.hint": "Tocca le caselle per inserire il codice",
   "join.paste": "Incolla un link di riunione",
   "join.pasteFailed": "I tuoi appunti non contengono alcun link o codice di riunione.",

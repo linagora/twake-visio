@@ -158,7 +158,7 @@
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Sus reuniones, en todas partes,\ncon total seguridad.",
   "join.title": "Unirse a una reunión",
-  "join.instructions": "Introduzca el código de la sala facilitado por el organizador.",
+  "join.instructions": "Pegue el enlace que ha recibido, o introduzca el código.",
   "join.hint": "Toque las casillas para introducir el código",
   "join.paste": "Pegar un enlace de reunión",
   "join.pasteFailed": "Su portapapeles no contiene ningún enlace ni código de reunión.",
