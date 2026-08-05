@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
+import { Share } from 'react-native';
+
 import * as rooms from 'src/api/rooms';
 import * as pending from 'src/call/pendingAccess';
 import * as accounts from 'src/auth/accounts';
@@ -17,6 +19,9 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace }),
   useLocalSearchParams: () => ({ slug: 'reunion' }),
 }));
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
+const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -640,5 +645,87 @@ describe("la salle d'attente en invité", () => {
     await fireEvent.press(screen.getByTestId('lobby-leave-btn'));
 
     expect(end).toHaveBeenCalled();
+  });
+});
+
+describe('le lien de la réunion, depuis la salle d’attente', () => {
+  // Fixture locale : celle du bloc d'admission vit dans un `describe`
+  // imbriqué, donc hors de portée ici.
+  const EN_ATTENTE = {
+    participantId: 'p-1',
+    status: 'waiting' as const,
+    livekitUrl: null,
+    token: null,
+  };
+  /**
+   * Demandé par Michel-Marie le 2026-08-05, en voyant l'écran sur son Pixel :
+   * les deux icônes de l'en-tête de séance manquaient ici. Quelqu'un qui
+   * attend d'être admis peut vouloir transmettre le lien — c'est même le
+   * moment où il en a le plus besoin, puisqu'il n'est pas encore entré.
+   *
+   * L'URL vient du VISITEUR, jamais d'une constante : un invité admis sur une
+   * autre instance partagerait sinon un lien vers la nôtre, qui ne mène pas à
+   * sa réunion. Même règle que `handleShare` de `call.tsx`.
+   */
+  it('copie le lien avec le serveur du visiteur', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: EN_ATTENTE });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-copy')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('lobby-copy'));
+
+    expect(clipboard.setStringAsync).toHaveBeenCalledWith('https://meet.acme.com/reunion');
+  });
+
+  // Deuxième INSTRUCTION du même gestionnaire. Le commentaire de `call.tsx` le
+  // dit : une copie silencieuse est indiscernable d'un appui manqué, rien ne
+  // bouge à l'écran et le presse-papiers n'est visible nulle part.
+  it('annonce la copie', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: EN_ATTENTE });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-copy')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('lobby-copy'));
+
+    await waitFor(() => expect(screen.getByText('call.linkCopied')).toBeOnTheScreen());
+  });
+
+  it('partage le lien avec le serveur du visiteur', async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'dismissedAction' });
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: EN_ATTENTE });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-share')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('lobby-share'));
+
+    expect(share).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://meet.acme.com/reunion' }),
+    );
+  });
+
+  // La polarité fausse : un COMPTE partage l'URL de SON instance, pas celle de
+  // l'invité ni une constante.
+  it("porte le serveur du COMPTE quand c'en est un", async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'dismissedAction' });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: EN_ATTENTE });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-share')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('lobby-share'));
+
+    expect(share).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://meet.linagora.com/reunion' }),
+    );
+  });
+
+  it('affiche le salon que l’on attend', async () => {
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: EN_ATTENTE });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('lobby-room')).toHaveTextContent('reunion'));
   });
 });

@@ -1,15 +1,17 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Button, Text } from 'react-native-paper';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry } from 'src/api/rooms';
 import { stashRoomAccess } from 'src/call/pendingAccess';
 import type { ApiError } from 'src/api/types';
 import { endGuestSession } from 'src/auth/guest';
-import { getVisitor, visitorName } from 'src/auth/visitor';
+import { getVisitor, visitorName, visitorServerUrl } from 'src/auth/visitor';
 import { tokens } from 'src/ui/tokens';
 
 // « Personne ne peut ouvrir » est un état du salon, pas une panne : c'est la
@@ -43,6 +45,12 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.md,
   },
   message: { textAlign: 'center' },
+  // L'en-tête du salon attendu, avec ses deux actions de lien. Repris de
+  // `callHeader.tsx` : même geste, même place, même taille de glyphe — mais
+  // sur fond CLAIR ici, donc `textSecondary` et non le gris de la séance.
+  header: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingBottom: tokens.spacing.sm },
+  linkAction: { padding: 4 },
+  room: { color: tokens.color.textPrimary, fontFamily: tokens.font.extraBold, fontSize: 16 },
 });
 
 function toFailedOrNoModerator(error: ApiError): LobbyState {
@@ -61,6 +69,7 @@ export function LobbyScreen(): React.ReactElement {
   // au salon. L'état de départ le dit dès le premier rendu : le poser depuis
   // l'effet appellerait setState de façon synchrone, ce que
   // `react-hooks/set-state-in-effect` refuse.
+  const [copied, setCopied] = useState(false);
   const [state, setState] = useState<LobbyState>(() =>
     getVisitor() === null
       ? { kind: 'failed', message: 'error.unauthorized' }
@@ -182,6 +191,43 @@ export function LobbyScreen(): React.ReactElement {
     router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
   };
 
+  /**
+   * Le lien de la réunion, depuis la salle d'attente.
+   *
+   * Demandé après avoir vu l'écran sur appareil : les deux icônes existaient
+   * en séance et manquaient ici, alors que c'est le moment où l'on a le plus
+   * de raisons de transmettre le lien — on n'est pas encore entré.
+   *
+   * L'URL vient du VISITEUR, jamais d'une constante : quelqu'un qui attend sur
+   * une autre instance partagerait sinon un lien vers la nôtre, qui ne mène
+   * pas à sa réunion. Même règle que `handleShare` de `call.tsx`.
+   */
+  const roomUrl = (): string | null => {
+    const current = getVisitor();
+    return current === null ? null : `${visitorServerUrl(current)}/${slug}`;
+  };
+
+  const handleCopyLink = async (): Promise<void> => {
+    const url = roomUrl();
+    if (url === null) return;
+    await Clipboard.setStringAsync(url);
+    // La Snackbar EST la commande, pas une politesse : une copie silencieuse
+    // est indiscernable d'un appui manqué, rien ne bouge à l'écran et le
+    // presse-papiers n'est visible nulle part. `call.tsx` porte le même
+    // raisonnement à l'endroit du sien.
+    setCopied(true);
+  };
+
+  const handleShareLink = async (): Promise<void> => {
+    const url = roomUrl();
+    if (url === null) return;
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      // Le partage annulé n'est pas une erreur, et rien à dire de plus.
+    }
+  };
+
   // Les cinq états rendent leur CONTENU seul, jamais le cadre. Le bouton de
   // sortie est posé une fois, après — sinon chaque état est une occasion de
   // l'oublier, et les cinq l'avaient oublié : `refusé`, `aucun modérateur` et
@@ -235,6 +281,40 @@ export function LobbyScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={styles.header}>
+        <Text numberOfLines={1} style={styles.room} testID="lobby-room">
+          {slug}
+        </Text>
+        <Pressable
+          accessibilityLabel={t('call.copyLink')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={handleCopyLink}
+          style={styles.linkAction}
+          testID="lobby-copy"
+        >
+          <MaterialCommunityIcons
+            color={tokens.color.textSecondary}
+            name="content-copy"
+            size={16}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityLabel={t('call.share')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={handleShareLink}
+          style={styles.linkAction}
+          testID="lobby-share"
+        >
+          <MaterialCommunityIcons
+            color={tokens.color.textSecondary}
+            name="share-variant"
+            size={16}
+          />
+        </Pressable>
+      </View>
+
       {renderBody()}
       {/* `replace` et non `back` : on arrive ici par un `replace` depuis le
           pré-join, donc la pile est vide et `back` ne mènerait nulle part. */}
@@ -247,6 +327,10 @@ export function LobbyScreen(): React.ReactElement {
       >
         {t('call.leave')}
       </Button>
+
+      <Snackbar duration={2500} onDismiss={() => setCopied(false)} visible={copied}>
+        {t('call.linkCopied')}
+      </Snackbar>
     </View>
   );
 }
