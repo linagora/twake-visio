@@ -20,6 +20,7 @@
       ],
       "expo-font",
       "./plugins/withAndroidReleaseSigning",
+      "./plugins/withLocalNotificationsOnly",
       [
         "expo-notifications",
         {
