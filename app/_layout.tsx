@@ -35,7 +35,15 @@ export default function RootLayout(): React.ReactElement | null {
   useSessionGuard();
   // Même raison que la ligne au-dessus : une réponse de notification peut
   // arriver quel que soit l'écran affiché, ou avant qu'aucun ne le soit.
-  useReminders(useCallback((route: string) => router.push(route as never), [router]));
+  // `i18nReady` est passé, et ce n'est pas décoratif : ce crochet est appelé
+  // AVANT l'effet qui lance `initI18n()` quelques lignes plus bas, lequel est
+  // de surcroît asynchrone. Sans ce drapeau, le libellé du bouton « Rejoindre »
+  // partait `undefined` et la catégorie de notification était refusée en
+  // silence — voir le commentaire de `useReminders`, qui porte la mesure.
+  useReminders(
+    useCallback((route: string) => router.push(route as never), [router]),
+    i18nReady,
+  );
   // Les quatre graisses que le mockup emploie, et aucune Regular. Sans ce
   // chargement, `theme.fonts` nomme une famille qui n'existe pas : RN retombe
   // en silence sur la police système, et la refonte n'est visible nulle part.
