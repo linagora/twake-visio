@@ -207,5 +207,7 @@
   "settings.options.reminder15": "За 15 минут",
   "settings.options.reminder5": "За 5 минут",
   "notifications.reminderBody": "Начало в {{time}}",
-  "notifications.joinAction": "Присоединиться"
+  "notifications.joinAction": "Присоединиться",
+  "join.pasteHelp": "Вставьте полученную ссылку — код заполнится сам.",
+  "join.pasteHelpWithServer": "Вставьте полученную ссылку — сервер и код заполнятся сами."
 }

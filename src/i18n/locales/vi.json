@@ -207,5 +207,7 @@
   "settings.options.reminder15": "15 phút trước",
   "settings.options.reminder5": "5 phút trước",
   "notifications.reminderBody": "Bắt đầu lúc {{time}}",
-  "notifications.joinAction": "Tham gia"
+  "notifications.joinAction": "Tham gia",
+  "join.pasteHelp": "Dán liên kết bạn nhận được — mã sẽ tự điền.",
+  "join.pasteHelpWithServer": "Dán liên kết bạn nhận được — máy chủ và mã sẽ tự điền."
 }

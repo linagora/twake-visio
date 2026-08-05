@@ -207,5 +207,7 @@
   "settings.options.reminder15": "15 minutos antes",
   "settings.options.reminder5": "5 minutos antes",
   "notifications.reminderBody": "Empieza a las {{time}}",
-  "notifications.joinAction": "Unirse"
+  "notifications.joinAction": "Unirse",
+  "join.pasteHelp": "Pegue el enlace recibido: el código se rellena solo.",
+  "join.pasteHelpWithServer": "Pegue el enlace recibido: el servidor y el código se rellenan solos."
 }

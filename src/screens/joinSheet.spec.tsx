@@ -598,3 +598,35 @@ describe('JoinSheet', () => {
     });
   });
 });
+
+describe("l'explication du collage", () => {
+  /**
+   * Les DEUX polarités, et la raison qu'elles gardent.
+   *
+   * La ligne promet que le collage remplit tout seul. Mais « le serveur
+   * aussi » n'est vrai que là où la rangée de serveur existe — donc là où
+   * `onHostChange` est fourni. Sur l'accueil connecté, `home.tsx` ne le passe
+   * pas, et un lien collé d'une autre instance y remplit le code en GARDANT le
+   * serveur du compte. Y promettre le serveur serait faux, et un texte faux
+   * coûte plus cher qu'un texte absent.
+   */
+  it('promet le serveur ET le code quand la rangée de serveur existe', async () => {
+    await render(sheet({ onHostChange: jest.fn() }));
+
+    expect(screen.getByTestId('join-paste-help')).toHaveTextContent('join.pasteHelpWithServer');
+  });
+
+  it("ne promet QUE le code quand il n'y a pas de rangée de serveur", async () => {
+    await render(sheet());
+
+    expect(screen.getByTestId('join-paste-help')).toHaveTextContent('join.pasteHelp');
+  });
+
+  it('pose une couleur explicite', async () => {
+    await render(sheet());
+
+    expect(screen.getByTestId('join-paste-help')).toHaveStyle({
+      color: tokens.color.textSectionLabel,
+    });
+  });
+});

@@ -304,6 +304,21 @@ export function JoinSheet({
         <Text style={styles.pasteLabel}>{t('join.paste')}</Text>
       </Pressable>
 
+      {/* Ce que « Coller » fait vraiment, dit sous le bouton qui le fait.
+          Sans cette ligne, rien n'annonce que le code se remplit tout seul :
+          la personne voit dix cases vides et suppose qu'il faut les saisir.
+
+          DEUX formulations, et ce n'est pas une coquetterie. La promesse « le
+          serveur aussi » n'est tenue QUE là où la rangée de serveur existe —
+          c'est-à-dire là où `onHostChange` est fourni, donc en mode invité.
+          Sur l'accueil connecté, `home.tsx` ne le passe pas : un lien collé
+          d'une autre instance y remplit le code et GARDE le serveur du compte,
+          ce qui est le comportement voulu. Promettre le serveur là-bas serait
+          faux, et un texte faux coûte plus cher qu'un texte absent. */}
+      <Text style={styles.pasteHelp} testID={`${testID}-paste-help`}>
+        {t(onHostChange === undefined ? 'join.pasteHelp' : 'join.pasteHelpWithServer')}
+      </Text>
+
       {pasteFailed ? (
         <Text style={styles.error} testID={`${testID}-paste-error`}>
           {t('join.pasteFailed')}
@@ -431,6 +446,15 @@ const styles = StyleSheet.create({
     fontFamily: tokens.font.medium,
     fontSize: 14,
     lineHeight: 20,
+  },
+  // L'explication sous le bouton « Coller ». Plus petite et plus discrète que
+  // le libellé du bouton : elle informe, elle n'appelle pas à l'action.
+  // Couleur EXPLICITE comme tout texte de cette feuille.
+  pasteHelp: {
+    color: tokens.color.textSectionLabel,
+    fontFamily: tokens.font.medium,
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   paste: {
     alignItems: 'center',
