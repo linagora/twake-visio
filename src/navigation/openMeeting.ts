@@ -29,17 +29,14 @@ export function resolveDeepLink(
   // invité sur `https://room` — l'hôte littéral du schéma, pas une instance.
   // Trouvé le 2026-08-05 en écrivant le test qui suit, avant tout code.
   const { protocol, host } = new URL(url);
-  // **CETTE BRANCHE EST INATTEIGNABLE SUR APPAREIL, et son test unitaire y est
-  // donc vide de sens.** Non pas à cause du `protocol` — le getter de React
-  // Native le rend correctement — mais parce qu'on n'arrive jamais jusqu'ici :
-  // `parseMeetingLink`, plus haut, aura déjà rendu `null` pour tout
-  // `twakevisio://`, sa comparaison d'hôte à « room » ne pouvant être vraie
-  // sous le `URL` de React Native (voir son commentaire, qui porte la mesure
-  // du 2026-08-05).
+  // Cette branche a été INATTEIGNABLE sur appareil jusqu'au 2026-08-05, et son
+  // test y était vide de sens : `parseMeetingLink` rendait alors `null` pour
+  // tout `twakevisio://`, faute de pouvoir en lire l'hôte sous le `URL` de
+  // React Native. Elle est vivante depuis que ce lecteur ne passe plus par
+  // `URL` — voir `slugFromAppLink`.
   //
-  // Ce qui suit décrit donc ce que la fonction ferait si le lien profond
-  // applicatif vivait. PRÉ-EXISTANT, hors périmètre du mode invité, consigné
-  // par décision explicite plutôt que corrigé.
+  // `protocol`, lui, a toujours été correct sur les deux moteurs : c'est le
+  // seul accesseur de ce polyfill qui ne soit pas ancré sur `^https?://`.
   if (protocol === `${APP_SCHEME}:`) {
     // Un lien `twakevisio://room/<slug>` ne porte aucun hôte exploitable :
     // « room » est un littéral fixe du schéma, jamais une instance. Et rien
