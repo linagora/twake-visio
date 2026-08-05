@@ -66,6 +66,24 @@ export function WelcomeScreen(): React.ReactElement {
           Rien ne gardait ce choix — le spec d'origine n'assertait que la
           présence des trois boutons —, d'où les deux tests ajoutés. */}
       <View style={styles.actions}>
+        {/* L'entrée invité vient EN TÊTE, au-dessus des trois actions de
+            compte, et le filet la sépare d'elles.
+            Décision de Michel-Marie le 2026-08-05, APRÈS l'avoir vue sur un
+            Pixel : la veille elle était détachée SOUS les trois boutons, et
+            l'écran réel a montré qu'elle s'y lisait comme une note de bas de
+            page. Quelqu'un qui reçoit un lien n'a rien à faire des trois
+            autres, et c'est lui qui arrive ici sans rien connaître de
+            l'application. */}
+        <Button
+          mode="text"
+          onPress={() => setJoinOpen(true)}
+          testID="join-as-guest-btn"
+          textColor={tokens.color.brandStrong}
+        >
+          {t('welcome.joinAsGuest')}
+        </Button>
+        <View style={styles.divider} />
+
         <Button
           buttonColor={tokens.color.brandStrong}
           mode="contained"
@@ -92,20 +110,6 @@ export function WelcomeScreen(): React.ReactElement {
           textColor={tokens.color.brandStrong}
         >
           {t('welcome.orgServer')}
-        </Button>
-
-        {/* Décision 1 du partenaire humain : l'entrée invité est DÉTACHÉE sous
-            un séparateur, sous les trois actions de compte — jamais mêlée à
-            elles. La hiérarchie Sign up (plein) / Sign in (contour) au-dessus
-            reste intacte. */}
-        <View style={styles.divider} />
-        <Button
-          mode="text"
-          onPress={() => setJoinOpen(true)}
-          testID="join-as-guest-btn"
-          textColor={tokens.color.brandStrong}
-        >
-          {t('welcome.joinAsGuest')}
         </Button>
       </View>
 
@@ -139,10 +143,16 @@ export function WelcomeScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   actions: { gap: 12, paddingBottom: 34, paddingHorizontal: 22 },
   button: { borderRadius: 14 },
-  // Le séparateur qui détache l'entrée invité des trois actions de compte —
-  // DÉCORATIF, pas porteur d'information : WCAG 1.4.11 ne s'applique donc pas,
-  // comme les autres traits de `tokens.color`.
-  divider: { backgroundColor: tokens.color.rowSeparator, height: 1 },
+  // Le filet qui sépare l'entrée invité, au-dessus, des trois actions de
+  // compte. DÉCORATIF — il ne porte aucune information nécessaire pour
+  // identifier une commande — donc WCAG 1.4.11 ne s'applique pas.
+  //
+  // `fieldBorder` et NON `rowSeparator` : mesuré sur `appBackground`, le
+  // premier donne 1,17:1 et le second 1,04:1. À 1,04 le trait n'existe pas à
+  // l'œil, et la revue finale l'avait relevé — le détachement ne tenait alors
+  // qu'à l'espacement. Michel-Marie a demandé « un petit liseré gris » qu'on
+  // VOIE : 1,17 reste discret, mais il est là.
+  divider: { backgroundColor: tokens.color.fieldBorder, height: 1 },
   identity: {
     alignItems: 'center',
     flex: 1,

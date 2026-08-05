@@ -2,7 +2,7 @@
   "welcome.signIn": "Accedi",
   "welcome.signUp": "Registrati",
   "welcome.orgServer": "Accedi con la mia organizzazione",
-  "welcome.joinAsGuest": "Partecipa senza account",
+  "welcome.joinAsGuest": "Ho ricevuto un link di riunione",
   "server.prompt": "Indirizzo del tuo server",
   "server.emailPrompt": "Il tuo indirizzo email",
   "server.emailInvalid": "Inserisci un indirizzo email valido",

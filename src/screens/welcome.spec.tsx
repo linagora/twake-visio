@@ -223,3 +223,41 @@ describe("l'entrée invité", () => {
     await waitFor(() => expect(screen.queryByTestId('welcome-join-sheet')).toBe(null));
   });
 });
+
+describe("l'ordre des actions", () => {
+  /**
+   * Décision de Michel-Marie le 2026-08-05, prise APRÈS avoir vu l'écran sur
+   * un Pixel : l'entrée invité passe EN TÊTE, au-dessus des trois actions de
+   * compte. La veille elle était détachée en dessous, et l'appareil réel a
+   * montré qu'elle s'y lisait comme une note de bas de page.
+   *
+   * Ce test existe parce qu'une décision de placement ne se garde pas toute
+   * seule : rien dans le rendu n'échouerait si un remaniement la replaçait en
+   * bas, et la capture d'écran qui a motivé le changement ne sera plus là pour
+   * le rappeler.
+   *
+   * On compare des POSITIONS dans l'arbre rendu, pas des coordonnées : RNTL ne
+   * met rien en page, donc aucune géométrie n'est disponible — c'est l'ordre
+   * de rendu qui est observable, et c'est lui qui produit l'ordre visuel dans
+   * une colonne flex.
+   */
+  it("rend l'entrée invité AVANT les trois actions de compte", async () => {
+    await renderWelcome();
+
+    const ordre: string[] = [];
+    const parcourir = (node: unknown): void => {
+      if (node === null || typeof node !== 'object') return;
+      const n = node as { props?: { testID?: string }; children?: unknown[] };
+      const id = n.props?.testID;
+      if (typeof id === 'string') ordre.push(id);
+      for (const enfant of n.children ?? []) parcourir(enfant);
+    };
+    parcourir(screen.toJSON());
+
+    const invite = ordre.indexOf('join-as-guest-btn');
+    const inscrire = ordre.indexOf('sign-up-btn');
+    expect(invite).toBeGreaterThanOrEqual(0);
+    expect(inscrire).toBeGreaterThanOrEqual(0);
+    expect(invite).toBeLessThan(inscrire);
+  });
+});
