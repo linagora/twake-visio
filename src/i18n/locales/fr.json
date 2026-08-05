@@ -158,7 +158,7 @@
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Vos réunions, partout,\nen toute sécurité.",
   "join.title": "Rejoindre une réunion",
-  "join.instructions": "Saisissez le code de la salle transmis par l’organisateur.",
+  "join.instructions": "Collez le lien que vous avez reçu, ou saisissez le code.",
   "join.hint": "Touchez les cases pour saisir le code",
   "join.paste": "Coller un lien de réunion",
   "join.pasteFailed": "Votre presse-papiers ne contient ni lien ni code de réunion.",
@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Commence à {{time}}",
   "notifications.joinAction": "Rejoindre",
   "join.pasteHelp": "Collez le lien reçu : le code se remplit tout seul.",
-  "join.pasteHelpWithServer": "Collez le lien reçu : le serveur et le code se remplissent tout seuls."
+  "join.pasteHelpWithServer": "Collez le lien reçu : le serveur et le code se remplissent tout seuls.",
+  "join.or": "ou",
+  "join.otherServer": "Autre serveur ?"
 }

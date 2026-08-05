@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { DEFAULT_SERVER_URL } from 'src/constants';
 import { listKnownHosts } from 'src/instance/knownInstances';
 import { parsePastedMeeting } from 'src/navigation/deepLinks';
 import {
@@ -54,6 +55,13 @@ const SCHEME_PREFIX = /^([a-z][a-z\d+\-.]*):\/\//i;
 // non-ASCII — aucune instance meet connue n'en porte, et l'élargir demanderait
 // de savoir ce qu'on en ferait ensuite.
 const HOST_WITH_PORT = /^[a-z0-9.-]+(:\d+)?$/i;
+
+// L'hôte par défaut, en NOM D'HÔTE. Un simple retrait de schéma, jamais
+// `new URL` : celui de React Native ne jette pas et n'est pas celui de Node —
+// voir la section « Jest et l'application n'exécutent PAS le même URL »
+// d'`AGENTS.md`. Ici la chaîne est une constante du dépôt, donc un `replace`
+// suffit et ne peut pas échouer.
+const DEFAULT_HOST = DEFAULT_SERVER_URL.replace(/^https?:\/\//, '');
 
 // Valide une adresse saisie À LA MAIN dans la rangée de serveur, quand on
 // appuie sur « Changer ».
@@ -141,6 +149,14 @@ export function JoinSheet({
   // elle demande seulement de dire quand il n'est pas reconnu.
   const hostKnown = listKnownHosts().includes(host.toLowerCase());
 
+  // La rangée ne se rend QUE si l'hôte diverge du défaut, et seulement là où
+  // l'on peut en changer. Le lien discret prend le relais dans l'autre cas :
+  // sans lui, aucune divergence ne pourrait naître d'une saisie.
+  const canChooseHost = onHostChange !== undefined;
+  const diverges = host.toLowerCase() !== DEFAULT_HOST.toLowerCase();
+  const showHostRow = canChooseHost && (diverges || hostEditing);
+  const showOtherServer = canChooseHost && !diverges && !hostEditing;
+
   function handleChange(raw: string): void {
     setCode(normalizeCodeInput(raw));
     setPasteFailed(false);
@@ -201,9 +217,35 @@ export function JoinSheet({
         {t('join.instructions')}
       </Text>
 
-      {/* Absente sans `onHostChange` : `home.tsx` ne passe pas ce rappel, une
-          personne connectée n'a aucun serveur à choisir. */}
-      {onHostChange === undefined ? null : (
+      <Pressable onPress={handlePaste} style={styles.paste} testID={`${testID}-paste`}>
+        <Text style={styles.pasteLabel}>{t('join.paste')}</Text>
+      </Pressable>
+
+      {/* Ce que « Coller » fait vraiment, dit sous le bouton qui le fait.
+          Sans cette ligne, rien n'annonce que le code se remplit tout seul :
+          la personne voit dix cases vides et suppose qu'il faut les saisir.
+
+          DEUX formulations, et ce n'est pas une coquetterie. La promesse « le
+          serveur aussi » n'est tenue QUE là où la rangée de serveur existe —
+          c'est-à-dire là où `onHostChange` est fourni, donc en mode invité.
+          Sur l'accueil connecté, `home.tsx` ne le passe pas : un lien collé
+          d'une autre instance y remplit le code et GARDE le serveur du compte,
+          ce qui est le comportement voulu. Promettre le serveur là-bas serait
+          faux, et un texte faux coûte plus cher qu'un texte absent. */}
+      <Text style={styles.pasteHelp} testID={`${testID}-paste-help`}>
+        {t(onHostChange === undefined ? 'join.pasteHelp' : 'join.pasteHelpWithServer')}
+      </Text>
+
+      {/* Rendue seulement quand l'hôte DIVERGE du défaut.
+          Décision de Michel-Marie le 2026-08-05 : les deux feuilles doivent se
+          ressembler au repos, et on ne montre le serveur qu'au moment où il
+          n'est PAS celui qu'on suppose — après un lien collé d'une autre
+          instance, ou après un « Changer ». Ailleurs, l'afficher n'apprenait
+          rien et distinguait sans raison la feuille invité de celle de
+          l'accueil connecté.
+          `onHostChange` reste la condition première : `home.tsx` ne le passe
+          pas, une personne connectée n'ayant aucun serveur à choisir. */}
+      {!showHostRow ? null : (
         <View style={styles.hostRow}>
           <Text style={styles.hostLabel}>{t('join.server')}</Text>
 
@@ -252,6 +294,17 @@ export function JoinSheet({
           la technique du mockup. Elle donne un curseur système et une seule
           source de vérité, là où dix champs demanderaient de synchroniser dix
           états et de gérer le recul entre eux. */}
+
+      {/* Les deux chemins, et leur hiérarchie. Coller est le cas majoritaire —
+          le libellé de l'accueil dit « J'ai reçu un lien » —, donc il passe en
+          premier et en bouton PLEIN. La grille reste, pour un code transmis de
+          vive voix, mais elle n'est plus ce qu'on voit d'abord. */}
+      <View style={styles.orRow}>
+        <View style={styles.orLine} />
+        <Text style={styles.orLabel}>{t('join.or')}</Text>
+        <View style={styles.orLine} />
+      </View>
+
       <Pressable onPress={() => inputRef.current?.focus()} style={styles.cellsWrapper}>
         <View style={styles.cells}>
           {Array.from({ length: TOTAL_CELLS }, (_, index) => (
@@ -300,24 +353,16 @@ export function JoinSheet({
         {t('join.hint')}
       </Text>
 
-      <Pressable onPress={handlePaste} style={styles.paste} testID={`${testID}-paste`}>
-        <Text style={styles.pasteLabel}>{t('join.paste')}</Text>
-      </Pressable>
-
-      {/* Ce que « Coller » fait vraiment, dit sous le bouton qui le fait.
-          Sans cette ligne, rien n'annonce que le code se remplit tout seul :
-          la personne voit dix cases vides et suppose qu'il faut les saisir.
-
-          DEUX formulations, et ce n'est pas une coquetterie. La promesse « le
-          serveur aussi » n'est tenue QUE là où la rangée de serveur existe —
-          c'est-à-dire là où `onHostChange` est fourni, donc en mode invité.
-          Sur l'accueil connecté, `home.tsx` ne le passe pas : un lien collé
-          d'une autre instance y remplit le code et GARDE le serveur du compte,
-          ce qui est le comportement voulu. Promettre le serveur là-bas serait
-          faux, et un texte faux coûte plus cher qu'un texte absent. */}
-      <Text style={styles.pasteHelp} testID={`${testID}-paste-help`}>
-        {t(onHostChange === undefined ? 'join.pasteHelp' : 'join.pasteHelpWithServer')}
-      </Text>
+      {/* L'échappatoire, quand l'hôte EST celui par défaut : sans elle on ne
+          pourrait jamais le faire diverger au clavier, et la rangée ci-dessus
+          n'apparaîtrait que sur un lien collé. Volontairement discrète — c'est
+          un cas minoritaire, et la feuille doit rester proche de celle de
+          l'accueil connecté. */}
+      {showOtherServer ? (
+        <Pressable onPress={handleHostChangePress} testID={`${testID}-other-server`}>
+          <Text style={styles.otherServer}>{t('join.otherServer')}</Text>
+        </Pressable>
+      ) : null}
 
       {pasteFailed ? (
         <Text style={styles.error} testID={`${testID}-paste-error`}>
@@ -456,18 +501,34 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 17,
   },
+  // Le bouton PLEIN, et non plus un contour. Coller est le cas majoritaire —
+  // l'accueil dit « J'ai reçu un lien de réunion » —, et l'action majoritaire
+  // porte le poids visuel. La grille, en dessous, garde son contour.
   paste: {
     alignItems: 'center',
-    borderColor: tokens.color.fieldBorder,
+    backgroundColor: tokens.color.brandStrong,
     borderRadius: 14,
-    borderWidth: 1,
-    height: 50,
+    height: 52,
     justifyContent: 'center',
   },
   pasteLabel: {
-    color: tokens.color.textPrimary,
-    fontFamily: tokens.font.bold,
-    fontSize: 14.5,
+    color: tokens.color.onBrand,
+    fontFamily: tokens.font.extraBold,
+    fontSize: 15,
+  },
+  // Le départage des deux chemins. Le trait est DÉCORATIF — le mot « ou » porte
+  // seul l'information —, donc WCAG 1.4.11 ne s'applique pas à lui.
+  orRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  orLine: { backgroundColor: tokens.color.fieldBorder, flex: 1, height: 1 },
+  orLabel: {
+    color: tokens.color.textSectionLabel,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 12.5,
+  },
+  otherServer: {
+    color: tokens.color.brandStrong,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 12.5,
   },
   separator: {
     backgroundColor: tokens.color.textChevron,

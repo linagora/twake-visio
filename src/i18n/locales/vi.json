@@ -158,7 +158,7 @@
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Cuộc họp của bạn, mọi nơi,\nhoàn toàn an toàn.",
   "join.title": "Tham gia cuộc họp",
-  "join.instructions": "Nhập mã phòng do người tổ chức cung cấp.",
+  "join.instructions": "Dán liên kết bạn nhận được, hoặc nhập mã.",
   "join.hint": "Chạm vào các ô để nhập mã",
   "join.paste": "Dán liên kết cuộc họp",
   "join.pasteFailed": "Khay nhớ tạm của bạn không chứa liên kết hoặc mã cuộc họp nào.",
@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Bắt đầu lúc {{time}}",
   "notifications.joinAction": "Tham gia",
   "join.pasteHelp": "Dán liên kết bạn nhận được — mã sẽ tự điền.",
-  "join.pasteHelpWithServer": "Dán liên kết bạn nhận được — máy chủ và mã sẽ tự điền."
+  "join.pasteHelpWithServer": "Dán liên kết bạn nhận được — máy chủ và mã sẽ tự điền.",
+  "join.or": "hoặc",
+  "join.otherServer": "Máy chủ khác?"
 }

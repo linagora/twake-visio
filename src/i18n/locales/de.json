@@ -158,7 +158,7 @@
   "welcome.titleAccent": "Visio",
   "welcome.tagline": "Ihre Besprechungen, überall,\nin voller Sicherheit.",
   "join.title": "Einer Besprechung beitreten",
-  "join.instructions": "Geben Sie den Raumcode ein, den die organisierende Person Ihnen mitgeteilt hat.",
+  "join.instructions": "Fügen Sie den erhaltenen Link ein oder geben Sie den Code ein.",
   "join.hint": "Tippen Sie auf die Felder, um den Code einzugeben",
   "join.paste": "Besprechungslink einfügen",
   "join.pasteFailed": "Ihre Zwischenablage enthält weder einen Besprechungslink noch einen Code.",
@@ -209,5 +209,7 @@
   "notifications.reminderBody": "Beginnt um {{time}}",
   "notifications.joinAction": "Beitreten",
   "join.pasteHelp": "Fügen Sie den erhaltenen Link ein – der Code wird automatisch ausgefüllt.",
-  "join.pasteHelpWithServer": "Fügen Sie den erhaltenen Link ein – Server und Code werden automatisch ausgefüllt."
+  "join.pasteHelpWithServer": "Fügen Sie den erhaltenen Link ein – Server und Code werden automatisch ausgefüllt.",
+  "join.or": "oder",
+  "join.otherServer": "Anderer Server?"
 }
