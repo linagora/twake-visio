@@ -16,33 +16,58 @@ const styles = StyleSheet.create({
   screen: { backgroundColor: tokens.color.appBackground, flex: 1 },
 });
 
-// ATTENTION : ce `catch` ne refuse presque rien SUR L'APPAREIL, et ses tests
-// le laissent croire. React Native installe son propre `URL`
-// (`polyfillGlobal('URL', …)`, `Libraries/Core/setUpXHR.js:35`), un jeu de
-// regex qui ne jette pas et dont le getter `origin`
-// (`/^(https?:\/\/[^/]+)/`, `Libraries/Blob/URL.js:147-150`) accepte les
-// espaces. Mesuré le 2026-08-05 en chargeant ce polyfill sous Jest :
-//
-//   new URL('https://mon serveur').origin  →  Node : lève
-//                                          →  RN   : 'https://mon serveur'
-//
-// C'est le MÊME défaut que celui corrigé dans `joinSheet.tsx` pour la rangée
-// de serveur du mode invité, qui repose désormais sur un prédicat explicite
-// plutôt que sur `URL` — voir son commentaire, et le bloc « sous l'URL de
-// l'APPAREIL » de `pasted.spec.ts`, qui porte la mesure complète.
-//
-// PRÉ-EXISTANT sur le chemin de CONNEXION, hors du périmètre du mode invité :
-// consigné plutôt que corrigé, pour que la prochaine personne qui touche cette
-// fonction sache que son `catch` ne la protège pas.
+// Un schéma en tête, quel qu'il soit. Capturé pour être COMPARÉ, pas retiré :
+// l'ancien `trimmed.startsWith('http')` laissait passer `httpsx://evil.example`,
+// dont `new URL(…).origin` rend la CHAÎNE « null » — pas la valeur — qui
+// partait ensuite comme adresse de serveur.
+const SCHEME_PREFIX = /^([a-z][a-z\d+\-.]*):\/\//i;
+
+// Ce qu'est un hôte, port compris. Même forme que `normalizeHostInput` de
+// `joinSheet.tsx`, et pour la même raison.
+const HOST_WITH_PORT = /^[a-z0-9.-]+(:\d+)?$/i;
+
+/**
+ * Valide l'adresse de serveur saisie à la main, et rend son origine.
+ *
+ * Un PRÉDICAT explicite, et surtout PAS `new URL()` dans un `try`/`catch`
+ * comme avant : **`URL` n'est pas le même objet sous Jest et sur l'appareil.**
+ * React Native installe le sien (`polyfillGlobal('URL', …)`,
+ * `Libraries/Core/setUpXHR.js:35`), un jeu de regex qui ne jette pas et dont le
+ * getter `origin` (`/^(https?:\/\/[^/]+)/`, `Libraries/Blob/URL.js:147-150`)
+ * ACCEPTE LES ESPACES. Mesuré le 2026-08-05 :
+ *
+ *   new URL('https://mon serveur').origin  →  Node : lève
+ *                                          →  RN   : 'https://mon serveur'
+ *
+ * Le `catch` ne refusait donc presque RIEN sur un téléphone : quelqu'un tapait
+ * « mon serveur », l'écran l'acceptait, et la connexion partait vers une
+ * adresse malformée. C'est le même défaut que celui corrigé dans
+ * `joinSheet.tsx` pour la rangée de serveur du mode invité.
+ *
+ * **`http` en clair est désormais REFUSÉ**, alors qu'il passait. Ce dépôt le
+ * refuse déjà pour un lien de réunion (`deepLinks.spec.ts:53`,
+ * `pasted.spec.ts:50`), et une connexion OIDC en clair est pire : elle porte
+ * des jetons. Aucun appelant n'en dépendait — vérifié le 2026-08-05, aucun
+ * `http://` dans `src/` ni `app/` hors de ces deux assertions de refus.
+ *
+ * Le PORT est conservé : quelqu'un qui héberge son instance sur `:8443` doit
+ * pouvoir la saisir.
+ */
 function normalizeServerUrl(input: string): string | null {
   const trimmed = input.trim();
-  if (trimmed.length === 0) return null;
-  const withScheme = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
-  try {
-    return new URL(withScheme).origin;
-  } catch {
-    return null;
-  }
+
+  const scheme = SCHEME_PREFIX.exec(trimmed);
+  if (scheme !== null && scheme[1]?.toLowerCase() !== 'https') return null;
+  const host = scheme === null ? trimmed : trimmed.slice(scheme[0].length);
+
+  if (!HOST_WITH_PORT.test(host)) return null;
+  // Un point en tête, en queue, ou deux à la suite passent la classe de
+  // caractères ci-dessus et ne forment pourtant aucun nom de domaine.
+  const name = host.split(':')[0] ?? '';
+  if (name.startsWith('.') || name.endsWith('.') || name.includes('..')) return null;
+
+  // Explicite : le polyfill de React Native ne normalise pas la casse.
+  return `https://${host.toLowerCase()}`;
 }
 
 // Une erreur d'instance dit que le serveur visé est le mauvais, pas que la
