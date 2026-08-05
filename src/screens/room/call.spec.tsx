@@ -10,6 +10,7 @@ import { tokens } from 'src/ui/tokens';
 import * as hand from 'src/api/hand';
 import * as participants from 'src/api/participants';
 import * as rooms from 'src/api/rooms';
+import * as pending from 'src/call/pendingAccess';
 import type { ApiResult } from 'src/api/types';
 import * as accounts from 'src/auth/accounts';
 import * as guest from 'src/auth/guest';
@@ -3647,5 +3648,41 @@ describe('la copie du lien', () => {
     await fireEvent.press(screen.getByTestId('call-header-copy'));
 
     await waitFor(() => expect(screen.getByText('call.linkCopied')).toBeOnTheScreen());
+  });
+});
+
+describe("le jeton mis de côté par la salle d'attente", () => {
+  /**
+   * Sur un salon non public, `fetchRoomAccess` ne rendra JAMAIS de jeton à un
+   * anonyme : meet n'inclut le bloc `livekit` que pour un salon public, un
+   * rôle, ou un compte authentifié sur un `trusted`. La séance doit donc
+   * partir du jeton que `request-entry` a délivré à l'admission, sans quoi la
+   * personne admise est renvoyée à la salle d'attente en boucle.
+   */
+  it("ouvre la séance SANS redemander l'accès", async () => {
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess');
+    jest.spyOn(pending, 'takeRoomAccess').mockReturnValue({
+      room: { id: null, slug: 'reunion', name: 'reunion', accessLevel: 'trusted' },
+      livekitUrl: 'wss://livekit.linagora.com',
+      token: 'jeton-admission',
+      isAdministrable: false,
+    });
+
+    await renderCall();
+
+    await waitFor(() => expect(screen.getByTestId('call-header')).toBeTruthy());
+    expect(fetchAccess).not.toHaveBeenCalled();
+  });
+
+  // La polarité fausse : sans jeton mis de côté, le chemin d'avant reste
+  // celui qu'on emprunte. C'est lui que suit toute entrée directe, sur un
+  // salon public comme depuis le pré-join.
+  it("redemande l'accès quand rien n'a été mis de côté", async () => {
+    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+    jest.spyOn(pending, 'takeRoomAccess').mockReturnValue(null);
+
+    await renderCall();
+
+    await waitFor(() => expect(fetchAccess).toHaveBeenCalled());
   });
 });

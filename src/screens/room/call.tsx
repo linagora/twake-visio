@@ -42,6 +42,7 @@ import type { ReactionKey } from 'src/call/reactions';
 import { createReactionStore } from 'src/call/reactionStore';
 import { type RecordingMessageKey } from 'src/call/recording';
 import { createRecordingStore } from 'src/call/recordingStore';
+import { takeRoomAccess } from 'src/call/pendingAccess';
 import type { CallState, RoomAccess } from 'src/call/types';
 import { useCallLayout } from 'src/call/useCallLayout';
 import { useWaitingParticipants } from 'src/rooms/useWaitingParticipants';
@@ -686,7 +687,26 @@ export function CallScreen(): React.ReactElement {
 
     let cancelled = false;
 
-    fetchRoomAccess(currentVisitor, slug)
+    // Le jeton mis de côté par la salle d'attente passe AVANT toute nouvelle
+    // demande.
+    //
+    // `request-entry` délivre le jeton AU MOMENT de l'admission, et c'est le
+    // seul que la personne obtiendra : sur un salon non public, meet n'inclut
+    // pas de bloc `livekit` pour un anonyme — `should_access_room` exige
+    // `is_public`, un rôle, ou un compte authentifié sur un `trusted`. Sans
+    // cette reprise, `fetchRoomAccess` rendait `{ kind: 'lobby' }`, l'écran
+    // renvoyait à la salle d'attente, et la personne admise y retournait sans
+    // fin. Un compte admis sur un `restricted` sans rôle tombait dans la même
+    // boucle, plus rarement.
+    //
+    // Consommé une fois : voir `pendingAccess.ts`, qui explique pourquoi un
+    // jeton laissé en place masquerait un vrai échec.
+    const stashed = takeRoomAccess(slug);
+
+    (stashed === null
+      ? fetchRoomAccess(currentVisitor, slug)
+      : Promise.resolve({ ok: true as const, value: stashed })
+    )
       .then(async (result) => {
         if (cancelled) return;
         if (!result.ok) {

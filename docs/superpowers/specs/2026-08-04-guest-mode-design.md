@@ -321,7 +321,25 @@ should_access_room = (
 Pour un anonyme sur un salon `trusted` ou `restricted`, les trois clauses sont
 fausses. **Le serveur rend donc 200 SANS bloc `livekit`** — jamais 401, jamais
 403. `fetchRoomAccess` traduit déjà cette absence en `{ kind: 'lobby' }`, et la
-salle d'attente prend le relais : **il n'y a rien de particulier à écrire.**
+salle d'attente prend le relais.
+
+> **CORRECTION du 2026-08-05.** Cette section concluait « il n'y a rien de
+> particulier à écrire ». **C'était faux**, et la revue de branche l'a montré :
+> l'entrée en salle d'attente marchait, mais pas la SORTIE. `lobby.tsx`
+> naviguait vers la séance en JETANT le jeton que `request-entry` venait de
+> rendre, et `call.tsx` redemandait l'accès — qui, par la règle citée
+> ci-dessus, ne porterait jamais de jeton pour un anonyme sur un salon non
+> public. La personne admise était donc renvoyée à la salle d'attente, sans
+> fin. Un compte admis sur un `restricted` sans rôle tombait dans la même
+> boucle.
+>
+> Corrigé par `src/call/pendingAccess.ts` : la salle d'attente met le jeton de
+> côté, en mémoire et pour une seule reprise, et la séance le consomme avant
+> toute nouvelle demande.
+>
+> La leçon est celle du raisonnement, pas du code : la règle serveur avait été
+> lue correctement, et la conclusion tirée ne portait que sur la MOITIÉ du
+> parcours qu'elle gouverne.
 
 Une conséquence à ne pas manquer : `retrieve` porte aussi un repli
 `ALLOW_UNREGISTERED_ROOMS` qui délivrerait un jeton pour un salon **inexistant**.

@@ -6,6 +6,7 @@ import { ActivityIndicator, Button, Text } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry } from 'src/api/rooms';
+import { stashRoomAccess } from 'src/call/pendingAccess';
 import type { ApiError } from 'src/api/types';
 import { endGuestSession } from 'src/auth/guest';
 import { getVisitor, visitorName } from 'src/auth/visitor';
@@ -104,6 +105,48 @@ export function LobbyScreen(): React.ReactElement {
           if (result.value.status === 'accepted') {
             stopped = true;
             clearInterval(timer);
+
+            // Le jeton que `request-entry` vient de rendre, MIS DE CÔTÉ pour la
+            // séance au lieu d'être jeté.
+            //
+            // Sans cela, `call.tsx` redemandait l'accès par `fetchRoomAccess`,
+            // et meet n'inclut le bloc `livekit` pour un anonyme que sur un
+            // salon `public` : son `should_access_room` exige `is_public`, un
+            // rôle, ou un compte authentifié sur un `trusted`. Le second appel
+            // ne rendait donc jamais de jeton, et la personne admise était
+            // renvoyée ICI. Une boucle dont rien ne sortait — et c'est le cas
+            // NORMAL d'un invité sur un salon non public. Un compte admis sur
+            // un `restricted` sans rôle tombait dans la même.
+            const { livekitUrl, token } = result.value;
+            if (livekitUrl !== null && token !== null) {
+              stashRoomAccess(slug, {
+                // Ce que la salle d'attente SAIT, et rien de plus.
+                //
+                // `id: null` — `request-entry` porte bien l'UUID du salon, mais
+                // `EntryOutcome` ne le remonte pas, et `call.tsx` fait déjà
+                // `room.id ?? room.slug` : `RoomViewSet.get_object()` tente
+                // l'UUID puis retombe sur le slug, les deux résolvent le même
+                // objet.
+                //
+                // `name: slug` — c'est le repli de `toRoom` quand le serveur
+                // n'envoie pas de nom, et cet écran n'a jamais eu le nom.
+                //
+                // `accessLevel: 'trusted'` — atteindre la salle d'attente
+                // signifie que le salon n'est PAS public ; entre `trusted` et
+                // `restricted` on ne peut pas trancher d'ici. Le seul
+                // consommateur est `hasLobby` (`call.tsx`), lui-même gardé par
+                // `canModerate`, faux ci-dessous.
+                //
+                // `isAdministrable: false` — qui peut administrer n'est jamais
+                // envoyé en salle d'attente : le serveur lui aurait donné son
+                // jeton dès `fetchRoomAccess`.
+                room: { id: null, slug, name: slug, accessLevel: 'trusted' },
+                livekitUrl,
+                token,
+                isAdministrable: false,
+              });
+            }
+
             router.replace(`/room/${slug}/call`);
             return;
           }
