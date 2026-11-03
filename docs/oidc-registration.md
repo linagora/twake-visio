@@ -32,9 +32,7 @@ n'expose pas encore. Jusque-là, `DEFAULT_CLIENT_ID` porte la valeur.
 Le portail LemonLDAP doit lister `twakevisio:` dans le `form-action` de sa CSP
 (Manager : Paramètres généraux → Paramètres avancés → Sécurité → Content
 Security Policy → Destinations de formulaire). Fait le 2026-11-03 sur
-`sso.linagora.com` :
-
-    form-action * teammail.mobile: cozy: twakevisio:
+`sso.linagora.com`.
 
 En CSP, `*` ne couvre que http, https, ws et wss. Chrome applique `form-action`
 à chaque redirection qui suit l'envoi d'un formulaire : sans cette entrée, la
