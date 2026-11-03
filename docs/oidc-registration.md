@@ -27,6 +27,27 @@ déploiement on-premise refuse d'enregistrer un client dédié.
 La cible reste `config.oidc.mobile_client_id`, que `suitenumerique/meet`
 n'expose pas encore. Jusque-là, `DEFAULT_CLIENT_ID` porte la valeur.
 
+## La CSP du portail
+
+Le portail LemonLDAP doit lister `twakevisio:` dans le `form-action` de sa CSP
+(Manager : Paramètres généraux → Paramètres avancés → Sécurité → Content
+Security Policy → Destinations de formulaire). Fait le 2026-11-03 sur
+`sso.linagora.com` :
+
+    form-action * teammail.mobile: cozy: twakevisio:
+
+En CSP, `*` ne couvre que http, https, ws et wss. Chrome applique `form-action`
+à chaque redirection qui suit l'envoi d'un formulaire : sans cette entrée, la
+chaîne POST du formulaire → `/oauth2/authorize` → `twakevisio://callback` est
+bloquée, et la personne reste sur une page blanche après son mot de passe. Les
+connexions suivantes passent, car la session SSO déjà ouverte évite le
+formulaire. LemonLDAP n'ajoute lui-même le schéma de la redirection qu'à la page
+qui rend le code, pas au formulaire de connexion.
+
+Vérifier :
+
+    curl -s -D - -o /dev/null https://<sso>/ | grep -io 'form-action[^;]*'
+
 ## Ne pas conclure de l'absence de `none` que c'est impossible
 
 Point de vigilance mesuré le 2026-07-30 sur
