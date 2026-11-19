@@ -666,3 +666,20 @@ The screen itself is a named export in `src/screens/`, mirroring the route path
 (`app/room/create.tsx` → `src/screens/room/create.tsx`), with its spec beside it.
 Colocation is preserved; the sweep never sees it. `_layout.tsx` and pure redirects like
 `index.tsx` are genuine routing and stay in `app/`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `linagora/twake-visio`, through `gh`. A spec lives in its issue
+during the work; the implementation PR versions its final text in
+`docs/superpowers/specs/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, each named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created when first
+needed. See `docs/agents/domain.md`.
