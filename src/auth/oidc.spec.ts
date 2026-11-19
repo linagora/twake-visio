@@ -18,35 +18,10 @@ describe('buildAuthorizeUrl', () => {
     expect(url.origin + url.pathname).toBe('https://sso.linagora.com/oauth2/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('client_id')).toBe('twake-visio');
-    // Dérivée de l'INSTANCE découverte, jamais écrite en dur : c'est ce qui
-    // permet à l'application publiée sur les stores de servir un client dont
-    // personne ne connaissait le domaine à la compilation.
-    //
-    // Et c'est une URL HTTPS, pas le schéma de l'application : Chrome ne
-    // dispatche pas d'intention pour une redirection en schéma personnalisé qui
-    // répond à un POST de formulaire, donc la première connexion — celle où
-    // l'on saisit son mot de passe — restait bloquée. La page servie par
-    // l'instance termine la chaîne du POST et rebondit ensuite vers le schéma.
-    expect(url.searchParams.get('redirect_uri')).toBe(
-      'https://meet.linagora.com/auth/mobile-callback',
-    );
+    expect(url.searchParams.get('redirect_uri')).toBe('twakevisio://callback');
 
     expect(url.searchParams.get('nonce')).toBe('n0nce');
     expect(url.searchParams.get('nonce')).not.toBe(url.searchParams.get('state'));
-  });
-
-  // La MÊME fonction, une AUTRE instance. Sans ce second cas, l'assertion
-  // ci-dessus passerait contre une URL écrite en dur — et c'est précisément ce
-  // qu'il ne faut pas, puisque l'application publiée doit servir des clients
-  // dont le domaine n'existait pas à la compilation.
-  it('dérive l’URL de retour de l’instance découverte, jamais d’une constante', () => {
-    const autre = { ...CONFIG, serverUrl: 'https://visio.une-autre-mairie.fr' };
-
-    const url = new URL(buildAuthorizeUrl(autre, PKCE, 'st', 'no'));
-
-    expect(url.searchParams.get('redirect_uri')).toBe(
-      'https://visio.une-autre-mairie.fr/auth/mobile-callback',
-    );
   });
 
   it('transmet login_hint quand il est fourni', () => {
@@ -98,6 +73,7 @@ describe('exchangeCode', () => {
     const body = String((spy.mock.calls[0]?.[1] as RequestInit).body);
     expect(body).toContain('code_verifier=');
     expect(body).not.toContain('client_secret');
+    expect(new URLSearchParams(body).get('redirect_uri')).toBe('twakevisio://callback');
   });
 
   it('renvoie une erreur typée sur refus du serveur', async () => {

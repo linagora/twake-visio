@@ -1,12 +1,4 @@
-import { OIDC_CALLBACK_PATH, REQUEST_TIMEOUT_MS } from 'src/constants';
-
-// L'URL de retour déclarée au SSO : la page de rebond de l'instance DÉCOUVERTE,
-// jamais une constante. C'est ce qui permet à une application publiée sur les
-// stores de servir un client dont le domaine n'existait pas à la compilation.
-// `serverUrl` arrive déjà normalisée sans barre finale (`discovery.ts:58`).
-export function redirectUriFor(config: InstanceConfig): string {
-  return `${config.serverUrl}${OIDC_CALLBACK_PATH}`;
-}
+import { OIDC_RETURN_URL, REQUEST_TIMEOUT_MS } from 'src/constants';
 import type { PkcePair } from 'src/auth/pkce';
 import type { InstanceConfig } from 'src/instance/types';
 
@@ -61,7 +53,7 @@ export function buildAuthorizeUrl(
   const url = new URL(`${config.issuer}/oauth2/authorize`);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', config.clientId);
-  url.searchParams.set('redirect_uri', redirectUriFor(config));
+  url.searchParams.set('redirect_uri', OIDC_RETURN_URL);
   // `offline_access` donne au jeton de rafraîchissement une vie INDÉPENDANTE
   // de la session du portail. Sans lui, mesuré le 2026-08-03 : la session OIDC
   // disparaît du magasin du SSO, le jeton meurt avec elle, et l'application
@@ -141,7 +133,7 @@ export async function exchangeCode(
     {
       grant_type: 'authorization_code',
       code,
-      redirect_uri: redirectUriFor(config),
+      redirect_uri: OIDC_RETURN_URL,
       code_verifier: verifier,
     },
     null,
