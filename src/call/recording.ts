@@ -172,6 +172,8 @@ export function recordingErrorMessage(
       return action === 'start' ? 'recording.errorUnavailable' : 'recording.errorNotActive';
     case 'server':
       return action === 'start' && error.status === 409 ? 'recording.errorBusy' : failed(action);
+    case 'gone':
+      return failed(action);
     case 'validation':
       return failed(action);
     case 'lobby':

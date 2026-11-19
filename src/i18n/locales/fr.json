@@ -118,6 +118,7 @@
   "error.notFound": "Introuvable sur le serveur",
   "error.badRequest": "Requête refusée par le serveur",
   "error.serverError": "Erreur du serveur",
+  "error.roomDeleted": "Cette réunion a été supprimée",
   "participants.actions": "Actions sur cette personne",
   "tabs.home": "Accueil",
   "tabs.history": "Historique",

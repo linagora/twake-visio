@@ -125,6 +125,7 @@ function toApiErrorMessage(error: ApiError): MessageKey {
     case 'validation':
       return 'error.badRequest';
     case 'server':
+    case 'gone':
       return 'error.serverError';
     case 'lobby':
       return 'lobby.approvalRequired';

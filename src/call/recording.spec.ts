@@ -244,7 +244,7 @@ describe('recordingErrorMessage', () => {
   const server = (status: number): ApiError => ({ kind: 'server', status });
 
   it('traduit le 409 du démarrage en « déjà en cours »', () => {
-    // `mapStatus` ne traite spécialement que 403 et 404 : le 409 arrive en
+    // Le lecteur de réponses partagé ne nomme pas le 409 : il arrive en
     // `{ kind: 'server', status: 409 }`, donc lisible.
     expect(recordingErrorMessage('start', server(409))).toBe('recording.errorBusy');
   });
@@ -260,6 +260,11 @@ describe('recordingErrorMessage', () => {
       'recording.errorUnavailable',
     );
     expect(recordingErrorMessage('stop', { kind: 'not-found' })).toBe('recording.errorNotActive');
+  });
+
+  it('traite la réunion supprimée comme un échec d’action', () => {
+    expect(recordingErrorMessage('start', { kind: 'gone' })).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', { kind: 'gone' })).toBe('recording.errorStopFailed');
   });
 
   it('dit le refus de permission dans les deux sens', () => {

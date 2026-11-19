@@ -52,6 +52,7 @@ async function readValidation(response: Response): Promise<ApiResult<never>> {
 function mapStatus(status: number): ApiResult<never> {
   if (status === 403) return { ok: false, error: { kind: 'forbidden' } };
   if (status === 404) return { ok: false, error: { kind: 'not-found' } };
+  if (status === 410) return { ok: false, error: { kind: 'gone' } };
   return { ok: false, error: { kind: 'server', status } };
 }
 

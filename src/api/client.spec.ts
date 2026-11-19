@@ -111,6 +111,19 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'forbidden' } });
   });
 
+  it('mappe 410 sur gone : la réunion a été supprimée', async () => {
+    // Corps relevé dans le fork Meet v1.39 (`RoomSoftDeleted`) : un salon
+    // supprimé n'est pas un salon inconnu, et ne doit pas se lire comme une panne.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () => new Response('{"detail":"This room has been deleted."}', { status: 410 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'gone' } });
+  });
+
   it('mappe une panne réseau sur network', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(async () => {

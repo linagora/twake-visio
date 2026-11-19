@@ -118,6 +118,7 @@
   "error.notFound": "Không tìm thấy trên máy chủ",
   "error.badRequest": "Máy chủ đã từ chối yêu cầu",
   "error.serverError": "Lỗi máy chủ",
+  "error.roomDeleted": "Cuộc họp này đã bị xóa",
   "participants.actions": "Hành động với người này",
   "tabs.home": "Trang chủ",
   "tabs.history": "Lịch sử",

@@ -47,6 +47,12 @@ describe('anonFetch', () => {
     });
   });
 
+  it('traduit un 410 en gone, comme le chemin authentifié', async () => {
+    mockFetch(new Response('{"detail":"This room has been deleted."}', { status: 410 }));
+
+    expect(await anonFetch('https://m', '/p')).toEqual({ ok: false, error: { kind: 'gone' } });
+  });
+
   it('traduit un 401 en unauthorized SANS rejouer la requête', async () => {
     const spy = mockFetch(new Response('{}', { status: 401 }));
 

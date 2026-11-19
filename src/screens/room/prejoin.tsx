@@ -113,6 +113,7 @@ type MessageKey =
   | 'error.unauthorized'
   | 'error.forbidden'
   | 'error.notFound'
+  | 'error.roomDeleted'
   | 'error.serverError';
 
 function toPrejoinMessage(error: ApiError): MessageKey {
@@ -123,6 +124,8 @@ function toPrejoinMessage(error: ApiError): MessageKey {
       return 'error.forbidden';
     case 'not-found':
       return 'error.notFound';
+    case 'gone':
+      return 'error.roomDeleted';
     case 'server':
       return 'error.serverError';
     default:

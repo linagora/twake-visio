@@ -118,6 +118,7 @@
   "error.notFound": "Auf dem Server nicht gefunden",
   "error.badRequest": "Der Server hat die Anfrage abgelehnt",
   "error.serverError": "Serverfehler",
+  "error.roomDeleted": "Diese Besprechung wurde gelöscht",
   "participants.actions": "Aktionen für diese Person",
   "tabs.home": "Start",
   "tabs.history": "Verlauf",

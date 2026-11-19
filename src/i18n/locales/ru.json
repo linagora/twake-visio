@@ -118,6 +118,7 @@
   "error.notFound": "Не найдено на сервере",
   "error.badRequest": "Сервер отклонил запрос",
   "error.serverError": "Ошибка сервера",
+  "error.roomDeleted": "Эта встреча была удалена",
   "participants.actions": "Действия с этим участником",
   "tabs.home": "Главная",
   "tabs.history": "История",

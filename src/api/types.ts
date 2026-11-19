@@ -6,6 +6,9 @@ export type ApiError =
   | { kind: 'unauthorized' }
   | { kind: 'forbidden' }
   | { kind: 'not-found' }
+  // Un 410 : la réunion a existé, puis a été supprimée, là où `not-found` dit
+  // qu'elle n'existe pas.
+  | { kind: 'gone' }
   | { kind: 'lobby'; participantId: string }
   // Un 400 de Django REST Framework porte ses refus champ par champ, et c'est
   // souvent la seule chose exploitable : « Room with this Slug already exists »
