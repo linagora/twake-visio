@@ -119,6 +119,7 @@
   "error.badRequest": "Сервер отклонил запрос",
   "error.serverError": "Ошибка сервера",
   "error.roomDeleted": "Эта встреча была удалена",
+  "error.serverTooOld": "Этот сервер Meet слишком старый для приложения",
   "participants.actions": "Действия с этим участником",
   "tabs.home": "Главная",
   "tabs.history": "История",

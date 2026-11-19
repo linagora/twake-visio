@@ -47,6 +47,17 @@ describe('anonFetch', () => {
     });
   });
 
+  it("traduit un 404 qui n'est pas du JSON en missing-route, comme le chemin authentifié", async () => {
+    mockFetch(
+      new Response('<!doctype html><title>Not Found</title><h1>Not Found</h1>', { status: 404 }),
+    );
+
+    expect(await anonFetch('https://m', '/p')).toEqual({
+      ok: false,
+      error: { kind: 'missing-route' },
+    });
+  });
+
   it('traduit un 410 en gone, comme le chemin authentifié', async () => {
     mockFetch(new Response('{"detail":"This room has been deleted."}', { status: 410 }));
 

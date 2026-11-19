@@ -121,6 +121,7 @@ function toApiErrorMessage(error: ApiError): MessageKey {
     case 'forbidden':
       return 'error.forbidden';
     case 'not-found':
+    case 'missing-route':
       return 'error.notFound';
     case 'validation':
       return 'error.badRequest';

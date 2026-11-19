@@ -124,6 +124,35 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'gone' } });
   });
 
+  it('mappe un 404 en JSON sur not-found : le salon est inconnu', async () => {
+    // C'est Django REST Framework qui répond : la route existe, le salon non.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () => new Response('{"detail":"No Room matches the given query."}', { status: 404 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'not-found' } });
+  });
+
+  it("mappe un 404 qui n'est pas du JSON sur missing-route : la route n'existe pas", async () => {
+    // Mesuré sur une instance Meet v1.24.0, qui n'a pas `join/` : la page 404
+    // de Django, en HTML. Le dire « introuvable » ferait croire que la réunion
+    // n'existe pas, alors que c'est la route qui manque.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () =>
+        new Response('<!doctype html><title>Not Found</title><h1>Not Found</h1>', {
+          status: 404,
+        }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'missing-route' } });
+  });
+
   it('mappe une panne réseau sur network', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(async () => {

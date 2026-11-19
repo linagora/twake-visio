@@ -1304,6 +1304,7 @@ describe('CallScreen, échec de modération', () => {
     ],
     ['server', { kind: 'server', status: 502 } as const, 'error.serverError'],
     ['gone', { kind: 'gone' } as const, 'error.serverError'],
+    ['missing-route', { kind: 'missing-route' } as const, 'error.notFound'],
   ])('rend la clé prévue pour %s, jamais le repli réseau', async (_name, error, expected) => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));

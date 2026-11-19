@@ -168,17 +168,17 @@ describe('PrejoinScreen', () => {
     expect(mockReplace).toHaveBeenCalledWith('/home');
   });
 
-  it.each([['gone', { kind: 'gone' } as const, 'error.roomDeleted']])(
-    'dit ce que signifie %s, jamais le repli réseau',
-    async (_name, error, expected) => {
-      jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({ ok: false, error });
+  it.each([
+    ['gone', { kind: 'gone' } as const, 'error.roomDeleted'],
+    ['missing-route', { kind: 'missing-route' } as const, 'error.serverTooOld'],
+  ])('dit ce que signifie %s, jamais le repli réseau', async (_name, error, expected) => {
+    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({ ok: false, error });
 
-      await render(prejoin());
+    await render(prejoin());
 
-      await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
-      expect(screen.getByTestId('prejoin-error')).toHaveTextContent(expected);
-    },
-  );
+    await waitFor(() => expect(screen.getByTestId('prejoin-error')).toBeTruthy());
+    expect(screen.getByTestId('prejoin-error')).toHaveTextContent(expected);
+  });
 
   it("porte l'état des périphériques dans l'URL de l'appel", async () => {
     jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);

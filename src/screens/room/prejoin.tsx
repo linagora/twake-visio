@@ -114,6 +114,7 @@ type MessageKey =
   | 'error.forbidden'
   | 'error.notFound'
   | 'error.roomDeleted'
+  | 'error.serverTooOld'
   | 'error.serverError';
 
 function toPrejoinMessage(error: ApiError): MessageKey {
@@ -126,6 +127,10 @@ function toPrejoinMessage(error: ApiError): MessageKey {
       return 'error.notFound';
     case 'gone':
       return 'error.roomDeleted';
+    // La route manque, pas la réunion : la dire « introuvable » enverrait
+    // chercher un lien qui est peut-être juste.
+    case 'missing-route':
+      return 'error.serverTooOld';
     case 'server':
       return 'error.serverError';
     default:

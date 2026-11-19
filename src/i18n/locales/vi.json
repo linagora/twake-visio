@@ -119,6 +119,7 @@
   "error.badRequest": "Máy chủ đã từ chối yêu cầu",
   "error.serverError": "Lỗi máy chủ",
   "error.roomDeleted": "Cuộc họp này đã bị xóa",
+  "error.serverTooOld": "Máy chủ Meet này quá cũ đối với ứng dụng",
   "participants.actions": "Hành động với người này",
   "tabs.home": "Trang chủ",
   "tabs.history": "Lịch sử",

@@ -262,6 +262,16 @@ describe('recordingErrorMessage', () => {
     expect(recordingErrorMessage('stop', { kind: 'not-found' })).toBe('recording.errorNotActive');
   });
 
+  it('rend le message du 404 quand la réponse n’est pas du JSON', () => {
+    // `missing-route` est un 404 comme `not-found`, et en prend les deux messages.
+    expect(recordingErrorMessage('start', { kind: 'missing-route' })).toBe(
+      'recording.errorUnavailable',
+    );
+    expect(recordingErrorMessage('stop', { kind: 'missing-route' })).toBe(
+      'recording.errorNotActive',
+    );
+  });
+
   it('traite la réunion supprimée comme un échec d’action', () => {
     expect(recordingErrorMessage('start', { kind: 'gone' })).toBe('recording.errorStartFailed');
     expect(recordingErrorMessage('stop', { kind: 'gone' })).toBe('recording.errorStopFailed');

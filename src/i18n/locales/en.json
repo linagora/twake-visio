@@ -119,6 +119,7 @@
   "error.badRequest": "The server rejected the request",
   "error.serverError": "Server error",
   "error.roomDeleted": "This meeting has been deleted",
+  "error.serverTooOld": "This Meet server is too old for the app",
   "participants.actions": "Actions for this participant",
   "tabs.home": "Home",
   "tabs.history": "History",

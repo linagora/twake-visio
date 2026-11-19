@@ -119,6 +119,7 @@
   "error.badRequest": "El servidor rechazó la solicitud",
   "error.serverError": "Error del servidor",
   "error.roomDeleted": "Esta reunión ha sido eliminada",
+  "error.serverTooOld": "Este servidor Meet es demasiado antiguo para la aplicación",
   "participants.actions": "Acciones para este participante",
   "tabs.home": "Inicio",
   "tabs.history": "Historial",

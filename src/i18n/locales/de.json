@@ -119,6 +119,7 @@
   "error.badRequest": "Der Server hat die Anfrage abgelehnt",
   "error.serverError": "Serverfehler",
   "error.roomDeleted": "Diese Besprechung wurde gelöscht",
+  "error.serverTooOld": "Dieser Meet-Server ist zu alt für die App",
   "participants.actions": "Aktionen für diese Person",
   "tabs.home": "Start",
   "tabs.history": "Verlauf",

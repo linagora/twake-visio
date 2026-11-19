@@ -49,15 +49,29 @@ async function readValidation(response: Response): Promise<ApiResult<never>> {
   return { ok: false, error: { kind: 'validation', fields } };
 }
 
+// Un 404 se lit à son corps, parce que le statut seul confond deux pannes sans
+// rapport. Quand la route existe et que l'objet manque, Django REST Framework
+// répond en JSON. Quand la route n'existe pas, la réponse est la page HTML de
+// Django : mesuré sur une route inventée (voir `src/api/participants.ts`), et
+// sur `join/` d'une instance Meet v1.24.0, qui ne l'a pas. Les confondre ferait
+// chercher une réunion qui existe peut-être très bien.
+async function readNotFound(response: Response): Promise<ApiResult<never>> {
+  try {
+    await response.json();
+  } catch {
+    return { ok: false, error: { kind: 'missing-route' } };
+  }
+  return { ok: false, error: { kind: 'not-found' } };
+}
+
 function mapStatus(status: number): ApiResult<never> {
   if (status === 403) return { ok: false, error: { kind: 'forbidden' } };
-  if (status === 404) return { ok: false, error: { kind: 'not-found' } };
   if (status === 410) return { ok: false, error: { kind: 'gone' } };
   return { ok: false, error: { kind: 'server', status } };
 }
 
 // La lecture de la réponse, partagée par les TROIS appelants : même mappage de
-// statut, même distinction entre un 400 de validation et le reste.
+// statut, même lecture du corps d'un 400 et d'un 404.
 //
 // Exportée pour `src/api/anon.ts`, qui n'a ni porteur ni rafraîchissement mais
 // lit exactement les mêmes réponses. Deux lectures divergentes feraient dire à
@@ -65,6 +79,7 @@ function mapStatus(status: number): ApiResult<never> {
 // même corps de réponse.
 export async function readResponse<T>(response: Response): Promise<ApiResult<T>> {
   if (response.status === 400) return await readValidation(response);
+  if (response.status === 404) return await readNotFound(response);
   if (!response.ok) return mapStatus(response.status);
 
   try {
