@@ -12,7 +12,7 @@ import { computeEntryQuery } from 'src/call/entryChoices';
 import { stashRoomAccess } from 'src/call/pendingAccess';
 import type { ApiError, ApiResult } from 'src/api/types';
 import { endGuestSession } from 'src/auth/guest';
-import { getVisitor, visitorName, visitorServerUrl } from 'src/auth/visitor';
+import { getVisitor, visitorName, visitorServerUrl, type Visitor } from 'src/auth/visitor';
 import { tokens } from 'src/ui/tokens';
 
 // « Personne ne peut ouvrir » est un état du salon, pas une panne : c'est la
@@ -39,6 +39,13 @@ type FailureMessage = 'error.network' | 'error.unauthorized' | 'error.badRequest
 // qu'une seconde de marge à une demande lente.
 const ADMISSION_POLL_MS = 3000;
 
+// Le repli du client web, à l'identique (`Lobby.tsx` :
+// `username: displayName || 'anonymous'`) : c'est le nom que les modérateurs
+// liront quand la personne n'en a aucun. Sans lui, meet refuserait la demande :
+// son `RequestEntrySerializer` exige un nom non vide, et le rogne avant d'en
+// juger, si bien qu'un nom fait d'espaces est vide pour lui.
+const ANONYMOUS = 'anonymous';
+
 const styles = StyleSheet.create({
   root: {
     // Un fond EXPLICITE, et non l'absence de fond qui laissait voir la vue
@@ -59,6 +66,10 @@ const styles = StyleSheet.create({
   linkAction: { padding: 4 },
   room: { color: tokens.color.textPrimary, fontFamily: tokens.font.extraBold, fontSize: 16 },
 });
+
+function computeAnnouncedName(visitor: Visitor): string {
+  return visitorName(visitor).trim() || ANONYMOUS;
+}
 
 // Un 400, que le lecteur partagé rend `validation` quand le corps suit la
 // convention de Django REST Framework, et `server` sinon (`readValidation`).
@@ -101,7 +112,7 @@ export function LobbyScreen(): React.ReactElement {
   useEffect(() => {
     const currentVisitor = getVisitor();
     if (currentVisitor === null) return;
-    const username = visitorName(currentVisitor);
+    const username = computeAnnouncedName(currentVisitor);
 
     // En mémoire, pour la vie de cet écran, et nulle part ailleurs : meet oublie
     // la personne six secondes après sa dernière demande, si bien qu'un

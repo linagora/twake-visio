@@ -761,6 +761,49 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 });
 
+describe('LobbyScreen, le nom annoncé', () => {
+  it('rogne le nom saisi par un invité', async () => {
+    jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue({ ...GUEST, displayName: '  Camille  ' });
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() =>
+      expect(entry).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'guest' }),
+        'reunion',
+        'Camille',
+        null,
+      ),
+    );
+  });
+
+  it.each(['', '   '])('annonce « anonymous » pour un compte au nom vide (%j)', async (name) => {
+    jest
+      .spyOn(accounts, 'getActiveAccount')
+      .mockReturnValue({ ...ACCOUNT, displayName: name } as never);
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'waiting', livekitUrl: null, token: null },
+    });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() =>
+      expect(entry).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'account' }),
+        'reunion',
+        'anonymous',
+        null,
+      ),
+    );
+  });
+});
+
 // `app/_layout.tsx` masque l'en-tête du Stack, et on arrive ici par un
 // `replace` depuis le pré-join : sans commande à l'écran, aucun geste ne sort
 // du salon d'attente. Trois de ces cinq états sont TERMINAUX — refusé, aucun
