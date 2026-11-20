@@ -14,6 +14,9 @@ type RawRoom = {
   access_level: AccessLevel;
   livekit?: { url: string; room: string; token: string };
   is_administrable?: boolean;
+  // Seule sa PRÉSENCE compte : le sérialiseur ne la pose que pour un
+  // administrateur ou un propriétaire du salon.
+  accesses?: unknown;
 };
 
 function toRoom(raw: RawRoom): Room {
@@ -35,6 +38,61 @@ async function visitorFetch<T>(
 ): Promise<ApiResult<T>> {
   if (visitor.kind === 'account') return await authedFetch<T>(visitor.account, path, init);
   return await anonFetch<T>(visitorServerUrl(visitor), path, init);
+}
+
+// L'existence du salon et son nom, pour le pré-join. Rien de plus : cette
+// lecture ne délivre aucun jeton, c'est `joinRoom` qui fait entrer.
+export async function fetchRoom(visitor: Visitor, slug: string): Promise<ApiResult<Room>> {
+  const result = await visitorFetch<RawRoom>(
+    visitor,
+    `/api/v1.0/rooms/${encodeURIComponent(slug)}/`,
+  );
+  if (!result.ok) return result;
+  return { ok: true, value: toRoom(result.value) };
+}
+
+// Les deux issues NORMALES d'une demande d'entrée. La salle d'attente n'est pas
+// un échec : c'est ce que le serveur répond à qui ne peut pas entrer d'emblée.
+export type JoinOutcome =
+  { readonly kind: 'admitted'; readonly access: RoomAccess } | { readonly kind: 'lobby' };
+
+// Le nom ne part QUE pour un invité. Avec un compte, meet affiche celui du
+// compte, et un nom posté le remplacerait là où l'instance autorise à le changer
+// (`AUTHENTICATED_PARTICIPANTS_CAN_EDIT_DISPLAY_NAME`).
+export async function joinRoom(
+  visitor: Visitor,
+  slug: string,
+  username: string,
+): Promise<ApiResult<JoinOutcome>> {
+  const body = visitor.kind === 'guest' ? { username: username.trim() } : {};
+  const result = await visitorFetch<RawRoom>(
+    visitor,
+    `/api/v1.0/rooms/${encodeURIComponent(slug)}/join/`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!result.ok) return result;
+
+  // Le serveur n'inclut `livekit` que pour qui peut entrer sans passer par la
+  // salle d'attente.
+  const livekit = result.value.livekit;
+  if (livekit === undefined) return { ok: true, value: { kind: 'lobby' } };
+
+  return {
+    ok: true,
+    value: {
+      kind: 'admitted',
+      access: {
+        room: toRoom(result.value),
+        livekitUrl: livekit.url,
+        token: livekit.token,
+        isAdministrable: Array.isArray(result.value.accesses),
+      },
+    },
+  };
 }
 
 export async function fetchRoomAccess(

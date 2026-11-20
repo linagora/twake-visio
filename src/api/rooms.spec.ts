@@ -1,8 +1,19 @@
-import { createRoom, fetchMyRooms, fetchRoomAccess, requestEntry } from 'src/api/rooms';
+import {
+  createRoom,
+  fetchMyRooms,
+  fetchRoom,
+  fetchRoomAccess,
+  joinRoom,
+  requestEntry,
+  type JoinOutcome,
+} from 'src/api/rooms';
 import * as anon from 'src/api/anon';
 import * as client from 'src/api/client';
+import type { ApiError, ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
+import * as session from 'src/auth/session';
 import type { Visitor } from 'src/auth/visitor';
+import type { RoomAccess } from 'src/call/types';
 
 const ACCOUNT = {
   id: 'https://sso.linagora.com|u-1',
@@ -26,6 +37,207 @@ const AS_GUEST: Visitor = {
 
 beforeEach(() => {
   jest.restoreAllMocks();
+});
+
+// La couture RÉSEAU : `fetch` doublé, et lui seul. Ces tests observent la
+// requête telle qu'elle part — adresse, méthode, en-têtes, corps —, pas
+// l'argument passé à `authedFetch` ou `anonFetch` : un branchement compte /
+// invité inversé passerait inaperçu à ce niveau-là.
+function serve(body: unknown): jest.Mock<Promise<Response>, Parameters<typeof fetch>> {
+  const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+    async () => new Response(JSON.stringify(body), { status: 200 }),
+  );
+  globalThis.fetch = spy as unknown as typeof fetch;
+  return spy;
+}
+
+function sent(spy: jest.Mock<Promise<Response>, Parameters<typeof fetch>>): {
+  url: string;
+  init: RequestInit;
+  headers: Record<string, string>;
+} {
+  const call = spy.mock.calls[0];
+  if (call === undefined) throw new Error('aucune requête partie');
+  const init = call[1] ?? {};
+  return { url: String(call[0]), init, headers: init.headers as Record<string, string> };
+}
+
+function admittedAccess(result: ApiResult<JoinOutcome>): RoomAccess {
+  if (!result.ok || result.value.kind !== 'admitted') throw new Error('admission attendue');
+  return result.value.access;
+}
+
+// Le salon tel que `join/` le rend quand la personne doit attendre : le
+// sérialiseur de détail, sans `livekit` et sans `accesses`.
+const WAITING = {
+  id: 'r-1',
+  name: 'Réunion',
+  slug: 'abc-defg-hij',
+  configuration: {},
+  access_level: 'trusted',
+};
+
+const JOINED = {
+  ...WAITING,
+  livekit: { url: 'wss://livekit.acme.com', room: 'r-1', token: 'lk-token' },
+};
+
+// Les échecs que le lecteur partagé sait nommer, tels qu'ils arrivent par le
+// réseau. `joinRoom` et `fetchRoom` les rendent TELS QUELS : sans le retour
+// anticipé sur leur premier échec, la réponse serait lue comme un salon,
+// l'appel jetterait, et le pré-join dirait « réseau » pour un salon supprimé.
+const FAILURES: readonly (readonly [string, () => Promise<Response>, ApiError])[] = [
+  [
+    'un 404 en JSON',
+    async () => new Response('{"detail":"No Room matches the given query."}', { status: 404 }),
+    { kind: 'not-found' },
+  ],
+  [
+    "un 404 qui n'est pas du JSON",
+    async () => new Response('<h1>Not Found</h1>', { status: 404 }),
+    { kind: 'missing-route' },
+  ],
+  [
+    'un 410',
+    async () => new Response('{"detail":"This room has been deleted."}', { status: 410 }),
+    { kind: 'gone' },
+  ],
+  ['un 5xx', async () => new Response('{}', { status: 503 }), { kind: 'server', status: 503 }],
+  [
+    'un rejet réseau',
+    async () => {
+      throw new Error('offline');
+    },
+    { kind: 'network' },
+  ],
+];
+
+function respondWith(respond: () => Promise<Response>): void {
+  globalThis.fetch = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+    respond,
+  ) as unknown as typeof fetch;
+}
+
+describe('joinRoom', () => {
+  // Le nom SAISI, et non celui que porte le visiteur : les deux diffèrent ici
+  // pour que l'assertion ne puisse venir que du premier.
+  it('poste le nom saisi, rogné, sans aucune identité, pour un invité', async () => {
+    const spy = serve(JOINED);
+
+    await joinRoom(AS_GUEST, 'abc-defg-hij', '  Camille Martin  ');
+
+    const { url, init, headers } = sent(spy);
+    expect(url).toBe('https://meet.acme.com/api/v1.0/rooms/abc-defg-hij/join/');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'Camille Martin' });
+    // Sans lui, `fetch` étiquette le corps `text/plain` et Django REST
+    // Framework le refuse en 415 : le nom n'arriverait jamais.
+    expect(headers['content-type']).toBe('application/json');
+    expect(headers.authorization).toBeUndefined();
+  });
+
+  it('ne poste aucun nom avec un compte : le serveur le tire du compte', async () => {
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    const spy = serve(JOINED);
+
+    await joinRoom(AS_ACCOUNT, 'abc-defg-hij', 'Ada');
+
+    const { url, init, headers } = sent(spy);
+    expect(url).toBe('https://meet.linagora.com/api/v1.0/rooms/abc-defg-hij/join/');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({});
+    expect(headers.authorization).toBe('Bearer at');
+  });
+
+  it("rend « admis » et l'accès quand la réponse porte livekit", async () => {
+    serve(JOINED);
+
+    const result = await joinRoom(AS_GUEST, 'abc-defg-hij', 'Camille');
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        kind: 'admitted',
+        access: {
+          room: { id: 'r-1', slug: 'abc-defg-hij', name: 'Réunion', accessLevel: 'trusted' },
+          livekitUrl: 'wss://livekit.acme.com',
+          token: 'lk-token',
+          isAdministrable: false,
+        },
+      },
+    });
+  });
+
+  it("rend « salle d'attente » quand la réponse n'a pas livekit", async () => {
+    serve(WAITING);
+
+    const result = await joinRoom(AS_GUEST, 'abc-defg-hij', 'Camille');
+
+    expect(result).toEqual({ ok: true, value: { kind: 'lobby' } });
+  });
+
+  // Le droit de modérer vaut la PRÉSENCE de `accesses`, que le sérialiseur ne
+  // pose que pour un administrateur ou un propriétaire. Les deux tests se
+  // croisent : chacun porte le signal que l'autre n'a pas, pour qu'une lecture
+  // par n'importe quel autre champ fasse rougir l'un des deux.
+  it('rend le droit de modérer quand la réponse porte accesses', async () => {
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    serve({ ...JOINED, accesses: [{ id: 'a-1', role: 'owner' }] });
+
+    const result = await joinRoom(AS_ACCOUNT, 'abc-defg-hij', '');
+
+    expect(admittedAccess(result).isAdministrable).toBe(true);
+  });
+
+  it("ne le rend pas sans accesses, même quand un autre champ l'affirme", async () => {
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    serve({ ...JOINED, is_administrable: true });
+
+    const result = await joinRoom(AS_ACCOUNT, 'abc-defg-hij', '');
+
+    expect(admittedAccess(result).isAdministrable).toBe(false);
+  });
+
+  it.each(FAILURES)('rend %s tel quel', async (_label, respond, error) => {
+    respondWith(respond);
+
+    expect(await joinRoom(AS_GUEST, 'abc-defg-hij', 'Camille')).toEqual({ ok: false, error });
+  });
+});
+
+// La lecture du pré-join : l'existence du salon et son nom, rien d'autre. Elle
+// ne porte plus aucun nom dans l'adresse — c'est `joinRoom` qui le poste.
+describe('fetchRoom', () => {
+  it("lit le salon sans nom dans l'adresse, pour un invité", async () => {
+    const spy = serve(WAITING);
+
+    const result = await fetchRoom(AS_GUEST, 'abc-defg-hij');
+
+    const { url, headers } = sent(spy);
+    expect(url).toBe('https://meet.acme.com/api/v1.0/rooms/abc-defg-hij/');
+    expect(headers.authorization).toBeUndefined();
+    expect(result).toEqual({
+      ok: true,
+      value: { id: 'r-1', slug: 'abc-defg-hij', name: 'Réunion', accessLevel: 'trusted' },
+    });
+  });
+
+  it('lit le salon par le chemin authentifié avec un compte', async () => {
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    const spy = serve(WAITING);
+
+    await fetchRoom(AS_ACCOUNT, 'abc-defg-hij');
+
+    const { url, headers } = sent(spy);
+    expect(url).toBe('https://meet.linagora.com/api/v1.0/rooms/abc-defg-hij/');
+    expect(headers.authorization).toBe('Bearer at');
+  });
+
+  it.each(FAILURES)('rend %s tel quel', async (_label, respond, error) => {
+    respondWith(respond);
+
+    expect(await fetchRoom(AS_GUEST, 'abc-defg-hij')).toEqual({ ok: false, error });
+  });
 });
 
 describe('fetchRoomAccess', () => {
