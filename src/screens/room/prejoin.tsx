@@ -12,6 +12,7 @@ import { fetchRoom, joinRoom, type JoinOutcome } from 'src/api/rooms';
 import type { ApiError, ApiResult } from 'src/api/types';
 import { endGuestSession, rememberGuestName } from 'src/auth/guest';
 import { getVisitor, visitorName } from 'src/auth/visitor';
+import { computeEntryQuery } from 'src/call/entryChoices';
 import { stashRoomAccess } from 'src/call/pendingAccess';
 import type { Room } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
@@ -279,8 +280,7 @@ export function PrejoinScreen(): React.ReactElement {
     if (visitor === null || room === null || slug === undefined) return;
     joiningRef.current = true;
     setJoinFailure(null);
-    const camera = cameraOff ? 0 : 1;
-    const mic = micOff ? 0 : 1;
+    const query = computeEntryQuery({ camera: cameraOff ? '0' : '1', mic: micOff ? '0' : '1' });
     // Le journal de l'onglet Historique s'écrit ICI et non à l'entrée en
     // séance : `call.tsx` est disputé par quatorze branches, et rejoindre est
     // le dernier geste dont ce lot est certain. On enregistre l'entrée seule —
@@ -319,13 +319,13 @@ export function PrejoinScreen(): React.ReactElement {
       return;
     }
     if (result.value.kind === 'lobby') {
-      router.replace(`/room/${slug}/lobby?camera=${camera}&mic=${mic}`);
+      router.replace(`/room/${slug}/lobby${query}`);
       return;
     }
     // La séance ne demande rien au serveur : ce jeton est le seul qu'elle
     // aura, et elle le prend dans ce magasin, une seule fois.
     stashRoomAccess(slug, result.value.access);
-    router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
+    router.replace(`/room/${slug}/call${query}`);
   };
 
   // Les DEUX sorties de cet écran — le chevron de l'en-tête et le bouton de
