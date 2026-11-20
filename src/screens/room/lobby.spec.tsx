@@ -69,6 +69,7 @@ describe('LobbyScreen', () => {
       { kind: 'account', account: ACCOUNT },
       'reunion',
       'Ada',
+      null,
     );
   });
 
@@ -582,6 +583,7 @@ describe("la salle d'attente en invité", () => {
         expect.objectContaining({ kind: 'guest' }),
         'reunion',
         'Camille',
+        null,
       ),
     );
   });

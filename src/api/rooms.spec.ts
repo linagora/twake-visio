@@ -6,7 +6,6 @@ import {
   requestEntry,
   type JoinOutcome,
 } from 'src/api/rooms';
-import * as anon from 'src/api/anon';
 import * as client from 'src/api/client';
 import type { ApiError, ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
@@ -376,7 +375,7 @@ describe('requestEntry', () => {
       },
     });
 
-    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada', null);
 
     expect(result).toEqual({
       ok: true,
@@ -397,7 +396,7 @@ describe('requestEntry', () => {
       value: { id: 'p-1', status: 'denied', username: 'Ada' },
     });
 
-    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada', null);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -419,7 +418,7 @@ describe('requestEntry', () => {
       value: { id: 'p-1', status: 'quelque-chose-de-neuf', username: 'Ada' },
     });
 
-    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada');
+    const result = await requestEntry(AS_ACCOUNT, 'reunion', 'Ada', null);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -427,16 +426,63 @@ describe('requestEntry', () => {
   });
 });
 
-describe('requestEntry, en invité', () => {
-  it('poste le nom par anonFetch', async () => {
-    const anonSpy = jest.spyOn(anon, 'anonFetch').mockResolvedValue({
-      ok: true,
-      value: { id: 'p-1', status: 'accepted' },
+// La couture réseau, comme pour `joinRoom` : la demande telle qu'elle part.
+describe('requestEntry, par le réseau', () => {
+  it("renvoie l'identifiant signé qu'on lui donne, et rend celui de la réponse", async () => {
+    const spy = serve({ id: 'signé-2', status: 'waiting', username: 'Camille' });
+
+    const result = await requestEntry(AS_GUEST, 'abc-defg-hij', 'Camille', 'signé-1');
+
+    const { url, init, headers } = sent(spy);
+    expect(url).toBe('https://meet.acme.com/api/v1.0/rooms/abc-defg-hij/request-entry/');
+    expect(init.method).toBe('POST');
+    expect(headers.authorization).toBeUndefined();
+    expect(JSON.parse(String(init.body))).toEqual({
+      username: 'Camille',
+      participant_id: 'signé-1',
     });
+    // Deux identifiants distincts : avec un seul, rendre celui qu'on a envoyé
+    // au lieu de celui que meet a rendu passerait inaperçu.
+    expect(result).toEqual({
+      ok: true,
+      value: { participantId: 'signé-2', status: 'waiting', livekitUrl: null, token: null },
+    });
+  });
 
-    await requestEntry(AS_GUEST, 'abc', 'Camille Dupont');
+  it("n'envoie pas la clé quand l'écran n'a encore aucun identifiant", async () => {
+    const spy = serve({ id: 'signé-1', status: 'waiting' });
 
-    const init = anonSpy.mock.calls[0]?.[2] as RequestInit;
-    expect(JSON.parse(String(init.body))).toEqual({ username: 'Camille Dupont' });
+    await requestEntry(AS_GUEST, 'abc-defg-hij', 'Camille', null);
+
+    // Ni `null` ni chaîne vide : la clé est absente, comme dans le
+    // `requestEntry.ts` du client web.
+    expect(JSON.parse(String(sent(spy).init.body))).toEqual({ username: 'Camille' });
+  });
+
+  it("rend tel quel le 400 d'un identifiant que meet ne reconnaît pas", async () => {
+    // La réponse de `validate_participant_id` quand la signature ne tient pas :
+    // c'est à cette forme que la salle d'attente reconnaît qu'il faut abandonner
+    // l'identifiant.
+    respondWith(
+      async () =>
+        new Response('{"participant_id":["Invalid participant credential."]}', { status: 400 }),
+    );
+
+    expect(await requestEntry(AS_GUEST, 'abc-defg-hij', 'Camille', 'falsifié')).toEqual({
+      ok: false,
+      error: {
+        kind: 'validation',
+        fields: { participant_id: ['Invalid participant credential.'] },
+      },
+    });
+  });
+
+  it.each(FAILURES)('rend %s tel quel', async (_label, respond, error) => {
+    respondWith(respond);
+
+    expect(await requestEntry(AS_GUEST, 'abc-defg-hij', 'Camille', null)).toEqual({
+      ok: false,
+      error,
+    });
   });
 });

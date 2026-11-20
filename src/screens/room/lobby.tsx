@@ -80,7 +80,7 @@ export function LobbyScreen(): React.ReactElement {
     const currentVisitor = getVisitor();
     if (currentVisitor === null) return;
 
-    requestEntry(currentVisitor, slug, visitorName(currentVisitor))
+    requestEntry(currentVisitor, slug, visitorName(currentVisitor), null)
       .then((result) =>
         setState(result.ok ? { kind: 'waiting' } : toFailedOrNoModerator(result.error)),
       )
@@ -99,7 +99,7 @@ export function LobbyScreen(): React.ReactElement {
 
     let stopped = false;
     const timer = setInterval(() => {
-      void requestEntry(currentVisitor, slug, visitorName(currentVisitor))
+      void requestEntry(currentVisitor, slug, visitorName(currentVisitor), null)
         .then((result) => {
           if (stopped) return;
           if (!result.ok) {

@@ -219,10 +219,17 @@ function toEntryStatus(raw: string | undefined): EntryStatus {
 // la file : meet n'y regarde que le niveau d'accès, l'authentification et le
 // rôle (`can_bypass_lobby`), si bien qu'une personne admise comme une personne
 // refusée s'y verrait toujours renvoyer à la salle d'attente.
+//
+// `participantId` est l'identifiant SIGNÉ que la réponse précédente portait dans
+// `id`. C'est par lui que meet retrouve la personne dans sa file
+// (`LobbyService.request_entry`) ; sans lui, chaque demande inscrit une nouvelle
+// personne et prévient les modérateurs. Comme le client web, la clé n'est pas
+// envoyée du tout tant que l'écran n'en a reçu aucun.
 export async function requestEntry(
   visitor: Visitor,
   slug: string,
   username: string,
+  participantId: string | null,
 ): Promise<ApiResult<EntryOutcome>> {
   const result = await visitorFetch<RawEntry>(
     visitor,
@@ -230,7 +237,9 @@ export async function requestEntry(
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify(
+        participantId === null ? { username } : { username, participant_id: participantId },
+      ),
     },
   );
   if (!result.ok) return result;
