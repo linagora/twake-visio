@@ -177,7 +177,5 @@ export function recordingErrorMessage(
       return failed(action);
     case 'validation':
       return failed(action);
-    case 'lobby':
-      return failed(action);
   }
 }

@@ -293,14 +293,9 @@ describe('recordingErrorMessage', () => {
     expect(recordingErrorMessage('start', server(400))).toBe('recording.errorStartFailed');
   });
 
-  it('traite validation et lobby comme un échec d’action', () => {
-    // `lobby` n'est jamais produit par `authedFetch` — seul `fetchRoomAccess`
-    // le fabrique. Il est traité parce que l'union doit l'être exhaustivement.
-    expect(
-      recordingErrorMessage('start', { kind: 'validation', fields: { mode: ['invalide'] } }),
-    ).toBe('recording.errorStartFailed');
-    expect(recordingErrorMessage('stop', { kind: 'lobby', participantId: 'p-1' })).toBe(
-      'recording.errorStopFailed',
-    );
+  it('traite une validation comme un échec d’action, dans les deux sens', () => {
+    const validation = { kind: 'validation', fields: { mode: ['invalide'] } } as const;
+    expect(recordingErrorMessage('start', validation)).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', validation)).toBe('recording.errorStopFailed');
   });
 });

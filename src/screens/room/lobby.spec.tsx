@@ -214,16 +214,10 @@ describe("LobbyScreen, chemin d'admission", () => {
   });
 
   /**
-   * LE défaut que ce lot corrige, et il rendait le mode invité inutilisable
-   * sur tout salon non public.
-   *
-   * `request-entry` rend le jeton LiveKit AU MOMENT de l'admission. Cet écran
-   * le jetait et naviguait ; `call.tsx` redemandait l'accès par
-   * `fetchRoomAccess`. Or meet n'inclut le bloc `livekit` pour un anonyme que
-   * sur un salon `public` — son `should_access_room` exige `is_public`, un
-   * rôle, ou un compte authentifié sur un `trusted`. Le second appel ne
-   * rendait donc jamais de jeton : la personne était admise, puis renvoyée à
-   * la salle d'attente. Une boucle dont rien ne sortait.
+   * `request-entry` rend le jeton LiveKit AU MOMENT de l'admission, et c'est
+   * le seul que la personne obtiendra : la séance ne demande pas d'accès, et
+   * `join/` ne tient aucun compte d'une admission. Jeté ici, il renverrait la
+   * personne admise au pré-join, puis à cette salle, en boucle.
    */
   it("MET DE CÔTÉ le jeton de l'admission avant de naviguer", async () => {
     const stash = jest.spyOn(pending, 'stashRoomAccess');
@@ -261,8 +255,8 @@ describe("LobbyScreen, chemin d'admission", () => {
     await tick();
 
     expect(stash).not.toHaveBeenCalled();
-    // Mais on navigue quand même : `call.tsx` retombera sur `fetchRoomAccess`,
-    // qui est le chemin d'avant et reste juste pour un salon public.
+    // Mais on navigue quand même : sans accès mis de côté, la séance renvoie
+    // au pré-join, qui sait redemander l'entrée.
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 

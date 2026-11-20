@@ -116,16 +116,11 @@ export function LobbyScreen(): React.ReactElement {
             clearInterval(timer);
 
             // Le jeton que `request-entry` vient de rendre, MIS DE CÔTÉ pour la
-            // séance au lieu d'être jeté.
-            //
-            // Sans cela, `call.tsx` redemandait l'accès par `fetchRoomAccess`,
-            // et meet n'inclut le bloc `livekit` pour un anonyme que sur un
-            // salon `public` : son `should_access_room` exige `is_public`, un
-            // rôle, ou un compte authentifié sur un `trusted`. Le second appel
-            // ne rendait donc jamais de jeton, et la personne admise était
-            // renvoyée ICI. Une boucle dont rien ne sortait — et c'est le cas
-            // NORMAL d'un invité sur un salon non public. Un compte admis sur
-            // un `restricted` sans rôle tombait dans la même.
+            // séance au lieu d'être jeté : c'est le seul que la personne
+            // obtiendra. La séance ne demande pas d'accès, et `join/` ne tient
+            // aucun compte d'une admission (`can_bypass_lobby` ne regarde que
+            // le niveau d'accès, l'authentification et le rôle) : jeté, il
+            // renverrait la personne admise au pré-join, puis ICI, en boucle.
             const { livekitUrl, token } = result.value;
             if (livekitUrl !== null && token !== null) {
               stashRoomAccess(slug, {
@@ -147,8 +142,8 @@ export function LobbyScreen(): React.ReactElement {
                 // `canModerate`, faux ci-dessous.
                 //
                 // `isAdministrable: false` — qui peut administrer n'est jamais
-                // envoyé en salle d'attente : le serveur lui aurait donné son
-                // jeton dès `fetchRoomAccess`.
+                // envoyé en salle d'attente : un rôle sur le salon suppose un
+                // compte, et `join/` lui aurait donné son jeton d'emblée.
                 room: { id: null, slug, name: slug, accessLevel: 'trusted' },
                 livekitUrl,
                 token,

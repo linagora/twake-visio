@@ -1,19 +1,17 @@
 import type { RoomAccess } from 'src/call/types';
 
 /**
- * Le passage de main entre la salle d'attente et la séance.
+ * Le passage de main entre ce qui fait entrer et la séance.
  *
- * **Sans lui, un invité admis ne peut PAS entrer.** `request-entry` rend le
- * jeton LiveKit au moment de l'admission ; `lobby.tsx` le jetait et naviguait,
- * et `call.tsx` redemandait l'accès par `fetchRoomAccess`. Or meet n'inclut le
- * bloc `livekit` pour un anonyme que sur un salon `public` — lu dans son
- * sérialiseur, `should_access_room` exige `is_public`, un rôle, ou un compte
- * authentifié sur un salon `trusted`. Le second appel ne rendait donc jamais de
- * jeton : la personne était admise, puis renvoyée à la salle d'attente. Une
- * boucle dont rien ne sortait.
+ * Seule une demande d'entrée délivre un jeton LiveKit : `join/`, que poste le
+ * pré-join, ou `request-entry`, que scrute la salle d'attente. La séance n'en
+ * demande aucun : elle part de celui que l'un des deux a mis de côté ici, et
+ * renvoie au pré-join quand il n'y a rien.
  *
- * Le même défaut frappait un COMPTE admis sur un salon `restricted` sans rôle,
- * plus rarement — `trusted` court-circuitant par `is_authenticated`.
+ * Redemander ne servirait d'ailleurs à rien pour qui sort de la salle
+ * d'attente : `join/` ne regarde que le niveau d'accès, l'authentification et
+ * le rôle (`can_bypass_lobby`), jamais une admission. Une personne admise s'y
+ * verrait renvoyer à l'attente, en boucle.
  *
  * **En mémoire, jamais dans MMKV.** Un jeton LiveKit est un secret ; il vit six
  * heures et n'a aucune raison de survivre au processus. `src/auth/storage.ts`
@@ -21,8 +19,8 @@ import type { RoomAccess } from 'src/call/types';
  *
  * **Consommé UNE fois.** Un jeton laissé en place serait repris par une entrée
  * ultérieure dans un autre salon si le slug venait à coïncider, et surtout il
- * masquerait un vrai échec de `fetchRoomAccess` en le remplaçant par un accès
- * périmé.
+ * servirait une seconde entrée sans qu'aucune demande ne soit refaite : le
+ * serveur ne pourrait plus la refuser, ni la salle d'attente s'interposer.
  */
 let pending: { readonly slug: string; readonly access: RoomAccess } | null = null;
 

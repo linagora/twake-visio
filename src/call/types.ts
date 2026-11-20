@@ -11,11 +11,12 @@ export type RoomAccess = {
   readonly room: Room;
   readonly livekitUrl: string;
   readonly token: string;
-  // Exposé par le sérialiseur de détail seulement, jamais par celui de liste :
-  // il ne peut donc pas vivre sur `Room`, où `fetchMyRooms` le rendrait
-  // toujours faux. Vaut exactement `is_administrator_or_owner` côté serveur,
-  // la même règle que la permission `HasPrivilegesOnRoom` qu'exigent les
-  // endpoints de modération.
+  // La présence de `accesses` dans la réponse de `join/`. Le sérialiseur de
+  // salon ne la pose que pour un rôle d'administrateur ou de propriétaire,
+  // le critère de `is_administrator_or_owner`, qu'applique la permission
+  // `HasPrivilegesOnRoom` des endpoints de modération. Il voyage avec l'accès
+  // parce que c'est la demande d'entrée qui l'apprend ; la salle d'attente,
+  // qui n'en sait rien, le pose à faux.
   readonly isAdministrable: boolean;
 };
 

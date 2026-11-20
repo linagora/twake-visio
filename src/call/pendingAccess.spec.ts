@@ -12,7 +12,7 @@ beforeEach(() => {
   clearPendingAccess();
 });
 
-describe('le passage de main entre la salle d’attente et la séance', () => {
+describe('le passage de main vers la séance', () => {
   it('rend ce qui a été mis de côté pour ce salon', () => {
     stashRoomAccess('aet-jgqg-fpa', ACCESS);
 
@@ -42,9 +42,8 @@ describe('le passage de main entre la salle d’attente et la séance', () => {
   /**
    * Consommé UNE fois.
    *
-   * Un accès laissé en place masquerait un vrai échec de `fetchRoomAccess` en
-   * le remplaçant par un jeton périmé : la séance s'ouvrirait sur un jeton
-   * mort au lieu de dire ce qui ne va pas.
+   * Un accès laissé en place servirait une seconde entrée sans nouvelle
+   * demande : le serveur ne pourrait plus la refuser.
    */
   it('ne se laisse prendre qu’une fois', () => {
     stashRoomAccess('aet-jgqg-fpa', ACCESS);

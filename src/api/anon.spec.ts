@@ -24,9 +24,9 @@ describe('anonFetch', () => {
   it("compose l'URL depuis le serveur et le chemin", async () => {
     const spy = mockFetch(new Response('{}', { status: 200 }));
 
-    await anonFetch('https://meet.acme.com', '/api/v1.0/rooms/abc/?username=Ada');
+    await anonFetch('https://meet.acme.com', '/api/v1.0/rooms/abc/join/');
 
-    expect(spy.mock.calls[0]?.[0]).toBe('https://meet.acme.com/api/v1.0/rooms/abc/?username=Ada');
+    expect(spy.mock.calls[0]?.[0]).toBe('https://meet.acme.com/api/v1.0/rooms/abc/join/');
   });
 
   it('rend la valeur analysée sur 200', async () => {
