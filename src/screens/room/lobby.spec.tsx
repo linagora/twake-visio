@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
-import { Share } from 'react-native';
+import { AppState, Share, type AppStateStatus } from 'react-native';
 
 import * as rooms from 'src/api/rooms';
+import type { ApiResult } from 'src/api/types';
 import * as pending from 'src/call/pendingAccess';
 import * as accounts from 'src/auth/accounts';
 import * as guest from 'src/auth/guest';
@@ -15,8 +16,13 @@ import { LobbyScreen } from './lobby';
 // les identifiants correspondant à /^mock/i. Un `jest.fn()` créé dans la
 // fabrique serait recréé à chaque rendu, donc inobservable.
 const mockReplace = jest.fn();
+// Un routeur STABLE, comme le vrai : `useRouter` d'expo-router rend le même
+// objet à chaque rendu (`hooks/useRouter.js` rend le `router` du module). La
+// boucle de la salle d'attente en dépend ; un double recréé à chaque rendu la
+// relancerait à chaque rendu, et chaque relance enverrait une demande.
+const mockRouter = { replace: mockReplace };
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => mockRouter,
   useLocalSearchParams: () => ({ slug: 'reunion' }),
 }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
@@ -47,11 +53,50 @@ const GUEST: visitor.Visitor = {
   displayName: 'Camille',
 };
 
+const ACCEPTED = {
+  participantId: 'p-1',
+  status: 'accepted' as const,
+  livekitUrl: 'wss://livekit.linagora.com',
+  token: 'lk',
+};
+
 beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockClear();
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 });
+
+// `AppState` est ici le double du préréglage (`@react-native/jest-preset`,
+// `jest/mocks/AppState.js`), un objet que l'écran partage : le modifier
+// l'atteint. Mais sa méthode y est déjà un `jest.fn`, que `jest.spyOn` rend tel
+// quel sans rien inscrire à restaurer. Une `mockImplementation` survivrait donc
+// à `jest.restoreAllMocks()` et fuirait vers les tests suivants ; `Once` ne vaut
+// que pour l'abonnement de l'écran que ce test monte.
+function captureListener(): { emit: (status: AppStateStatus) => void; remove: jest.Mock } {
+  const remove = jest.fn();
+  let listener: ((status: AppStateStatus) => void) | null = null;
+  jest.spyOn(AppState, 'addEventListener').mockImplementationOnce((_type, handler) => {
+    listener = handler as (status: AppStateStatus) => void;
+    return { remove } as unknown as ReturnType<typeof AppState.addEventListener>;
+  });
+  return {
+    emit: (status: AppStateStatus): void => listener?.(status),
+    remove,
+  };
+}
+
+// Une demande qui ne répond qu'à la main, pour tenir l'écran entre l'envoi et
+// la réponse.
+function pendingAnswer(): {
+  promise: Promise<ApiResult<rooms.EntryOutcome>>;
+  answer: (result: ApiResult<rooms.EntryOutcome>) => void;
+} {
+  let answer: (result: ApiResult<rooms.EntryOutcome>) => void = () => undefined;
+  const promise = new Promise<ApiResult<rooms.EntryOutcome>>((resolve) => {
+    answer = resolve;
+  });
+  return { promise, answer };
+}
 
 describe('LobbyScreen', () => {
   it("annonce l'attente après une demande acceptée par le serveur", async () => {
@@ -125,6 +170,8 @@ describe('LobbyScreen', () => {
       expect(screen.getByTestId('lobby-error')).toBeTruthy();
     });
     expect(screen.queryByTestId('lobby-no-moderator')).toBe(null);
+    // Seul un 400 se dit « requête refusée » : un 502 n'en est pas un.
+    expect(screen.queryByText('error.badRequest')).toBe(null);
   });
 
   it('invite à se reconnecter quand la session a expiré', async () => {
@@ -148,6 +195,17 @@ describe('LobbyScreen', () => {
       expect(screen.getByTestId('lobby-error')).toBeTruthy();
     });
     expect(screen.queryByTestId('lobby-loading')).toBe(null);
+  });
+
+  it("sort de l'attente si l'entrée en séance jette après l'admission", async () => {
+    jest.spyOn(pending, 'stashRoomAccess').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: ACCEPTED });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(screen.getByText('error.network')).toBeTruthy());
   });
 
   it("n'interroge pas le serveur sans compte actif et le dit", async () => {
@@ -178,17 +236,29 @@ describe("LobbyScreen, chemin d'admission", () => {
     jest.useFakeTimers();
   });
 
+  // Les espions AVANT les vraies minuteries. Un espion posé sur `setInterval`
+  // enveloppe la FAUSSE, et `jest.restoreAllMocks()` la reposerait sur
+  // `globalThis` au `beforeEach` suivant ; la prochaine installation de fausses
+  // minuteries la prendrait alors pour la vraie. Mesuré sur une sonde : un
+  // `setInterval` à minuteries réelles ne se déclenche plus, dans tous les
+  // tests qui suivent. Aucun test de ce fichier n'en dépend encore.
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
   // Fait avancer le temps puis laisse les promesses du tick se dénouer.
   // `jest.advanceTimersByTime` seul rend la main avant que `requestEntry`
   // n'ait résolu, et l'assertion lirait un écran d'un tick de retard.
-  async function tick(): Promise<void> {
+  async function advance(ms: number): Promise<void> {
     await act(async () => {
-      jest.advanceTimersByTime(5000);
+      jest.advanceTimersByTime(ms);
     });
+  }
+
+  // Un tour de scrutation : trois secondes, la cadence de l'écran.
+  async function tick(): Promise<void> {
+    await advance(3000);
   }
 
   it('entre en séance dès que le salon délivre un jeton', async () => {
@@ -235,10 +305,184 @@ describe("LobbyScreen, chemin d'admission", () => {
     await render(<LobbyScreen />);
     await tick();
 
-    expect(stash).toHaveBeenCalledWith(
-      'reunion',
-      expect.objectContaining({ livekitUrl: 'wss://livekit.linagora.com', token: 'lk' }),
+    // La forme entière : le jeton reçu, et le droit de modérer à faux.
+    expect(stash).toHaveBeenCalledWith('reunion', {
+      room: { id: null, slug: 'reunion', name: 'reunion', accessLevel: 'trusted' },
+      livekitUrl: 'wss://livekit.linagora.com',
+      token: 'lk',
+      isAdministrable: false,
+    });
+    // AVANT : la séance lit l'accès mis de côté dès son montage.
+    expect(stash.mock.invocationCallOrder[0]).toBeLessThan(
+      mockReplace.mock.invocationCallOrder[0] ?? 0,
     );
+  });
+
+  it('demande au montage, puis toutes les trois secondes', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    expect(entry).toHaveBeenCalledTimes(1);
+
+    await advance(2999);
+    expect(entry).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(entry).toHaveBeenCalledTimes(2);
+    await advance(3000);
+    expect(entry).toHaveBeenCalledTimes(3);
+  });
+
+  // Le client web abandonne au bout de dix minutes (`WAIT_TIMEOUT_MS`,
+  // `useLobby.ts`). Pas cet écran : la personne attend tant qu'elle le veut.
+  it('attend au-delà des dix minutes où le client web abandonne', async () => {
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    // Tour par tour : une seule avance de onze minutes ferait partir toutes les
+    // demandes d'un coup, et la garde d'une demande à la fois les avalerait.
+    for (let elapsed = 0; elapsed < 11 * 60_000; elapsed += 3000) {
+      await tick();
+    }
+    const callsAfterElevenMinutes = entry.mock.calls.length;
+
+    await tick();
+
+    expect(entry).toHaveBeenCalledTimes(callsAfterElevenMinutes + 1);
+    expect(screen.getByTestId('lobby-waiting')).toBeTruthy();
+  });
+
+  it("renvoie l'identifiant de chaque réponse à la demande suivante", async () => {
+    const entry = jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValueOnce({ ok: true, value: { ...WAITING, participantId: 'signé-1' } })
+      .mockResolvedValueOnce({ ok: true, value: { ...WAITING, participantId: 'signé-2' } })
+      .mockResolvedValue({ ok: true, value: { ...WAITING, participantId: 'signé-3' } });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    await tick();
+    await tick();
+
+    expect(entry.mock.calls.map((call) => call[3])).toEqual([null, 'signé-1', 'signé-2']);
+  });
+
+  it('demande tout de suite au retour au premier plan', async () => {
+    const appState = captureListener();
+    const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    expect(entry).toHaveBeenCalledTimes(1);
+
+    await act(async () => appState.emit('active'));
+
+    expect(entry).toHaveBeenCalledTimes(2);
+  });
+
+  // `inactive` n'est émis que par iOS, pour une interaction passagère qui ne
+  // retire rien ; `background` n'est pas un retour.
+  it.each(['background', 'inactive'] as const)(
+    'ne demande rien au passage à %s',
+    async (status) => {
+      const appState = captureListener();
+      const entry = jest
+        .spyOn(rooms, 'requestEntry')
+        .mockResolvedValue({ ok: true, value: WAITING });
+
+      await render(<LobbyScreen />);
+      await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+
+      await act(async () => appState.emit(status));
+
+      expect(entry).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("n'envoie pas une demande tant que la précédente n'a pas répondu", async () => {
+    const appState = captureListener();
+    const first = pendingAnswer();
+    const entry = jest
+      .spyOn(rooms, 'requestEntry')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue({ ok: true, value: WAITING });
+
+    await render(<LobbyScreen />);
+    await tick();
+    await act(async () => appState.emit('active'));
+    // Ni le tour suivant ni le retour au premier plan : sans identifiant encore,
+    // une seconde demande inscrirait la personne une seconde fois.
+    expect(entry).toHaveBeenCalledTimes(1);
+
+    await act(async () => first.answer({ ok: true, value: WAITING }));
+    await tick();
+
+    expect(entry).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      'un 400 lisible',
+      { kind: 'validation', fields: { participant_id: ['Invalid participant credential.'] } },
+    ],
+    ['un 400 illisible', { kind: 'server', status: 400 }],
+  ] as const)("abandonne l'identifiant sur %s, sans rien afficher", async (_label, error) => {
+    const entry = jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValueOnce({ ok: true, value: { ...WAITING, participantId: 'signé-1' } })
+      .mockResolvedValueOnce({ ok: false, error })
+      .mockResolvedValue({ ok: true, value: { ...WAITING, participantId: 'signé-2' } });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    await tick();
+
+    expect(screen.getByTestId('lobby-waiting')).toBeTruthy();
+    expect(screen.queryByTestId('lobby-error')).toBe(null);
+
+    await tick();
+
+    expect(entry.mock.calls.map((call) => call[3])).toEqual([null, 'signé-1', null]);
+  });
+
+  it.each([
+    ['un 400 lisible', { kind: 'validation', fields: { username: ['This field is required.'] } }],
+    ['un 400 illisible', { kind: 'server', status: 400 }],
+  ] as const)(
+    "affiche %s reçu sans identifiant, autrement qu'une panne réseau",
+    async (_label, error) => {
+      const appState = captureListener();
+      const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: false, error });
+
+      await render(<LobbyScreen />);
+
+      await waitFor(() => expect(screen.getByText('error.badRequest')).toBeTruthy());
+      expect(screen.queryByText('error.network')).toBe(null);
+
+      // La même demande rendrait le même 400 : l'écran ne la répète pas.
+      await tick();
+      await act(async () => appState.emit('active'));
+      expect(entry).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("s'arrête sur un 400 sans identifiant, même une fois en file", async () => {
+    const entry = jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValueOnce({ ok: true, value: { ...WAITING, participantId: 'signé-1' } })
+      .mockResolvedValue({ ok: false, error: { kind: 'server', status: 400 } });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    // Le premier 400 suit l'envoi d'un identifiant, qui est abandonné. Le
+    // second part sans : il ne peut plus venir de l'identifiant, il est final.
+    await tick();
+    await tick();
+
+    expect(screen.getByText('error.badRequest')).toBeTruthy();
+    await tick();
+    expect(entry).toHaveBeenCalledTimes(3);
   });
 
   // La polarité fausse : une admission SANS jeton ne met rien de côté. Le
@@ -261,13 +505,10 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 
-  // Le troisième `getVisitor()` de cet écran — celui de LA SCRUTATION — n'avait
-  // aucun test sous la fixture invité. C'est le plus facile des trois à
-  // manquer : le premier `requestEntry` (l'effet du dessus) réussit déjà pour
-  // un invité et affiche « en attente », donc rien ne trahit un troisième site
-  // resté sur `getActiveAccount()` — ni au montage, ni à l'oeil. Seul un tick
-  // le prouve. Sans ce site migré, un invité resterait bloqué sur cet écran
-  // pour toujours : jamais admis, jamais refusé, jamais prévenu d'une panne.
+  // Un invité admis au fil des demandes, et non dès la première. La boucle lit
+  // le visiteur une fois, au montage, et chacune de ses demandes part sous
+  // cette identité : c'est le seul test en invité qui suive la personne
+  // au-delà de la première réponse.
   //
   // `getActiveAccount` posée à `null`, et pas seulement `getVisitor` posé à
   // l'invité : un VRAI invité n'a PAS de compte. Sans ce `null` explicite, la
@@ -301,11 +542,10 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
   });
 
-  // Symétrique de « cesse de scruter une fois refusé » : une admission arrête
-  // aussi la scrutation. Sans ce test, retirer le `clearInterval` de la
-  // branche `accepted` ne fait rougir aucun test existant — `router.replace`
-  // est un mock ici et ne démonte pas l'écran, contrairement à une vraie
-  // navigation.
+  // Symétrique de « cesse de demander une fois refusé » : une admission arrête
+  // aussi les demandes. Sans ce test, retirer le `stop()` de la branche
+  // `accepted` ne fait rougir aucun autre test — `router.replace` est un mock
+  // ici et ne démonte pas l'écran, contrairement à une vraie navigation.
   it('cesse de scruter une fois accepté', async () => {
     const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
 
@@ -355,6 +595,21 @@ describe("LobbyScreen, chemin d'admission", () => {
     await tick();
 
     expect(mockReplace).toHaveBeenCalledWith('/room/reunion/call');
+  });
+
+  it("ne sort pas non plus de l'attente sans modérateur sur une coupure passagère", async () => {
+    const entry = jest
+      .spyOn(rooms, 'requestEntry')
+      .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
+
+    await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy());
+
+    entry.mockResolvedValue({ ok: false, error: { kind: 'network' } });
+    await tick();
+
+    expect(screen.getByTestId('lobby-no-moderator')).toBeTruthy();
+    expect(screen.queryByTestId('lobby-error')).toBe(null);
   });
 
   it("ne sort pas de la file d'attente sur une coupure passagère", async () => {
@@ -432,28 +687,63 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it('cesse de scruter une fois refusé', async () => {
+  it('cesse de demander une fois refusé, retour au premier plan compris', async () => {
+    const appState = captureListener();
     const entry = jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
       ok: true,
       value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
     });
 
     await render(<LobbyScreen />);
-    // L'appel initial (au montage) ne lit que `result.ok`, jamais `.status` :
-    // il pose donc `waiting` même si le serveur répond déjà `denied`. C'est
-    // la scrutation, un cycle plus tard, qui lit `.status` et fait basculer
-    // l'écran — d'où ce tick avant de guetter `lobby-denied`.
-    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
-    await tick();
+    // Un refus dès la première réponse, par commodité : meet ne refuse qu'une
+    // personne déjà en file (`LobbyService.request_entry` ne crée qu'une attente
+    // ou une admission), mais l'écran lit toutes ses réponses de la même façon.
     await waitFor(() => expect(screen.getByTestId('lobby-denied')).toBeTruthy());
-    const callsAfterDenial = entry.mock.calls.length;
 
     await tick();
     await tick();
+    await act(async () => appState.emit('active'));
 
     // Continuer à demander l'entrée après un refus revient à insister auprès
     // du serveur pour une décision déjà prise.
-    expect(entry.mock.calls.length).toBe(callsAfterDenial);
+    expect(entry).toHaveBeenCalledTimes(1);
+  });
+
+  it("relâche l'horloge et l'écoute du premier plan au démontage", async () => {
+    const appState = captureListener();
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: WAITING });
+    // Par les fonctions de minuterie elles-mêmes, et non `jest.getTimerCount()` :
+    // il compte toutes les minuteries simulées, y compris celles que l'écran ne
+    // pose pas — mesuré, 45 au démontage, et une encore soixante-dix secondes
+    // plus tard. Et rien d'autre ne le voit : une demande partie d'une horloge
+    // oubliée s'arrête net sur `stopped`.
+    const started = jest.spyOn(globalThis, 'setInterval');
+    const cleared = jest.spyOn(globalThis, 'clearInterval');
+
+    const view = await render(<LobbyScreen />);
+    await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
+    const poll = started.mock.results[started.mock.calls.findIndex((call) => call[1] === 3000)];
+    expect(poll).toBeDefined();
+
+    await view.unmount();
+
+    expect(cleared).toHaveBeenCalledWith(poll?.value);
+    expect(appState.remove).toHaveBeenCalled();
+  });
+
+  it("n'entre pas en séance pour un écran déjà quitté", async () => {
+    const stash = jest.spyOn(pending, 'stashRoomAccess');
+    const first = pendingAnswer();
+    jest.spyOn(rooms, 'requestEntry').mockReturnValue(first.promise);
+
+    const view = await render(<LobbyScreen />);
+    await view.unmount();
+    // L'admission arrive après la sortie : elle ne doit ramener personne dans
+    // une séance qu'on vient de quitter.
+    await act(async () => first.answer({ ok: true, value: ACCEPTED }));
+
+    expect(stash).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
 
@@ -510,24 +800,15 @@ describe('LobbyScreen, la sortie', () => {
   });
 
   it('offre une sortie après un refus — le pire des cinq', async () => {
-    jest.useFakeTimers();
-    try {
-      jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
-        ok: true,
-        value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
-      });
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({
+      ok: true,
+      value: { participantId: 'p-1', status: 'denied', livekitUrl: null, token: null },
+    });
 
-      await render(<LobbyScreen />);
-      await waitFor(() => expect(screen.getByTestId('lobby-waiting')).toBeTruthy());
-      await act(async () => {
-        jest.advanceTimersByTime(5000);
-      });
+    await render(<LobbyScreen />);
 
-      await waitFor(() => expect(screen.getByTestId('lobby-denied')).toBeTruthy());
-      expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
-    } finally {
-      jest.useRealTimers();
-    }
+    await waitFor(() => expect(screen.getByTestId('lobby-denied')).toBeTruthy());
+    expect(screen.getByTestId('lobby-leave-btn')).toBeTruthy();
   });
 
   it("ramène à l'accueil quand on presse la sortie", async () => {
@@ -564,9 +845,8 @@ describe('LobbyScreen, la sortie', () => {
   });
 });
 
-// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` aux trois points
-// d'entrée de cet écran, exactement comme la Tâche 7 l'a fait pour le
-// pré-join. Pour un invité, `access === null` n'est PLUS un échec : c'est le
+// Tâche 8 : `getVisitor()` remplace `getActiveAccount()` partout où cet écran
+// lit le visiteur, exactement comme la Tâche 7 l'a fait pour le pré-join. Pour un invité, `access === null` n'est PLUS un échec : c'est le
 // cas nominal, la personne n'a simplement encore reçu aucune réponse.
 describe("la salle d'attente en invité", () => {
   it('demande son entrée sous le nom mémorisé', async () => {
