@@ -36,11 +36,11 @@ export async function anonFetch<T>(
   // Le 401 est traduit ICI, et non dans `mapStatus` que partage tout le monde.
   //
   // Sur une requête anonyme il n'a qu'un sens possible — « cette ressource
-  // exige un compte » — et c'est ce que l'écran doit pouvoir dire. `mapStatus`
-  // le laisse tomber dans `server`, ce qui est juste pour `livekitFetch`, dont
-  // le porteur EXISTE et dont un 401 signale un jeton de salle périmé, pas une
-  // authentification manquante. Deux causes différentes sous un même code : les
-  // confondre ferait proposer « se connecter » au milieu d'une séance.
+  // exige un compte » — et c'est ce que l'écran doit pouvoir dire. Ailleurs, il
+  // ne le dirait pas : `authedFetch` traite son 401 lui-même, et `livekitFetch`
+  // porte un jeton de salle qu'aucune connexion ne remplacerait. Traduit dans
+  // `mapStatus`, un 401 reçu par ce dernier ferait proposer « se connecter » au
+  // milieu d'une séance.
   if (response.status === 401) return { ok: false, error: { kind: 'unauthorized' } };
 
   return await readResponse<T>(response);
