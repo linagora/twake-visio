@@ -4,7 +4,7 @@ import type { ParticipantRole } from 'src/api/participants';
 import { generateRoomCode } from 'src/api/roomCode';
 import type { ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
-import { visitorName, visitorServerUrl, type Visitor } from 'src/auth/visitor';
+import { visitorServerUrl, type Visitor } from 'src/auth/visitor';
 import type { AccessLevel, Room, RoomAccess } from 'src/call/types';
 
 type RawRoom = {
@@ -13,7 +13,9 @@ type RawRoom = {
   name?: string;
   access_level: AccessLevel;
   livekit?: { url: string; room: string; token: string };
-  is_administrable?: boolean;
+  // Seule sa PRÉSENCE compte : le sérialiseur ne la pose que pour un
+  // administrateur ou un propriétaire du salon.
+  accesses?: unknown;
 };
 
 function toRoom(raw: RawRoom): Room {
@@ -37,42 +39,57 @@ async function visitorFetch<T>(
   return await anonFetch<T>(visitorServerUrl(visitor), path, init);
 }
 
-export async function fetchRoomAccess(
-  visitor: Visitor,
-  slug: string,
-): Promise<ApiResult<RoomAccess>> {
-  // Le paramètre `?username=` ne part QUE pour un invité : sur le chemin
-  // authentifié, meet tire le nom du jeton porteur, et lui en passer un autre
-  // dans l'URL le laisserait choisir lequel croire — en clair, en plus, dans
-  // les journaux d'accès et les proxys, ce qui aggrave l'erreur d'un simple
-  // doublon. (`requestEntry`, plus bas, poste le nom dans le corps sur les
-  // DEUX chemins : c'est un contrat d'API différent, pas une incohérence.)
-  //
-  // Le nom vide n'ajoute AUCUN paramètre plutôt qu'un paramètre vide : meet
-  // retomberait alors sur « Anonymous », ce qu'il fait déjà sans le paramètre,
-  // mais une chaîne vide dans l'URL se lirait comme un nom choisi.
-  const name = visitor.kind === 'guest' ? visitorName(visitor) : '';
-  const query = name.length > 0 ? `?username=${encodeURIComponent(name)}` : '';
+// L'existence du salon et son nom, pour le pré-join. Rien de plus : cette
+// lecture ne délivre aucun jeton, c'est `joinRoom` qui fait entrer.
+export async function fetchRoom(visitor: Visitor, slug: string): Promise<ApiResult<Room>> {
   const result = await visitorFetch<RawRoom>(
     visitor,
-    `/api/v1.0/rooms/${encodeURIComponent(slug)}/${query}`,
+    `/api/v1.0/rooms/${encodeURIComponent(slug)}/`,
+  );
+  if (!result.ok) return result;
+  return { ok: true, value: toRoom(result.value) };
+}
+
+// Les deux issues NORMALES d'une demande d'entrée. La salle d'attente n'est pas
+// un échec : c'est ce que le serveur répond à qui ne peut pas entrer d'emblée.
+export type JoinOutcome =
+  { readonly kind: 'admitted'; readonly access: RoomAccess } | { readonly kind: 'lobby' };
+
+// Le nom ne part QUE pour un invité. Avec un compte, meet affiche celui du
+// compte, et un nom posté le remplacerait là où l'instance autorise à le changer
+// (`AUTHENTICATED_PARTICIPANTS_CAN_EDIT_DISPLAY_NAME`).
+export async function joinRoom(
+  visitor: Visitor,
+  slug: string,
+  username: string,
+): Promise<ApiResult<JoinOutcome>> {
+  const body = visitor.kind === 'guest' ? { username: username.trim() } : {};
+  const result = await visitorFetch<RawRoom>(
+    visitor,
+    `/api/v1.0/rooms/${encodeURIComponent(slug)}/join/`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
   );
   if (!result.ok) return result;
 
-  // Le backend n'inclut le bloc livekit que si l'appelant a droit d'entrer.
-  // Son absence signifie que le salon exige un passage par la salle d'attente.
+  // Le serveur n'inclut `livekit` que pour qui peut entrer sans passer par la
+  // salle d'attente.
   const livekit = result.value.livekit;
-  if (livekit === undefined) {
-    return { ok: false, error: { kind: 'lobby', participantId: '' } };
-  }
+  if (livekit === undefined) return { ok: true, value: { kind: 'lobby' } };
 
   return {
     ok: true,
     value: {
-      room: toRoom(result.value),
-      livekitUrl: livekit.url,
-      token: livekit.token,
-      isAdministrable: result.value.is_administrable === true,
+      kind: 'admitted',
+      access: {
+        room: toRoom(result.value),
+        livekitUrl: livekit.url,
+        token: livekit.token,
+        isAdministrable: Array.isArray(result.value.accesses),
+      },
     },
   };
 }
@@ -198,12 +215,21 @@ function toEntryStatus(raw: string | undefined): EntryStatus {
 
 // L'endpoint est conçu pour être rappelé — « if waiting, refresh timeout to
 // maintain position » — et porte à lui seul l'admission, le refus et le jeton.
-// C'est donc lui qu'il faut scruter, et non `fetchRoomAccess`, qui ne change
-// pas sur un refus.
+// C'est donc lui qu'il faut scruter, et non `joinRoom`, dont la réponse ignore
+// la file : meet n'y regarde que le niveau d'accès, l'authentification et le
+// rôle (`can_bypass_lobby`), si bien qu'une personne admise comme une personne
+// refusée s'y verrait toujours renvoyer à la salle d'attente.
+//
+// `participantId` est l'identifiant SIGNÉ que la réponse précédente portait dans
+// `id`. C'est par lui que meet retrouve la personne dans sa file
+// (`LobbyService.request_entry`) ; sans lui, chaque demande inscrit une nouvelle
+// personne et prévient les modérateurs. Comme le client web, la clé n'est pas
+// envoyée du tout tant que l'écran n'en a reçu aucun.
 export async function requestEntry(
   visitor: Visitor,
   slug: string,
   username: string,
+  participantId: string | null,
 ): Promise<ApiResult<EntryOutcome>> {
   const result = await visitorFetch<RawEntry>(
     visitor,
@@ -211,7 +237,9 @@ export async function requestEntry(
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify(
+        participantId === null ? { username } : { username, participant_id: participantId },
+      ),
     },
   );
   if (!result.ok) return result;

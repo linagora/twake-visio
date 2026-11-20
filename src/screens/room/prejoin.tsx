@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RTCView } from '@livekit/react-native-webrtc';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -8,11 +8,13 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActivityIndicator, Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchRoomAccess } from 'src/api/rooms';
-import type { ApiError } from 'src/api/types';
+import { fetchRoom, joinRoom, type JoinOutcome } from 'src/api/rooms';
+import type { ApiError, ApiResult } from 'src/api/types';
 import { endGuestSession, rememberGuestName } from 'src/auth/guest';
 import { getVisitor, visitorName } from 'src/auth/visitor';
-import type { RoomAccess } from 'src/call/types';
+import { computeEntryQuery } from 'src/call/entryChoices';
+import { stashRoomAccess } from 'src/call/pendingAccess';
+import type { Room } from 'src/call/types';
 import { useCameraPreview } from 'src/call/cameraPreview';
 import { rememberVisit } from 'src/rooms/journal';
 import {
@@ -79,6 +81,12 @@ const styles = StyleSheet.create({
   footer: { gap: 12, padding: 18 },
   header: { alignItems: 'center', flexDirection: 'row', gap: 12, padding: 18 },
   join: { borderRadius: 16 },
+  joinError: {
+    color: tokens.color.textDark,
+    fontFamily: tokens.font.semiBold,
+    fontSize: 13,
+    textAlign: 'center',
+  },
   nameCard: { backgroundColor: NAME_SURFACE, borderRadius: 14, gap: 4, padding: 14 },
   nameLabel: {
     color: tokens.color.muted,
@@ -106,13 +114,16 @@ const styles = StyleSheet.create({
   video: { flex: 1 },
 });
 
-// Les seules raisons que cet écran sait dire. `lobby` n'y figure pas : il n'est
-// pas un échec, il redirige.
+// Les seules raisons que cet écran sait dire, à la lecture du salon comme à la
+// demande d'entrée. La salle d'attente n'y figure pas : ce n'est pas un échec,
+// c'est l'une des deux issues normales de `joinRoom`.
 type MessageKey =
   | 'error.network'
   | 'error.unauthorized'
   | 'error.forbidden'
   | 'error.notFound'
+  | 'error.roomDeleted'
+  | 'error.serverTooOld'
   | 'error.serverError';
 
 function toPrejoinMessage(error: ApiError): MessageKey {
@@ -123,6 +134,12 @@ function toPrejoinMessage(error: ApiError): MessageKey {
       return 'error.forbidden';
     case 'not-found':
       return 'error.notFound';
+    case 'gone':
+      return 'error.roomDeleted';
+    // La route manque, pas la réunion : la dire « introuvable » enverrait
+    // chercher un lien qui est peut-être juste.
+    case 'missing-route':
+      return 'error.serverTooOld';
     case 'server':
       return 'error.serverError';
     default:
@@ -134,7 +151,7 @@ export function PrejoinScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const [access, setAccess] = useState<RoomAccess | null>(null);
+  const [room, setRoom] = useState<Room | null>(null);
   // Lu une fois : qui frappe à la porte ne change pas pendant qu'on regarde cet
   // écran — compte ou invité, la même garantie que l'ancien `account`.
   const [visitor] = useState(() => getVisitor());
@@ -144,22 +161,29 @@ export function PrejoinScreen(): React.ReactElement {
   // endroit qui la modifie.
   const [name, setName] = useState(() => (visitor === null ? '' : visitorName(visitor)));
   // La raison du refus, quand il y en a une. `null` tant qu'on attend : les
-  // deux ensemble donnent les trois états de cet écran — on attend, on est
-  // entré, on est refusé — là où `access` seul n'en distinguait que deux et
+  // deux ensemble donnent les trois états de cet écran — on attend, le salon
+  // est lu, on est refusé — là où `room` seul n'en distinguait que deux et
   // laissait le troisième se confondre avec l'attente.
   //
-  // Sans visiteur — ni compte ni session invité —, il n'y a aucun accès à
-  // demander : l'état de DÉPART le dit, comme le font `lobby.tsx:63-67` et
-  // `call.tsx:271-273`. Le poser depuis l'effet appellerait `setState` de
-  // façon synchrone, ce que `react-hooks/set-state-in-effect` refuse.
+  // Sans visiteur — ni compte ni session invité —, il n'y a personne au nom de
+  // qui lire le salon : l'état de DÉPART le dit, comme le font l'état de départ
+  // de `lobby.tsx` et celui de `call.tsx`. Le poser depuis l'effet appellerait
+  // `setState` de façon synchrone, ce que `react-hooks/set-state-in-effect`
+  // refuse.
   //
   // Ce garde-fou manquait ICI, et c'est l'écran qui donne son nom au défaut :
-  // l'effet sortait sans rien poser, `access` restait nul, et le rendu tombait
+  // l'effet sortait sans rien poser, le salon restait nul, et le rendu tombait
   // sur l'`ActivityIndicator` du bas — le sablier éternel que tout ce lot dit
   // refermer.
   const [failure, setFailure] = useState<MessageKey | null>(() =>
     visitor === null ? 'error.unauthorized' : null,
   );
+  // La raison d'un échec de la demande d'ENTRÉE, distincte de `failure`, qui
+  // dit pourquoi le salon n'a pas pu être lu. Celle-ci s'affiche sous le
+  // bouton, et le pré-join reste là avec les choix de la personne : l'écran
+  // d'erreur n'a qu'une sortie, qui pour un invité referme la session, donc un
+  // simple trou de réseau lui ferait tout recommencer.
+  const [joinFailure, setJoinFailure] = useState<MessageKey | null>(null);
   // Les deux interrupteurs portent l'état *coupé* et non l'état actif : leurs
   // libellés sont « Caméra désactivée » et « Micro coupé ». Un interrupteur
   // dont la position haute contredit son libellé se lit à l'envers.
@@ -207,32 +231,56 @@ export function PrejoinScreen(): React.ReactElement {
     const currentVisitor = getVisitor();
     if (currentVisitor === null || slug === undefined) return;
 
-    fetchRoomAccess(currentVisitor, slug)
+    // L'existence du salon et son nom, rien d'autre : entrer d'emblée ou passer
+    // par la salle d'attente, c'est « Rejoindre » qui l'apprend. Un salon qui
+    // exige une attente se lit donc comme un autre, et le pré-join reste là.
+    fetchRoom(currentVisitor, slug)
       .then((result) => {
         if (result.ok) {
-          setAccess(result.value);
+          setRoom(result.value);
           return;
         }
-        // L'absence du bloc livekit est traduite en `lobby` par fetchRoomAccess :
-        // le salon existe, l'entrée doit passer par la salle d'attente.
-        if (result.error.kind === 'lobby') {
-          router.replace(`/room/${slug}/lobby`);
-          return;
-        }
-        // TOUT le reste se disait par un sablier éternel. Mesuré sur appareil :
-        // une session expirée rend `unauthorized`, `access` restait `null`, et
-        // l'écran tournait sans message, sans sortie et sans retour — sur le
-        // premier écran qu'on traverse en ouvrant une réunion. Le
-        // `.catch(() => setAccess(null))` d'alors posait `null` sur `null` : il
-        // avait l'apparence d'un traitement d'erreur sans en être un.
+        // Sans salon lu, il n'y a rien à rejoindre : l'échec prend la place du
+        // pré-join, avec sa raison et une sortie. Le cas mesuré sur appareil
+        // est une session expirée, qui rend `unauthorized`.
         setFailure(toPrejoinMessage(result.error));
       })
       .catch(() => setFailure('error.network'));
-  }, [slug, router]);
+  }, [slug]);
 
-  const handleJoin = (): void => {
-    const camera = cameraOff ? 0 : 1;
-    const mic = micOff ? 0 : 1;
+  // La garde du second appui. Une REF et non un état : pendant la demande,
+  // rien ne s'affiche autrement — ni `disabled`, interdit sur cet écran, ni
+  // sablier —, donc il n'y a rien à rendre de nouveau ; il suffit que le
+  // second appui trouve le drapeau levé. Elle ne retombe que sur un échec, la
+  // seule issue qui laisse le bouton à l'écran.
+  const joiningRef = useRef(false);
+
+  // Levé dès que la personne quitte l'écran, par l'une de ses sorties ou par un
+  // démontage qui n'y passe pas. Une réponse arrivée APRÈS ne fait plus rien :
+  // sans cela, une admission tardive remplacerait par la séance l'écran où la
+  // personne est retournée.
+  const leftRef = useRef(false);
+  useEffect(() => {
+    leftRef.current = false;
+    return () => {
+      leftRef.current = true;
+    };
+  }, []);
+
+  // Asynchrone, mais lié au bouton par `() => void handleJoin()` : le bouton
+  // n'a que faire de la promesse, et `fireEvent.press` de RNTL 14, lui, la
+  // rend (`fire-event.js`). Un test qui l'attend attendrait alors la RÉPONSE,
+  // et ne verrait plus la demande en vol — ni le double appui, ni la sortie
+  // qui la précède.
+  const handleJoin = async (): Promise<void> => {
+    if (joiningRef.current) return;
+    // Pour le typage seulement : le bouton n'est rendu qu'une fois le salon lu,
+    // et le salon n'est lu qu'au nom d'un visiteur, sur la route d'un salon.
+    // Aucun test ne peut distinguer cette branche.
+    if (visitor === null || room === null || slug === undefined) return;
+    joiningRef.current = true;
+    setJoinFailure(null);
+    const query = computeEntryQuery({ camera: cameraOff ? '0' : '1', mic: micOff ? '0' : '1' });
     // Le journal de l'onglet Historique s'écrit ICI et non à l'entrée en
     // séance : `call.tsx` est disputé par quatorze branches, et rejoindre est
     // le dernier geste dont ce lot est certain. On enregistre l'entrée seule —
@@ -244,23 +292,45 @@ export function PrejoinScreen(): React.ReactElement {
     // l'autre, donc aucun compte ne pourrait jamais relire une ligne écrite
     // ici. Il mémorise son nom pour la PROCHAINE fois à la place.
     //
-    // DÉTOURÉ à l'écriture, et c'est le seul endroit où le faire : le bouton
-    // qui déclenche ce geste se rend sur `name.trim()`, mais c'est `name` brut
-    // qui partait dans le magasin — puis, de là, dans le `?username=` que
-    // `fetchRoomAccess` construit pour meet, qui en fait le `name` du jeton
-    // LiveKit. « ␣Camille␣ » se serait donc affiché tel quel sur la vignette
-    // de tous les autres participants.
-    if (visitor?.kind === 'guest') {
+    // DÉTOURÉ à l'écriture : le bouton qui déclenche ce geste se rend sur
+    // `name.trim()`, mais c'est `name` brut qui partait dans le magasin. Or la
+    // salle d'attente le relit de là pour l'envoyer avec sa demande d'entrée, et
+    // le pré-join suivant pour se pré-remplir. (`joinRoom` détoure de son côté
+    // le nom qu'il envoie, celui que les autres liront sur la vignette.)
+    if (visitor.kind === 'guest') {
       rememberGuestName(name.trim());
-    } else if (slug !== undefined && access !== null) {
-      rememberVisit(slug, access.room.name, Date.now());
+    } else {
+      rememberVisit(slug, room.name, Date.now());
     }
-    router.replace(`/room/${slug}/call?camera=${camera}&mic=${mic}`);
+
+    let result: ApiResult<JoinOutcome>;
+    try {
+      result = await joinRoom(visitor, slug, name);
+    } catch {
+      // L'autre forme d'échec, une promesse rejetée : sans ce rattrapage,
+      // l'appui resterait sans effet visible, ce qui se lit comme un bouton mort.
+      result = { ok: false, error: { kind: 'network' } };
+    }
+    if (leftRef.current) return;
+
+    if (!result.ok) {
+      joiningRef.current = false;
+      setJoinFailure(toPrejoinMessage(result.error));
+      return;
+    }
+    if (result.value.kind === 'lobby') {
+      router.replace(`/room/${slug}/lobby${query}`);
+      return;
+    }
+    // La séance ne demande rien au serveur : ce jeton est le seul qu'elle
+    // aura, et elle le prend dans ce magasin, une seule fois.
+    stashRoomAccess(slug, result.value.access);
+    router.replace(`/room/${slug}/call${query}`);
   };
 
   // Les DEUX sorties de cet écran — le chevron de l'en-tête et le bouton de
-  // l'écran d'erreur — et la même règle que `call.tsx:823-829` et
-  // `lobby.tsx:136-140` : la session invité se referme AVANT la navigation, et
+  // l'écran d'erreur — et la même règle que `handleLeave` dans `call.tsx` et
+  // dans `lobby.tsx` : la session invité se referme AVANT la navigation, et
   // un invité repart vers `/welcome`, jamais vers `/home`.
   //
   // C'est ici que le manque coûtait le plus cher : le pré-join est le PREMIER
@@ -273,6 +343,7 @@ export function PrejoinScreen(): React.ReactElement {
   // `getVisitor()` relu plutôt que le `visitor` du montage, pour que les trois
   // écrans portent la même forme et se retrouvent d'un `grep`.
   const handleExit = (): void => {
+    leftRef.current = true;
     const current = getVisitor();
     if (current?.kind === 'guest') endGuestSession();
     router.replace(current?.kind === 'guest' ? '/welcome' : '/home');
@@ -288,9 +359,9 @@ export function PrejoinScreen(): React.ReactElement {
   // encoche n'est connue qu'à l'exécution. Le reste du style vient bien de la
   // feuille.
   const insets = useSafeAreaInsets();
-  // L'échec passe AVANT l'attente : les deux ont `access === null`, et tester
-  // l'attente d'abord rendrait le sablier pour toujours, ce qui est exactement
-  // le défaut corrigé ici.
+  // L'échec passe AVANT l'attente : un échec à la lecture laisse
+  // `room === null`, et tester l'attente d'abord rendrait le sablier pour
+  // toujours, ce qui est exactement le défaut corrigé ici.
   if (failure !== null) {
     return (
       <View style={[styles.errorRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -309,7 +380,7 @@ export function PrejoinScreen(): React.ReactElement {
     );
   }
 
-  if (access === null) return <ActivityIndicator testID="prejoin-loading" />;
+  if (room === null) return <ActivityIndicator testID="prejoin-loading" />;
 
   return (
     <View
@@ -327,7 +398,7 @@ export function PrejoinScreen(): React.ReactElement {
           <MaterialCommunityIcons color={tokens.color.textDark} name="chevron-left" size={20} />
         </Pressable>
         <Text numberOfLines={1} style={styles.roomName} testID="prejoin-room-name">
-          {access.room.name}
+          {room.name}
         </Text>
       </View>
 
@@ -444,9 +515,13 @@ export function PrejoinScreen(): React.ReactElement {
             {t('prejoin.yourName')}
           </Text>
           {/* Un invité choisit ce que les autres liront ; un compte le porte
-              déjà, figé, dans son profil — rien à saisir de plus. */}
+              déjà, figé, dans son profil — rien à saisir de plus.
+
+              Borné à 50, comme le champ du nom du client web ; meet en
+              accepterait 255. */}
           {visitor?.kind === 'guest' ? (
             <TextInput
+              maxLength={50}
               onChangeText={setName}
               placeholder={t('prejoin.yourNamePrompt')}
               placeholderTextColor={tokens.color.muted}
@@ -478,7 +553,7 @@ export function PrejoinScreen(): React.ReactElement {
           <Button
             buttonColor={tokens.color.brandStrong}
             mode="contained"
-            onPress={handleJoin}
+            onPress={() => void handleJoin()}
             style={styles.join}
             testID="join-call-btn"
             textColor={tokens.color.onBrand}
@@ -486,6 +561,11 @@ export function PrejoinScreen(): React.ReactElement {
             {t('prejoin.join')}
           </Button>
         ) : null}
+        {joinFailure === null ? null : (
+          <Text style={styles.joinError} testID="prejoin-join-error">
+            {t(joinFailure)}
+          </Text>
+        )}
       </View>
     </View>
   );

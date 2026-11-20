@@ -53,13 +53,19 @@ describe('toggleHand', () => {
     await toggleHand('https://meet.linagora.com', 'r-1', 'jwt-de-salle', true);
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>).authorization).toBe('Bearer jwt-de-salle');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.authorization).toBe('X-LiveKit-Token jwt-de-salle');
+    // L'égalité exacte ne voit qu'une clé : ce second contrôle attrape un
+    // `Bearer` posé EN PLUS, sous une autre casse de la clé.
+    expect(Object.values(headers).join(' ')).not.toMatch(/bearer/i);
 
     // Un second jeton, distinct : sans lui, un en-tête codé en dur passerait.
     await toggleHand('https://meet.linagora.com', 'r-1', 'jwt-autre', true);
 
     const second = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect((second.headers as Record<string, string>).authorization).toBe('Bearer jwt-autre');
+    expect((second.headers as Record<string, string>).authorization).toBe(
+      'X-LiveKit-Token jwt-autre',
+    );
   });
 
   it('ne rafraîchit jamais la session OIDC', async () => {
@@ -74,6 +80,16 @@ describe('toggleHand', () => {
     expect(read).not.toHaveBeenCalled();
     // Et aucun rejeu : deux appels, deux requêtes.
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403])('ne rejoue pas un %i : aucun repli vers Bearer', async (code) => {
+    // Un seul envoi, quel que soit le refus : un rejeu ne pourrait que changer
+    // de schéma, alors que cette requête n'a aucun repli vers `Bearer`.
+    fetchMock.mockResolvedValue(status(code));
+
+    await toggleHand('https://meet.linagora.com', 'r-1', 'jwt-1', true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('envoie le booléen demandé, dans les deux sens', async () => {

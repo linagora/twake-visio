@@ -1,17 +1,18 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
+import { AppState, Pressable, Share, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Snackbar, Text } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { requestEntry } from 'src/api/rooms';
+import { requestEntry, type EntryOutcome } from 'src/api/rooms';
+import { computeEntryQuery } from 'src/call/entryChoices';
 import { stashRoomAccess } from 'src/call/pendingAccess';
-import type { ApiError } from 'src/api/types';
+import type { ApiError, ApiResult } from 'src/api/types';
 import { endGuestSession } from 'src/auth/guest';
-import { getVisitor, visitorName, visitorServerUrl } from 'src/auth/visitor';
+import { getVisitor, visitorName, visitorServerUrl, type Visitor } from 'src/auth/visitor';
 import { tokens } from 'src/ui/tokens';
 
 // « Personne ne peut ouvrir » est un état du salon, pas une panne : c'est la
@@ -23,14 +24,27 @@ type LobbyState =
   | { kind: 'waiting' }
   | { kind: 'no-moderator' }
   | { kind: 'denied' }
-  | { kind: 'failed'; message: 'error.network' | 'error.unauthorized' };
+  | { kind: 'failed'; message: FailureMessage };
+
+type FailureMessage = 'error.network' | 'error.unauthorized' | 'error.badRequest';
 
 // `request-entry` est fait pour être rappelé — « if waiting, refresh timeout
 // to maintain position » — et porte à lui seul l'admission, le refus et le
 // jeton. Aucun flux d'événements n'est exposé côté meet, la scrutation est
-// donc la seule voie. Cinq secondes est la cadence validée : elle tient
-// l'attente courte sans marteler le serveur pendant qu'une réunion se remplit.
-const ADMISSION_POLL_MS = 5000;
+// donc la seule voie.
+//
+// Trois secondes, la cadence du client web (`POLL_INTERVAL_MS`, `useLobby.ts`),
+// parce que meet OUBLIE une personne six secondes après sa dernière demande
+// (`LOBBY_WAITING_TIMEOUT`, son réglage par défaut). Cinq secondes ne laissaient
+// qu'une seconde de marge à une demande lente.
+const ADMISSION_POLL_MS = 3000;
+
+// Le repli du client web, à l'identique (`Lobby.tsx` :
+// `username: displayName || 'anonymous'`) : c'est le nom que les modérateurs
+// liront quand la personne n'en a aucun. Sans lui, meet refuserait la demande :
+// son `RequestEntrySerializer` exige un nom non vide, et le rogne avant d'en
+// juger, si bien qu'un nom fait d'espaces est vide pour lui.
+const ANONYMOUS = 'anonymous';
 
 const styles = StyleSheet.create({
   root: {
@@ -53,18 +67,34 @@ const styles = StyleSheet.create({
   room: { color: tokens.color.textPrimary, fontFamily: tokens.font.extraBold, fontSize: 16 },
 });
 
-function toFailedOrNoModerator(error: ApiError): LobbyState {
-  if (error.kind === 'forbidden') return { kind: 'no-moderator' };
-  return {
-    kind: 'failed',
-    message: error.kind === 'unauthorized' ? 'error.unauthorized' : 'error.network',
-  };
+function computeAnnouncedName(visitor: Visitor): string {
+  return visitorName(visitor).trim() || ANONYMOUS;
+}
+
+// Un 400, que le lecteur partagé rend `validation` quand le corps suit la
+// convention de Django REST Framework, et `server` sinon (`readValidation`).
+function isBadRequest(error: ApiError): boolean {
+  return error.kind === 'validation' || (error.kind === 'server' && error.status === 400);
+}
+
+function computeFailureMessage(error: ApiError): FailureMessage {
+  if (error.kind === 'unauthorized') return 'error.unauthorized';
+  // La réponse est ARRIVÉE : « connexion impossible » enverrait chercher une
+  // panne de réseau qui n'existe pas.
+  if (isBadRequest(error)) return 'error.badRequest';
+  return 'error.network';
 }
 
 export function LobbyScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, camera, mic } = useLocalSearchParams<{
+    slug: string;
+    camera?: string;
+    mic?: string;
+  }>();
+  // La séance, avec les choix du pré-join que cet écran ne fait que relayer.
+  const callPath = `/room/${slug}/call${computeEntryQuery({ camera, mic })}`;
   // Sans visiteur — ni compte ni session invité —, personne n'est à annoncer
   // au salon. L'état de départ le dit dès le premier rendu : le poser depuis
   // l'effet appellerait setState de façon synchrone, ce que
@@ -76,103 +106,148 @@ export function LobbyScreen(): React.ReactElement {
       : { kind: 'requesting' },
   );
 
+  // Une seule boucle, du montage à la décision : la première demande inscrit
+  // la personne, les suivantes la gardent en file, et chacune peut rendre
+  // l'admission ou le refus.
   useEffect(() => {
     const currentVisitor = getVisitor();
     if (currentVisitor === null) return;
+    const username = computeAnnouncedName(currentVisitor);
 
-    requestEntry(currentVisitor, slug, visitorName(currentVisitor))
-      .then((result) =>
-        setState(result.ok ? { kind: 'waiting' } : toFailedOrNoModerator(result.error)),
-      )
-      .catch(() => setState({ kind: 'failed', message: 'error.network' }));
-  }, [slug]);
-
-  // On scrute aussi sans modérateur : c'est un état d'attente, pas une fin de
-  // course. Quelqu'un qui peut ouvrir peut arriver une minute plus tard, et
-  // l'écran doit alors basculer tout seul.
-  const awaitingAdmission = state.kind === 'waiting' || state.kind === 'no-moderator';
-
-  useEffect(() => {
-    if (!awaitingAdmission) return;
-    const currentVisitor = getVisitor();
-    if (currentVisitor === null) return;
-
+    // En mémoire, pour la vie de cet écran, et nulle part ailleurs : meet oublie
+    // la personne six secondes après sa dernière demande, si bien qu'un
+    // identifiant gardé plus longtemps ne désignerait plus rien.
+    let participantId: string | null = null;
+    // Une réponse a déjà mis la personne en attente, avec ou sans modérateur :
+    // une coupure passagère ne doit plus l'en faire sortir.
+    let awaitingAdmission = false;
+    // Une seule demande à la fois. Deux demandes parties avant que la première
+    // n'ait rendu d'identifiant partiraient toutes deux sans : meet inscrirait
+    // la personne deux fois, et préviendrait deux fois les modérateurs.
+    let inFlight = false;
     let stopped = false;
-    const timer = setInterval(() => {
-      void requestEntry(currentVisitor, slug, visitorName(currentVisitor))
-        .then((result) => {
-          if (stopped) return;
-          if (!result.ok) {
-            // Une coupure passagère ne doit pas éjecter quelqu'un de la file.
-            if (result.error.kind === 'unauthorized') {
-              stopped = true;
-              clearInterval(timer);
-              setState({ kind: 'failed', message: 'error.unauthorized' });
-            }
-            return;
-          }
-          if (result.value.status === 'accepted') {
-            stopped = true;
-            clearInterval(timer);
 
-            // Le jeton que `request-entry` vient de rendre, MIS DE CÔTÉ pour la
-            // séance au lieu d'être jeté.
-            //
-            // Sans cela, `call.tsx` redemandait l'accès par `fetchRoomAccess`,
-            // et meet n'inclut le bloc `livekit` pour un anonyme que sur un
-            // salon `public` : son `should_access_room` exige `is_public`, un
-            // rôle, ou un compte authentifié sur un `trusted`. Le second appel
-            // ne rendait donc jamais de jeton, et la personne admise était
-            // renvoyée ICI. Une boucle dont rien ne sortait — et c'est le cas
-            // NORMAL d'un invité sur un salon non public. Un compte admis sur
-            // un `restricted` sans rôle tombait dans la même.
-            const { livekitUrl, token } = result.value;
-            if (livekitUrl !== null && token !== null) {
-              stashRoomAccess(slug, {
-                // Ce que la salle d'attente SAIT, et rien de plus.
-                //
-                // `id: null` — `request-entry` porte bien l'UUID du salon, mais
-                // `EntryOutcome` ne le remonte pas, et `call.tsx` fait déjà
-                // `room.id ?? room.slug` : `RoomViewSet.get_object()` tente
-                // l'UUID puis retombe sur le slug, les deux résolvent le même
-                // objet.
-                //
-                // `name: slug` — c'est le repli de `toRoom` quand le serveur
-                // n'envoie pas de nom, et cet écran n'a jamais eu le nom.
-                //
-                // `accessLevel: 'trusted'` — atteindre la salle d'attente
-                // signifie que le salon n'est PAS public ; entre `trusted` et
-                // `restricted` on ne peut pas trancher d'ici. Le seul
-                // consommateur est `hasLobby` (`call.tsx`), lui-même gardé par
-                // `canModerate`, faux ci-dessous.
-                //
-                // `isAdministrable: false` — qui peut administrer n'est jamais
-                // envoyé en salle d'attente : le serveur lui aurait donné son
-                // jeton dès `fetchRoomAccess`.
-                room: { id: null, slug, name: slug, accessLevel: 'trusted' },
-                livekitUrl,
-                token,
-                isAdministrable: false,
-              });
-            }
-
-            router.replace(`/room/${slug}/call`);
-            return;
-          }
-          if (result.value.status === 'denied') {
-            stopped = true;
-            clearInterval(timer);
-            setState({ kind: 'denied' });
-          }
-        })
-        .catch(() => undefined);
-    }, ADMISSION_POLL_MS);
-
-    return () => {
+    const stop = (): void => {
       stopped = true;
       clearInterval(timer);
+      subscription.remove();
     };
-  }, [awaitingAdmission, slug, router]);
+
+    const admit = (outcome: EntryOutcome): void => {
+      // Le jeton que `request-entry` vient de rendre, MIS DE CÔTÉ pour la
+      // séance au lieu d'être jeté : c'est le seul que la personne obtiendra.
+      // La séance ne demande pas d'accès, et `join/` ne tient aucun compte
+      // d'une admission (`can_bypass_lobby` ne regarde que le niveau d'accès,
+      // l'authentification et le rôle) : jeté, il renverrait la personne
+      // admise au pré-join, puis ICI, en boucle.
+      const { livekitUrl, token } = outcome;
+      if (livekitUrl !== null && token !== null) {
+        stashRoomAccess(slug, {
+          // Ce que la salle d'attente SAIT, et rien de plus.
+          //
+          // `id: null` — `request-entry` porte bien l'UUID du salon, mais
+          // `EntryOutcome` ne le remonte pas, et `call.tsx` fait déjà
+          // `room.id ?? room.slug` : `RoomViewSet.get_object()` tente
+          // l'UUID puis retombe sur le slug, les deux résolvent le même
+          // objet.
+          //
+          // `name: slug` — c'est le repli de `toRoom` quand le serveur
+          // n'envoie pas de nom, et cet écran n'a jamais eu le nom.
+          //
+          // `accessLevel: 'trusted'` — atteindre la salle d'attente
+          // signifie que le salon n'est PAS public ; entre `trusted` et
+          // `restricted` on ne peut pas trancher d'ici. Le seul
+          // consommateur est `hasLobby` (`call.tsx`), lui-même gardé par
+          // `canModerate`, faux ci-dessous.
+          //
+          // `isAdministrable: false` — qui peut administrer n'est jamais
+          // envoyé en salle d'attente : un rôle sur le salon suppose un
+          // compte, et `join/` lui aurait donné son jeton d'emblée.
+          room: { id: null, slug, name: slug, accessLevel: 'trusted' },
+          livekitUrl,
+          token,
+          isAdministrable: false,
+        });
+      }
+
+      router.replace(callPath);
+    };
+
+    const ask = async (): Promise<void> => {
+      if (stopped || inFlight) return;
+      inFlight = true;
+      const sentId = participantId;
+      let result: ApiResult<EntryOutcome>;
+      try {
+        result = await requestEntry(currentVisitor, slug, username, sentId);
+      } catch {
+        result = { ok: false, error: { kind: 'network' } };
+      }
+      inFlight = false;
+      if (stopped) return;
+
+      if (result.ok) {
+        // Chaque réponse rend un identifiant, et c'est lui qui part à la
+        // demande suivante. Si meet avait oublié la personne, il l'a remise en
+        // file sous un nouvel identifiant sans rien en dire : on le prend, sans
+        // plus d'avis.
+        participantId = result.value.participantId;
+        if (result.value.status === 'accepted') {
+          stop();
+          admit(result.value);
+          return;
+        }
+        if (result.value.status === 'denied') {
+          stop();
+          setState({ kind: 'denied' });
+          return;
+        }
+        awaitingAdmission = true;
+        setState({ kind: 'waiting' });
+        return;
+      }
+
+      const { error } = result;
+      // « Invalid participant credential. » : l'identifiant ne vaut plus rien,
+      // et la demande suivante, partie sans lui, remet la personne en file.
+      if (sentId !== null && isBadRequest(error)) {
+        participantId = null;
+        return;
+      }
+      // On scrute aussi sans modérateur : c'est un état d'attente, pas une fin
+      // de course. Quelqu'un qui peut ouvrir peut arriver une minute plus tard,
+      // et l'écran doit alors basculer tout seul.
+      if (error.kind === 'forbidden') {
+        awaitingAdmission = true;
+        setState({ kind: 'no-moderator' });
+        return;
+      }
+      // Une coupure passagère ne doit pas éjecter quelqu'un de la file. Une
+      // session expirée et un 400 sans identifiant, eux, ne se répareront pas
+      // en réessayant : l'écran le dit et s'arrête.
+      if (awaitingAdmission && error.kind !== 'unauthorized' && !isBadRequest(error)) return;
+      stop();
+      setState({ kind: 'failed', message: computeFailureMessage(error) });
+    };
+
+    // Lancée sans que personne attende sa promesse : d'une horloge, d'un retour
+    // au premier plan, du montage. `ask` traduit déjà en état toute réponse du
+    // réseau, mais ce qui jetterait APRÈS — mettre l'accès de côté, naviguer —
+    // laisserait sinon l'écran figé, sa boucle arrêtée, sans un mot.
+    const askAndForget = (): void => {
+      ask().catch(() => setState({ kind: 'failed', message: 'error.network' }));
+    };
+
+    const timer = setInterval(askAndForget, ADMISSION_POLL_MS);
+    // Au retour au premier plan, tout de suite, sans attendre le prochain
+    // tour : l'application a pu rester plus de six secondes en arrière-plan sans
+    // qu'aucune demande ne parte.
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') askAndForget();
+    });
+    askAndForget();
+    return stop;
+  }, [slug, router, callPath]);
 
   // Même choix de destination que `handleLeave` dans `call.tsx`, et la même
   // fermeture de session AVANT de naviguer : sans elle, MMKV garde le serveur

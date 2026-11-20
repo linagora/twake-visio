@@ -1,7 +1,7 @@
 import type { ApiError, ApiResult } from 'src/api/types';
 import type { Account } from 'src/auth/accounts';
 import { forceRefresh, getAccessToken, type RefreshOutcome } from 'src/auth/session';
-import { REQUEST_TIMEOUT_MS } from 'src/constants';
+import { LIVEKIT_AUTH_SCHEME, REQUEST_TIMEOUT_MS } from 'src/constants';
 
 type RefreshRefusal = Extract<RefreshOutcome, { ok: false }>['reason'];
 
@@ -49,14 +49,29 @@ async function readValidation(response: Response): Promise<ApiResult<never>> {
   return { ok: false, error: { kind: 'validation', fields } };
 }
 
+// Un 404 se lit à son corps, parce que le statut seul confond deux pannes sans
+// rapport. Quand la route existe et que l'objet manque, Django REST Framework
+// répond en JSON. Quand la route n'existe pas, la réponse est la page HTML de
+// Django : mesuré sur une route inventée (voir `src/api/participants.ts`), et
+// sur `join/` d'une instance Meet v1.24.0, qui ne l'a pas. Les confondre ferait
+// chercher une réunion qui existe peut-être très bien.
+async function readNotFound(response: Response): Promise<ApiResult<never>> {
+  try {
+    await response.json();
+  } catch {
+    return { ok: false, error: { kind: 'missing-route' } };
+  }
+  return { ok: false, error: { kind: 'not-found' } };
+}
+
 function mapStatus(status: number): ApiResult<never> {
   if (status === 403) return { ok: false, error: { kind: 'forbidden' } };
-  if (status === 404) return { ok: false, error: { kind: 'not-found' } };
+  if (status === 410) return { ok: false, error: { kind: 'gone' } };
   return { ok: false, error: { kind: 'server', status } };
 }
 
 // La lecture de la réponse, partagée par les TROIS appelants : même mappage de
-// statut, même distinction entre un 400 de validation et le reste.
+// statut, même lecture du corps d'un 400 et d'un 404.
 //
 // Exportée pour `src/api/anon.ts`, qui n'a ni porteur ni rafraîchissement mais
 // lit exactement les mêmes réponses. Deux lectures divergentes feraient dire à
@@ -64,6 +79,7 @@ function mapStatus(status: number): ApiResult<never> {
 // même corps de réponse.
 export async function readResponse<T>(response: Response): Promise<ApiResult<T>> {
   if (response.status === 400) return await readValidation(response);
+  if (response.status === 404) return await readNotFound(response);
   if (!response.ok) return mapStatus(response.status);
 
   try {
@@ -73,13 +89,19 @@ export async function readResponse<T>(response: Response): Promise<ApiResult<T>>
   }
 }
 
-// Le jeton LiveKit en porteur, jamais celui du compte, et aucun rafraîchissement :
-// ce jeton est émis pour UNE séance et vit exactement le temps de celle-ci.
-// S'il expire, la séance est déjà finie et l'écran n'est plus monté.
+// Le jeton de salle (celui de LiveKit), jamais celui du compte, et aucun
+// rafraîchissement : ce jeton est émis pour UNE séance et vit exactement le temps
+// de celle-ci. S'il expire, la séance est déjà finie et l'écran n'est plus monté.
 //
-// Un seul appelant aujourd'hui — `muteParticipant`, dont le commentaire porte
-// la mesure qui justifie ce chemin. Ce n'est pas une généralisation faite
-// d'avance : c'est la seule route de meet qui refuse le porteur OIDC.
+// Il se présente en `Authorization: X-LiveKit-Token <jeton>`, jamais en `Bearer`.
+// Lu dans le fork LinTO de Meet : `LiveKitTokenAuthentication`
+// (`core/authentication/livekit.py`) ne reconnaît que ce schéma et passe la
+// main sur tout autre. `toggle-hand` n'a qu'elle comme authentification, et
+// `mute-participant` l'essaie en premier. `src/api/hand.ts` pose le même
+// en-tête. Aucun repli vers `Bearer`, même contre un serveur plus ancien.
+//
+// Un seul appelant aujourd'hui, `muteParticipant`, dont le commentaire porte
+// la mesure qui a mené à ce chemin. `toggleHand` envoie sa propre requête.
 //
 // Pas de 401 rejoué ici pour la même raison : il n'y a rien à rafraîchir, et un
 // rejeu à l'identique ne ferait que doubler la requête.
@@ -97,7 +119,7 @@ export async function livekitFetch<T>(
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        authorization: `Bearer ${livekitToken}`,
+        authorization: `${LIVEKIT_AUTH_SCHEME} ${livekitToken}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

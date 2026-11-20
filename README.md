@@ -47,6 +47,24 @@ italien, russe, vietnamien.
 test, par TestFlight côté Apple et Firebase App Distribution côté Android, et
 n'est **pas encore publiée** sur l'App Store ni sur Google Play.
 
+## Serveur requis
+
+L'application exige `POST /api/v1.0/rooms/<id>/join/` pour entrer dans une
+réunion, et le schéma `X-LiveKit-Token` pour le jeton de salle
+(`Authorization: X-LiveKit-Token <jeton>`). Le fork LinTO de Meet,
+[`linto-ai/meet`](https://github.com/linto-ai/meet), offre les deux à partir de
+la v1.27.
+
+L'amont, [`suitenumerique/meet`](https://github.com/suitenumerique/meet), n'a
+publié `join/` dans aucune version au 2026-11-20 : la route se trouve sur sa
+branche principale. Il publie en revanche le schéma `X-LiveKit-Token`, depuis la
+v1.35.0.
+
+Face à un serveur qui n'offre pas `join/`, l'application ne se rabat sur rien :
+elle dit que ce serveur est trop ancien pour elle. La déclaration du client OIDC,
+autre condition posée au serveur, se lit plus bas, sous « Configuration hors
+dépôt ».
+
 ## Démarrer
 
 **Prérequis** : Node 20, et une **compilation de développement**, car Expo Go ne
@@ -176,5 +194,8 @@ sous licence MIT ; ce client mobile est un travail distinct, sous AGPL.
 ## Liens
 
 - [`suitenumerique/meet`](https://github.com/suitenumerique/meet), le serveur
+  amont
+- [`linto-ai/meet`](https://github.com/linto-ai/meet), son fork LinTO, qui offre
+  `join/`
 - [LiveKit](https://livekit.io), le transport temps réel
 - [Expo](https://expo.dev), SDK 57 et React Native 0.86

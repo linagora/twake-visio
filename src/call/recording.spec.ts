@@ -244,7 +244,7 @@ describe('recordingErrorMessage', () => {
   const server = (status: number): ApiError => ({ kind: 'server', status });
 
   it('traduit le 409 du démarrage en « déjà en cours »', () => {
-    // `mapStatus` ne traite spécialement que 403 et 404 : le 409 arrive en
+    // Le lecteur de réponses partagé ne nomme pas le 409 : il arrive en
     // `{ kind: 'server', status: 409 }`, donc lisible.
     expect(recordingErrorMessage('start', server(409))).toBe('recording.errorBusy');
   });
@@ -260,6 +260,21 @@ describe('recordingErrorMessage', () => {
       'recording.errorUnavailable',
     );
     expect(recordingErrorMessage('stop', { kind: 'not-found' })).toBe('recording.errorNotActive');
+  });
+
+  it('rend le message du 404 quand la réponse n’est pas du JSON', () => {
+    // `missing-route` est un 404 comme `not-found`, et en prend les deux messages.
+    expect(recordingErrorMessage('start', { kind: 'missing-route' })).toBe(
+      'recording.errorUnavailable',
+    );
+    expect(recordingErrorMessage('stop', { kind: 'missing-route' })).toBe(
+      'recording.errorNotActive',
+    );
+  });
+
+  it('traite la réunion supprimée comme un échec d’action', () => {
+    expect(recordingErrorMessage('start', { kind: 'gone' })).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', { kind: 'gone' })).toBe('recording.errorStopFailed');
   });
 
   it('dit le refus de permission dans les deux sens', () => {
@@ -278,14 +293,9 @@ describe('recordingErrorMessage', () => {
     expect(recordingErrorMessage('start', server(400))).toBe('recording.errorStartFailed');
   });
 
-  it('traite validation et lobby comme un échec d’action', () => {
-    // `lobby` n'est jamais produit par `authedFetch` — seul `fetchRoomAccess`
-    // le fabrique. Il est traité parce que l'union doit l'être exhaustivement.
-    expect(
-      recordingErrorMessage('start', { kind: 'validation', fields: { mode: ['invalide'] } }),
-    ).toBe('recording.errorStartFailed');
-    expect(recordingErrorMessage('stop', { kind: 'lobby', participantId: 'p-1' })).toBe(
-      'recording.errorStopFailed',
-    );
+  it('traite une validation comme un échec d’action, dans les deux sens', () => {
+    const validation = { kind: 'validation', fields: { mode: ['invalide'] } } as const;
+    expect(recordingErrorMessage('start', validation)).toBe('recording.errorStartFailed');
+    expect(recordingErrorMessage('stop', validation)).toBe('recording.errorStopFailed');
   });
 });

@@ -169,12 +169,13 @@ export function recordingErrorMessage(
     // ambiguïté — jamais « salon introuvable », qui serait faux une fois sur
     // deux. Sur `stop`, il veut dire « aucun enregistrement au statut actif ».
     case 'not-found':
+    case 'missing-route':
       return action === 'start' ? 'recording.errorUnavailable' : 'recording.errorNotActive';
     case 'server':
       return action === 'start' && error.status === 409 ? 'recording.errorBusy' : failed(action);
-    case 'validation':
+    case 'gone':
       return failed(action);
-    case 'lobby':
+    case 'validation':
       return failed(action);
   }
 }

@@ -24,9 +24,9 @@ describe('anonFetch', () => {
   it("compose l'URL depuis le serveur et le chemin", async () => {
     const spy = mockFetch(new Response('{}', { status: 200 }));
 
-    await anonFetch('https://meet.acme.com', '/api/v1.0/rooms/abc/?username=Ada');
+    await anonFetch('https://meet.acme.com', '/api/v1.0/rooms/abc/join/');
 
-    expect(spy.mock.calls[0]?.[0]).toBe('https://meet.acme.com/api/v1.0/rooms/abc/?username=Ada');
+    expect(spy.mock.calls[0]?.[0]).toBe('https://meet.acme.com/api/v1.0/rooms/abc/join/');
   });
 
   it('rend la valeur analysée sur 200', async () => {
@@ -45,6 +45,23 @@ describe('anonFetch', () => {
       ok: false,
       error: { kind: 'not-found' },
     });
+  });
+
+  it("traduit un 404 qui n'est pas du JSON en missing-route, comme le chemin authentifié", async () => {
+    mockFetch(
+      new Response('<!doctype html><title>Not Found</title><h1>Not Found</h1>', { status: 404 }),
+    );
+
+    expect(await anonFetch('https://m', '/p')).toEqual({
+      ok: false,
+      error: { kind: 'missing-route' },
+    });
+  });
+
+  it('traduit un 410 en gone, comme le chemin authentifié', async () => {
+    mockFetch(new Response('{"detail":"This room has been deleted."}', { status: 410 }));
+
+    expect(await anonFetch('https://m', '/p')).toEqual({ ok: false, error: { kind: 'gone' } });
   });
 
   it('traduit un 401 en unauthorized SANS rejouer la requête', async () => {

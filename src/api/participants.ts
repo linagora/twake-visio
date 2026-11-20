@@ -71,7 +71,7 @@ export async function answerEntry(
 //    elle, la page HTML de Django — c'est le CORPS qui distingue les deux 404,
 //    jamais le statut.
 // 2. Avec le porteur OIDC, l'appel rendait **403** sur un salon dont
-//    `is_administrable` vaut pourtant `true` — établi en constatant qu'une
+//    `is_administrable` valait pourtant `true` — établi en constatant qu'une
 //    EXPULSION, gardée par `HasPrivilegesOnRoom` seule, réussissait au même
 //    instant sur le même salon avec le même compte. Les droits étaient donc
 //    bons ; c'est le justificatif qui ne l'était pas.

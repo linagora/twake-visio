@@ -111,6 +111,48 @@ describe('authedFetch', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'forbidden' } });
   });
 
+  it('mappe 410 sur gone : la réunion a été supprimée', async () => {
+    // Corps relevé dans le fork Meet v1.39 (`RoomSoftDeleted`) : un salon
+    // supprimé n'est pas un salon inconnu, et ne doit pas se lire comme une panne.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () => new Response('{"detail":"This room has been deleted."}', { status: 410 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'gone' } });
+  });
+
+  it('mappe un 404 en JSON sur not-found : le salon est inconnu', async () => {
+    // C'est Django REST Framework qui répond : la route existe, le salon non.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () => new Response('{"detail":"No Room matches the given query."}', { status: 404 }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'not-found' } });
+  });
+
+  it("mappe un 404 qui n'est pas du JSON sur missing-route : la route n'existe pas", async () => {
+    // Mesuré sur une instance Meet v1.24.0, qui n'a pas `join/` : la page 404
+    // de Django, en HTML. Le dire « introuvable » ferait croire que la réunion
+    // n'existe pas, alors que c'est la route qui manque.
+    jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
+    globalThis.fetch = jest.fn(
+      async () =>
+        new Response('<!doctype html><title>Not Found</title><h1>Not Found</h1>', {
+          status: 404,
+        }),
+    ) as unknown as typeof fetch;
+
+    const result = await authedFetch(ACCOUNT, '/api/v1.0/rooms/x/join/', { method: 'POST' });
+
+    expect(result).toEqual({ ok: false, error: { kind: 'missing-route' } });
+  });
+
   it('mappe une panne réseau sur network', async () => {
     jest.spyOn(session, 'getAccessToken').mockResolvedValue({ ok: true, token: 'at' });
     globalThis.fetch = jest.fn(async () => {
@@ -189,10 +231,10 @@ describe('authedFetch, erreurs de champ', () => {
   });
 });
 
-// `mute-participant` est la seule route de meet qui refuse le porteur OIDC :
-// mesuré sur une instance réelle, elle rendait 403 là où une EXPULSION,
-// gardée par la seule permission `HasPrivilegesOnRoom`, réussissait au même
-// instant sur le même salon avec le même compte. Voir `src/api/participants.ts`.
+// Mesuré sur une instance réelle : `mute-participant` rendait 403 au porteur
+// OIDC là où une EXPULSION, gardée par la seule permission
+// `HasPrivilegesOnRoom`, réussissait au même instant sur le même salon avec le
+// même compte. Voir `src/api/participants.ts`.
 describe('livekitFetch', () => {
   it('porte le jeton LiveKit, et ne touche jamais à celui du compte', async () => {
     // `getAccessToken` doit rester INAPPELÉ : c'est tout l'intérêt de ce
@@ -217,13 +259,25 @@ describe('livekitFetch', () => {
       'https://meet.linagora.com/api/v1.0/rooms/r-1/mute-participant/',
     );
     const init = spy.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>).authorization).toBe('Bearer lk-jwt');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.authorization).toBe('X-LiveKit-Token lk-jwt');
+    // L'égalité exacte ne voit qu'une clé : ce second contrôle attrape un
+    // `Bearer` posé EN PLUS, sous une autre casse de la clé.
+    expect(Object.values(headers).join(' ')).not.toMatch(/bearer/i);
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({
       participant_identity: 'PA_1',
       track_sid: 'TR_1',
     });
     expect(result).toEqual({ ok: true, value: {} });
+
+    // Un second jeton, distinct : sans lui, un en-tête codé en dur passerait.
+    await livekitFetch('https://meet.linagora.com', 'lk-autre', 'r-1', 'mute-participant', {});
+
+    const second = spy.mock.calls[1]?.[1] as RequestInit;
+    expect((second.headers as Record<string, string>).authorization).toBe(
+      'X-LiveKit-Token lk-autre',
+    );
   });
 
   it("échappe l'identifiant de salon plutôt que de le coller tel quel", async () => {
@@ -254,6 +308,20 @@ describe('livekitFetch', () => {
     );
 
     expect(result).toEqual({ ok: false, error: { kind: 'forbidden' } });
+  });
+
+  it.each([401, 403])('ne rejoue pas un %i : aucun repli vers Bearer', async (status) => {
+    // Un seul envoi, quel que soit le refus : il n'y a rien à rafraîchir, et un
+    // rejeu ne pourrait que changer de schéma, alors que ce chemin n'a aucun
+    // repli vers `Bearer`.
+    const spy = jest.fn<Promise<Response>, Parameters<typeof fetch>>(
+      async () => new Response('{}', { status }),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    await livekitFetch('https://meet.linagora.com', 'lk-jwt', 'r-1', 'mute-participant', {});
+
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('rend les champs refusés d’un 400 plutôt qu’un statut nu', async () => {
