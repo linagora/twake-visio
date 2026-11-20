@@ -8,6 +8,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { requestEntry, type EntryOutcome } from 'src/api/rooms';
+import { computeEntryQuery } from 'src/call/entryChoices';
 import { stashRoomAccess } from 'src/call/pendingAccess';
 import type { ApiError, ApiResult } from 'src/api/types';
 import { endGuestSession } from 'src/auth/guest';
@@ -76,7 +77,13 @@ function computeFailureMessage(error: ApiError): FailureMessage {
 export function LobbyScreen(): React.ReactElement {
   const { t } = useTranslation();
   const router = useRouter();
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, camera, mic } = useLocalSearchParams<{
+    slug: string;
+    camera?: string;
+    mic?: string;
+  }>();
+  // La séance, avec les choix du pré-join que cet écran ne fait que relayer.
+  const callPath = `/room/${slug}/call${computeEntryQuery({ camera, mic })}`;
   // Sans visiteur — ni compte ni session invité —, personne n'est à annoncer
   // au salon. L'état de départ le dit dès le premier rendu : le poser depuis
   // l'effet appellerait setState de façon synchrone, ce que
@@ -152,7 +159,7 @@ export function LobbyScreen(): React.ReactElement {
         });
       }
 
-      router.replace(`/room/${slug}/call`);
+      router.replace(callPath);
     };
 
     const ask = async (): Promise<void> => {
@@ -229,7 +236,7 @@ export function LobbyScreen(): React.ReactElement {
     });
     askAndForget();
     return stop;
-  }, [slug, router]);
+  }, [slug, router, callPath]);
 
   // Même choix de destination que `handleLeave` dans `call.tsx`, et la même
   // fermeture de session AVANT de naviguer : sans elle, MMKV garde le serveur

@@ -21,9 +21,10 @@ const mockReplace = jest.fn();
 // boucle de la salle d'attente en dépend ; un double recréé à chaque rendu la
 // relancerait à chaque rendu, et chaque relance enverrait une demande.
 const mockRouter = { replace: mockReplace };
+let mockParams: { slug: string; camera?: string; mic?: string } = { slug: 'reunion' };
 jest.mock('expo-router', () => ({
   useRouter: () => mockRouter,
-  useLocalSearchParams: () => ({ slug: 'reunion' }),
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
 const clipboard = jest.requireMock('expo-clipboard') as { setStringAsync: jest.Mock };
@@ -63,6 +64,7 @@ const ACCEPTED = {
 beforeEach(() => {
   jest.restoreAllMocks();
   mockReplace.mockClear();
+  mockParams = { slug: 'reunion' };
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
 });
 
@@ -316,6 +318,18 @@ describe("LobbyScreen, chemin d'admission", () => {
     expect(stash.mock.invocationCallOrder[0]).toBeLessThan(
       mockReplace.mock.invocationCallOrder[0] ?? 0,
     );
+  });
+
+  it.each([
+    [{ camera: '0', mic: '1' }, '/room/reunion/call?camera=0&mic=1'],
+    [{ camera: '1', mic: '0' }, '/room/reunion/call?camera=1&mic=0'],
+  ])('entre en séance avec les choix du pré-join %j', async (choices, path) => {
+    mockParams = { slug: 'reunion', ...choices };
+    jest.spyOn(rooms, 'requestEntry').mockResolvedValue({ ok: true, value: ACCEPTED });
+
+    await render(<LobbyScreen />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith(path));
   });
 
   it('demande au montage, puis toutes les trois secondes', async () => {
