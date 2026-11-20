@@ -515,9 +515,13 @@ export function PrejoinScreen(): React.ReactElement {
             {t('prejoin.yourName')}
           </Text>
           {/* Un invité choisit ce que les autres liront ; un compte le porte
-              déjà, figé, dans son profil — rien à saisir de plus. */}
+              déjà, figé, dans son profil — rien à saisir de plus.
+
+              Borné à 50, comme le champ du nom du client web ; meet en
+              accepterait 255. */}
           {visitor?.kind === 'guest' ? (
             <TextInput
+              maxLength={50}
               onChangeText={setName}
               placeholder={t('prejoin.yourNamePrompt')}
               placeholderTextColor={tokens.color.muted}

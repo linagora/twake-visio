@@ -826,6 +826,17 @@ describe('le pré-join en invité', () => {
     await waitFor(() => expect(read).toHaveBeenCalledWith(GUEST, 'reunion'));
   });
 
+  it('borne le nom à 50 caractères, comme le client web', async () => {
+    jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
+    jest.spyOn(rooms, 'fetchRoom').mockResolvedValue(ROOM);
+
+    await render(prejoin());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('prejoin-name-input')).toHaveProp('maxLength', 50),
+    );
+  });
+
   // Masquer, jamais griser : AGENTS.md interdit `disabled` sur cet écran sombre.
   it('ne rend PAS « Rejoindre » tant que le nom est vide', async () => {
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
