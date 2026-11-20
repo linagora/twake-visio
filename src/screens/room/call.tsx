@@ -14,7 +14,6 @@ import {
   updateParticipantRole,
   type ParticipantRole,
 } from 'src/api/participants';
-import { fetchRoomAccess } from 'src/api/rooms';
 import type { ApiError } from 'src/api/types';
 import { getActiveAccount, type Account } from 'src/auth/accounts';
 import { endGuestSession } from 'src/auth/guest';
@@ -76,17 +75,15 @@ type MessageKey =
   | 'call.permissionsDenied'
   | 'call.deviceSwitchFailed'
   | 'call.handFailed'
-  // La salle d'attente parle sur CET écran aussi : `fetchRoomAccess` rend
-  // `lobby` quand le serveur n'a pas délivré de jeton, ce qui est le cas
-  // NOMINAL d'un invité sur un salon `trusted` ou `restricted`.
-  | 'lobby.approvalRequired'
   | 'chat.sendFailed'
   | 'call.linkCopied'
   | RecordingMessageKey;
 
-// Sert deux appelants : l'accès initial au salon, et les trois actions de
-// modération plus bas, dont l'échec ordinaire arrive de la même façon — une
-// valeur `ApiResult`, jamais une exception.
+// Sert deux appelants : l'admission d'une personne qui attend, et les trois
+// actions de modération plus bas, dont l'échec ordinaire arrive de la même
+// façon — une valeur `ApiResult`, jamais une exception. L'accès au salon n'en
+// est plus un : la séance ne le demande plus, elle part de celui que le
+// pré-join ou la salle d'attente a mis de côté.
 //
 // Une case par variante d'`ApiError`, et c'est le point : cette fonction
 // rendait `error.network` — « Connexion impossible » — pour TOUT ce qui
@@ -97,24 +94,6 @@ type MessageKey =
 // séance LiveKit tournait sans accroc à côté — et ni la personne devant
 // l'écran ni celle qui débogue ne pouvaient savoir ce que le serveur avait
 // refusé.
-//
-// `lobby` a sa case, et il n'en avait pas : il retombait sur `error.network`,
-// donc sur « Connexion impossible », alors que le réseau marchait — la réponse
-// était arrivée. C'est exactement le défaut décrit au paragraphe ci-dessus,
-// laissé sur la seule variante qui l'atteint le plus souvent.
-//
-// Car ce n'est PAS un cas rare depuis le mode invité : `fetchRoomAccess`
-// construit `lobby` depuis l'absence du bloc livekit, et meet n'en rend jamais
-// à un appelant anonyme sur un salon `trusted` ou `restricted` (lecture de
-// `serializers.py`, conception du 2026-08-04). Un invité sur un tel salon
-// arrive donc TOUJOURS ici — y compris après que la salle d'attente l'a
-// admis — et s'entendait dire que son réseau avait lâché.
-//
-// Le message dit maintenant ce qui est vrai dans les deux lectures : cet écran
-// n'a pas obtenu de jeton, et ce salon demande une validation. Il ne referme
-// pas pour autant le passage de témoin salle d'attente → séance, qui est une
-// question d'architecture posée séparément au partenaire humain : on cesse
-// seulement de mentir en attendant qu'elle soit tranchée.
 function toApiErrorMessage(error: ApiError): MessageKey {
   switch (error.kind) {
     case 'unauthorized':
@@ -129,8 +108,6 @@ function toApiErrorMessage(error: ApiError): MessageKey {
     case 'server':
     case 'gone':
       return 'error.serverError';
-    case 'lobby':
-      return 'lobby.approvalRequired';
     default:
       return 'error.network';
   }
@@ -185,17 +162,14 @@ function isOnAtEntry(param: string | undefined, offInSettings: boolean): boolean
   return param === undefined ? !offInSettings : param !== '0';
 }
 
-// `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
-// chaque rendu, y compris quand personne n'est connecté. Ce repli ne sert
-// donc jamais de véritable requête, il ne fait que satisfaire le typage d'un
-// appel de Hook qui ne peut pas être conditionnel — mais PAS pour la raison
-// qu'on pourrait croire : `access` ne dépend plus de la présence d'un compte
-// depuis que l'effet de connexion lit `getVisitor()`, et un invité en obtient
-// un lui aussi. La garde réelle est `canModerate`, qui exige
-// `access.isAdministrable` : le serveur rend `is_administrable: false` pour
-// un appelant anonyme (mesuré sur meet.linagora.com le 2026-08-04), donc ce
-// repli reste inerte pour un invité — la conclusion tient, ce n'est plus pour
-// l'ancienne raison.
+// `useWaitingParticipants` exige un compte, et un Hook ne peut pas être appelé
+// sous condition : ce repli satisfait le typage quand aucun compte n'est
+// actif, et ne sert jamais de véritable requête. Un invité obtient pourtant un
+// accès, lui aussi ; ce qui garde le repli inerte est `canModerate`, qui exige
+// `access.isAdministrable`. `joinRoom` le tire de la présence de `accesses`
+// dans la réponse, que le sérialiseur de meet ne pose que pour un
+// administrateur ou un propriétaire — un rôle qu'un anonyme n'a jamais —, et
+// la salle d'attente le pose à faux.
 const NO_ACCOUNT: Account = {
   id: '',
   instance: {
@@ -696,50 +670,42 @@ export function CallScreen(): React.ReactElement {
   // appui sur le micro. C'est aussi pourquoi il lit l'état d'entrée figé au
   // montage, et jamais la bascule.
   useEffect(() => {
-    // Nom distinct du `account` de plus haut : celui-ci vit dans la fermeture
-    // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
-    // est relu à chaque rendu — les confondre masquerait laquelle des deux
-    // valeurs alimente vraiment `fetchRoomAccess`.
+    // Sans visiteur, l'état de départ dit déjà `error.unauthorized` : il n'y a
+    // rien à ouvrir. `getVisitor()` et non `getActiveAccount()`, pour qu'un
+    // invité entre lui aussi.
+    if (getVisitor() === null) return;
+
+    // La séance ne demande pas l'accès : seule une demande d'entrée en délivre
+    // un, et le pré-join ou la salle d'attente l'a déjà faite. Elle part de ce
+    // qu'ils ont mis de côté.
     //
-    // `getVisitor()` et non `getActiveAccount()` : un invité doit pouvoir
-    // réellement ENTRER en séance, pas seulement consulter le pré-join — c'est
-    // tout le sujet de cette tâche.
-    const currentVisitor = getVisitor();
-    if (currentVisitor === null) return;
+    // Rien de côté, c'est une route ouverte sans eux — un retour arrière, un
+    // lien reconstruit, une application relancée, le magasin vivant en
+    // mémoire. On repart au pré-join du même salon, qui sait demander
+    // l'entrée.
+    //
+    // Consommé une fois : voir `pendingAccess.ts`. Cet effet ne doit donc
+    // s'exécuter qu'une fois par séance, et c'est le cas : ses dépendances sont
+    // stables — `router` compris, singleton d'expo-router — et aucun
+    // `StrictMode` ne le double, ni dans `app/` ni dans le rendu d'expo-router.
+    const stashed = takeRoomAccess(slug);
+    if (stashed === null) {
+      router.replace(`/room/${slug}/prejoin`);
+      return;
+    }
 
     let cancelled = false;
 
-    // Le jeton mis de côté par la salle d'attente passe AVANT toute nouvelle
-    // demande.
-    //
-    // `request-entry` délivre le jeton AU MOMENT de l'admission, et c'est le
-    // seul que la personne obtiendra : sur un salon non public, meet n'inclut
-    // pas de bloc `livekit` pour un anonyme — `should_access_room` exige
-    // `is_public`, un rôle, ou un compte authentifié sur un `trusted`. Sans
-    // cette reprise, `fetchRoomAccess` rendait `{ kind: 'lobby' }`, l'écran
-    // renvoyait à la salle d'attente, et la personne admise y retournait sans
-    // fin. Un compte admis sur un `restricted` sans rôle tombait dans la même
-    // boucle, plus rarement.
-    //
-    // Consommé une fois : voir `pendingAccess.ts`, qui explique pourquoi un
-    // jeton laissé en place masquerait un vrai échec.
-    const stashed = takeRoomAccess(slug);
-
-    (stashed === null
-      ? fetchRoomAccess(currentVisitor, slug)
-      : Promise.resolve({ ok: true as const, value: stashed })
-    )
-      .then(async (result) => {
+    // Une promesse déjà résolue plutôt qu'un appel direct : `setAccess` doit
+    // tomber hors du corps de l'effet (`react-hooks/set-state-in-effect`).
+    Promise.resolve()
+      .then(async () => {
         if (cancelled) return;
-        if (!result.ok) {
-          setFailure(toApiErrorMessage(result.error));
-          return;
-        }
 
-        // Connu dès que le serveur confirme l'accès, indépendamment de la
-        // suite : la salle d'attente et le panneau de modération ne dépendent
-        // pas de la négociation média ni de la connexion LiveKit ci-dessous.
-        setAccess(result.value);
+        // Connu avant la suite : la salle d'attente et le panneau de
+        // modération ne dépendent pas de la négociation média ni de la
+        // connexion LiveKit ci-dessous.
+        setAccess(stashed);
 
         // Le manifeste déclare caméra et micro, mais Android exige de les
         // demander à l'exécution. Sans cette demande ils restent refusés, rien
@@ -774,7 +740,7 @@ export function CallScreen(): React.ReactElement {
         // ci-dessus, elle n'est pas portée par la promesse. Il n'y a donc pas
         // de jet à rattraper ici, seulement un état à lire — pour ne pas
         // allumer les périphériques d'une séance qui ne s'est pas ouverte.
-        await session.connect(result.value);
+        await session.connect(stashed);
         if (cancelled || session.getState().status !== 'connected') return;
 
         // Le choix du pré-écran, ou à défaut les Réglages : entrer micro ouvert
@@ -821,7 +787,7 @@ export function CallScreen(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [session, slug, entry]);
+  }, [session, slug, entry, router]);
 
   // Le lien porte sur l'instance du VISITEUR, jamais sur une constante : une
   // personne connectée ailleurs — ou un invité entré par un autre serveur —
@@ -841,9 +807,9 @@ export function CallScreen(): React.ReactElement {
   };
 
   const handleShare = async (): Promise<void> => {
-    // Nom distinct du `account` de plus haut pour la même raison que dans
-    // l'effet de connexion : celui-ci n'est relu qu'au moment du partage, pas
-    // à chaque rendu.
+    // `current` et non `account` : le visiteur, relu au moment du partage,
+    // pour qu'un invité partage lui aussi — `account` ne vaut que pour un
+    // compte, et il est relu à chaque rendu.
     const current = getVisitor();
     if (current === null) return;
     const url = `${visitorServerUrl(current)}/${slug}`;

@@ -38,15 +38,12 @@ function nth<T>(items: readonly T[], index: number): T {
 // `r-1` est l'identifiant de salon repris par toutes les assertions portant
 // sur `roomId`, jamais confondu avec une identité LiveKit ou une UUID de
 // lobby : les trois valent des chaînes visiblement différentes dans ce fichier.
-function grantedAccess(accessLevel: AccessLevel, isAdministrable: boolean): ApiResult<RoomAccess> {
+function grantedAccess(accessLevel: AccessLevel, isAdministrable: boolean): RoomAccess {
   return {
-    ok: true,
-    value: {
-      room: { id: 'r-1', slug: 'reunion', name: 'r', accessLevel },
-      livekitUrl: 'wss://lk',
-      token: 'lk',
-      isAdministrable,
-    },
+    room: { id: 'r-1', slug: 'reunion', name: 'r', accessLevel },
+    livekitUrl: 'wss://lk',
+    token: 'lk',
+    isAdministrable,
   };
 }
 
@@ -393,8 +390,14 @@ let mockParams: { slug: string; camera?: string; mic?: string } = {
   mic: '1',
 };
 
+// Le MÊME objet à chaque rendu, comme le vrai : `useRouter` rend le singleton
+// `router` d'expo-router (`build/hooks/useRouter.js`). Un objet neuf par rendu
+// relancerait l'effet de connexion, qui dépend du routeur, au premier rendu
+// suivant : l'accès mis de côté ayant été consommé par la première exécution,
+// la seconde renverrait au pré-join une séance en train de s'ouvrir.
+const mockRouter = { replace: mockReplace };
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => mockRouter,
   useLocalSearchParams: () => mockParams,
 }));
 // Interpolation rendue visible : sans elle, `t` rend la seule clé et un nombre
@@ -487,15 +490,12 @@ const GUEST: visitor.Visitor = {
   displayName: 'Camille',
 };
 
-const GRANTED = {
-  ok: true,
-  value: {
-    room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
-    livekitUrl: 'wss://livekit.linagora.com',
-    token: 'lk',
-    isAdministrable: false,
-  },
-} as const;
+const GRANTED: RoomAccess = {
+  room: { id: 'r-1', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
+  livekitUrl: 'wss://livekit.linagora.com',
+  token: 'lk',
+  isAdministrable: false,
+};
 
 beforeEach(() => {
   jest.restoreAllMocks();
@@ -530,7 +530,10 @@ beforeEach(() => {
   jest.mocked(VideoTrack).mockClear();
 
   jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(ACCOUNT as never);
-  jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
+  // Le VRAI magasin, garni comme le pré-join le garnit en faisant entrer : vidé
+  // d'abord, pour qu'aucun accès laissé par un test ne soit lu par le suivant.
+  pending.clearPendingAccess();
+  pending.stashRoomAccess('reunion', GRANTED);
   jest.spyOn(media, 'setMicrophoneEnabled').mockResolvedValue();
   jest.spyOn(media, 'setCameraEnabled').mockResolvedValue();
   jest.spyOn(media, 'listCameras').mockResolvedValue([]);
@@ -657,26 +660,6 @@ describe('CallScreen', () => {
     await publish({ status: 'disconnected', reason: 'closed' });
 
     expect(screen.getByTestId('call-error')).toHaveTextContent('call.ended');
-  });
-
-  // La variante d'`ApiError` que `toApiErrorMessage` n'avait pas, et la seule
-  // qui arrive par `fetchRoomAccess` plutôt que par une action de modération.
-  //
-  // Elle retombait sur `error.network` — « Connexion impossible » — alors que
-  // le réseau marchait, la réponse étant arrivée. Et ce n'est pas un cas rare
-  // depuis le mode invité : meet ne rend jamais de bloc livekit à un appelant
-  // anonyme sur un salon `trusted` ou `restricted`, donc TOUT invité d'un tel
-  // salon atterrit ici.
-  it("dit qu'une validation est requise, et jamais que le réseau a lâché", async () => {
-    jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'lobby', participantId: '' } });
-
-    await renderCall();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('call-error')).toHaveTextContent('lobby.approvalRequired'),
-    );
   });
 
   // Deux sources, et la première qui parle gagne : le paramètre posé par le
@@ -864,20 +847,6 @@ describe('CallScreen', () => {
     await renderCall();
 
     expect(screen.getByTestId('call-error')).toHaveTextContent('error.unauthorized');
-    expect(rooms.fetchRoomAccess).not.toHaveBeenCalled();
-    expect(mockConnect).not.toHaveBeenCalled();
-  });
-
-  it("relaie un refus de l'API sans le confondre avec une panne réseau", async () => {
-    jest
-      .spyOn(rooms, 'fetchRoomAccess')
-      .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
-
-    await renderCall();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('call-error')).toHaveTextContent('error.unauthorized');
-    });
     expect(mockConnect).not.toHaveBeenCalled();
   });
 
@@ -1005,7 +974,7 @@ describe('CallScreen, salle d’attente', () => {
     // serait du bruit garanti, et l'écran de création propose `public` par
     // défaut.
     const list = jest.spyOn(participants, 'listWaitingParticipants');
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('public', true));
+    pending.stashRoomAccess('reunion', grantedAccess('public', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1016,7 +985,7 @@ describe('CallScreen, salle d’attente', () => {
 
   it("n'interroge pas la file sans droit de modérer", async () => {
     const list = jest.spyOn(participants, 'listWaitingParticipants');
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', false));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1032,14 +1001,11 @@ describe('CallScreen, salle d’attente', () => {
   // chaîne vide venant du repli `access?.room.id ?? ''`.
   it("n'interroge pas la file quand l'identifiant de salon est absent, même administrable", async () => {
     const list = jest.spyOn(participants, 'listWaitingParticipants');
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
-      ok: true,
-      value: {
-        room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
-        livekitUrl: 'wss://lk',
-        token: 'lk',
-        isAdministrable: true,
-      },
+    pending.stashRoomAccess('reunion', {
+      room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+      livekitUrl: 'wss://lk',
+      token: 'lk',
+      isAdministrable: true,
     });
 
     await renderCall();
@@ -1057,7 +1023,7 @@ describe('CallScreen, salle d’attente', () => {
     const list = jest
       .spyOn(participants, 'listWaitingParticipants')
       .mockResolvedValue({ ok: true, value: [] });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1077,7 +1043,7 @@ describe('CallScreen, salle d’attente', () => {
         { id: 'lobby-2', username: 'Bob' },
       ],
     });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1097,7 +1063,7 @@ describe('CallScreen, salle d’attente', () => {
       ok: true,
       value: [{ id: 'lobby-1', username: 'Ada' }],
     });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1121,7 +1087,7 @@ describe('CallScreen, salle d’attente', () => {
     const answerEntrySpy = jest
       .spyOn(participants, 'answerEntry')
       .mockResolvedValue({ ok: true, value: undefined });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1146,7 +1112,7 @@ describe('CallScreen, salle d’attente', () => {
     const answerEntrySpy = jest
       .spyOn(participants, 'answerEntry')
       .mockResolvedValue({ ok: true, value: undefined });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1170,7 +1136,7 @@ describe('CallScreen, salle d’attente', () => {
     jest
       .spyOn(participants, 'answerEntry')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('leave-btn')).toBeTruthy());
@@ -1213,7 +1179,7 @@ describe('CallScreen, panneau des participants', () => {
     // (l'identifiant de salon) ni à une UUID de lobby.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
     mockRoom.remoteParticipants.set('bob-identity', remoteParticipant('bob-identity', 'Bob'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     const muteSpy = jest
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: true, value: undefined });
@@ -1248,7 +1214,7 @@ describe('CallScreen, panneau des participants', () => {
     // actions précises.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
     mockRoom.remoteParticipants.set('bob-identity', remoteParticipant('bob-identity', 'Bob'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     const removeSpy = jest
       .spyOn(participants, 'removeParticipant')
       .mockResolvedValue({ ok: true, value: undefined });
@@ -1290,14 +1256,11 @@ describe('CallScreen, panneau des participants', () => {
   // quoi l'appui fabriquerait `/api/v1.0/rooms//mute-participant/`.
   it("ne montre aucune action de modération quand l'identifiant de salon est absent", async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
-      ok: true,
-      value: {
-        room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
-        livekitUrl: 'wss://lk',
-        token: 'lk',
-        isAdministrable: true,
-      },
+    pending.stashRoomAccess('reunion', {
+      room: { id: null, slug: 'reunion', name: 'r', accessLevel: 'trusted' },
+      livekitUrl: 'wss://lk',
+      token: 'lk',
+      isAdministrable: true,
     });
 
     await renderCall();
@@ -1319,7 +1282,7 @@ describe('CallScreen, échec de modération', () => {
   // `mute_participant` côté serveur.
   it("affiche un message visible quand couper le micro échoue, sans l'avaler", async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
@@ -1344,7 +1307,7 @@ describe('CallScreen, échec de modération', () => {
     // variante, un retour en arrière vers ce repli unique ne rougirait que sur
     // la seule branche observée.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'unauthorized' } });
@@ -1379,7 +1342,7 @@ describe('CallScreen, échec de modération', () => {
     ['missing-route', { kind: 'missing-route' } as const, 'error.notFound'],
   ])('rend la clé prévue pour %s, jamais le repli réseau', async (_name, error, expected) => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest.spyOn(participants, 'muteParticipant').mockResolvedValue({ ok: false, error });
 
     await renderCall();
@@ -1403,7 +1366,7 @@ describe('CallScreen, échec de modération', () => {
   // RÉSOLUE en `{ ok: false }`, pas une promesse rejetée.
   it('garde le repli réseau pour une panne de transport résolue', async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'network' } });
@@ -1424,7 +1387,7 @@ describe('CallScreen, échec de modération', () => {
     // Les trois actions partagent le même défaut avant correctif : ne pas les
     // couvrir toutes les trois reproduirait exactement le trou de l'Important 1.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'removeParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
@@ -1443,7 +1406,7 @@ describe('CallScreen, échec de modération', () => {
 
   it("affiche aussi l'échec d'un changement de rôle", async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'updateParticipantRole')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
@@ -1464,7 +1427,7 @@ describe('CallScreen, échec de modération', () => {
     // Chemin distinct du précédent : ici la promesse rejette vraiment (au
     // lieu de résoudre `{ ok: false }`), et c'est le `.catch()` qui doit agir.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest.spyOn(participants, 'muteParticipant').mockRejectedValue(new Error('boom'));
 
     await renderCall();
@@ -1484,7 +1447,7 @@ describe('CallScreen, échec de modération', () => {
     // observe l'état d'après-résolution plutôt qu'un instant où la promesse
     // n'a simplement pas encore eu la chance de répondre.
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     let resolveMute: (result: ApiResult<void>) => void = () => undefined;
     jest.spyOn(participants, 'muteParticipant').mockImplementation(
       () =>
@@ -1513,7 +1476,7 @@ describe('CallScreen, échec de modération', () => {
   // tests précédents verts.
   it('efface une erreur affichée par un essai précédent quand le suivant réussit', async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     const muteSpy = jest.spyOn(participants, 'muteParticipant');
     muteSpy.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
 
@@ -1549,7 +1512,7 @@ describe('CallScreen, échec de modération', () => {
   // avec la clé, et non à la clé : un couple différent l'exercerait pareil.
   it('garde une erreur de modération quand un envoi de chat, lui, réussit', async () => {
     mockRoom.remoteParticipants.set('alice-identity', remoteParticipant('alice-identity', 'Alice'));
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'muteParticipant')
       .mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
@@ -2192,7 +2155,7 @@ describe('CallScreen, indicateur d’enregistrement', () => {
       recording_mode: 'transcript',
       recording_status: 'saving',
     });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', false));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', false));
 
     await renderCall();
 
@@ -2206,14 +2169,11 @@ describe('CallScreen, main levée', () => {
   // Un accès dont l'identifiant de salon ET le jeton diffèrent de ceux de
   // `GRANTED` : c'est la seule façon de distinguer une valeur transmise d'une
   // constante qui coïnciderait avec le fixture par défaut.
-  const HAND_ACCESS: ApiResult<RoomAccess> = {
-    ok: true,
-    value: {
-      room: { id: 'r-7', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
-      livekitUrl: 'wss://livekit.linagora.com',
-      token: 'jwt-de-salle',
-      isAdministrable: false,
-    },
+  const HAND_ACCESS: RoomAccess = {
+    room: { id: 'r-7', slug: 'reunion', name: 'Réunion', accessLevel: 'public' },
+    livekitUrl: 'wss://livekit.linagora.com',
+    token: 'jwt-de-salle',
+    isAdministrable: false,
   };
 
   async function openMenu(): Promise<void> {
@@ -2225,7 +2185,7 @@ describe('CallScreen, main levée', () => {
 
   it('lève la main du salon et du jeton que le serveur a rendus', async () => {
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+    pending.stashRoomAccess('reunion', HAND_ACCESS);
 
     await renderCall();
     await openMenu();
@@ -2253,7 +2213,7 @@ describe('CallScreen, main levée', () => {
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
     jest.spyOn(accounts, 'getActiveAccount').mockReturnValue(null);
     jest.spyOn(visitor, 'getVisitor').mockReturnValue(GUEST);
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+    pending.stashRoomAccess('reunion', HAND_ACCESS);
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
@@ -2267,12 +2227,12 @@ describe('CallScreen, main levée', () => {
   // La clause de garde qu'un test PEUT atteindre. `current === null` n'en est
   // pas une : sans visiteur, `failure` vaut `error.unauthorized` dès le
   // premier rendu et la barre n'est jamais montée, donc rien à presser.
-  // `access === null`, lui, se produit avec la barre à l'écran — la réponse du
-  // serveur n'est pas encore arrivée — et c'est la même sortie anticipée.
-  it("ne demande rien tant que le serveur n'a pas rendu l'accès", async () => {
+  // `access === null`, lui, se produit avec la barre à l'écran, au moins sous
+  // ce double de séance qui se dit connecté d'emblée : sans accès mis de côté,
+  // l'écran repart au pré-join et `access` reste nul.
+  it("ne demande rien tant qu'aucun accès n'est connu", async () => {
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
-    // Jamais résolue : `access` reste nul pendant tout le test.
-    jest.spyOn(rooms, 'fetchRoomAccess').mockReturnValue(new Promise(() => undefined));
+    pending.clearPendingAccess();
 
     await renderCall();
     await waitFor(() => expect(screen.getByTestId('hand-toggle')).toBeTruthy());
@@ -2303,14 +2263,11 @@ describe('CallScreen, main levée', () => {
     // deux formes : le repli supprime le cas nul au lieu de fabriquer
     // `/api/v1.0/rooms//toggle-hand/`.
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue({
-      ok: true,
-      value: {
-        room: { id: null, slug: 'salon-sans-uuid', name: 'R', accessLevel: 'public' },
-        livekitUrl: 'wss://livekit.linagora.com',
-        token: 'jwt-de-salle',
-        isAdministrable: false,
-      },
+    pending.stashRoomAccess('reunion', {
+      room: { id: null, slug: 'salon-sans-uuid', name: 'R', accessLevel: 'public' },
+      livekitUrl: 'wss://livekit.linagora.com',
+      token: 'jwt-de-salle',
+      isAdministrable: false,
     });
 
     await renderCall();
@@ -2344,7 +2301,7 @@ describe('CallScreen, main levée', () => {
     // Lever est un acte qu'on prépare, baisser un acte qu'on subit : deux
     // appuis pour lever, un pour baisser, sans ouvrir aucun menu.
     const toggle = jest.spyOn(hand, 'toggleHand').mockResolvedValue({ ok: true, value: undefined });
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(HAND_ACCESS);
+    pending.stashRoomAccess('reunion', HAND_ACCESS);
     mockLocalAttributes = { handRaisedAt: '2026-07-30T10:00:00Z' };
 
     await renderCall();
@@ -3054,7 +3011,7 @@ describe('CallScreen, plein écran, ce qui disparaît et ce qui reste', () => {
   // devenue « le plein écran masque la barre et les commandes, jamais une
   // demande qui attend une réponse », et quelqu'un enfermé dehors en est une.
   it("garde le bandeau d'admission visible en plein écran", async () => {
-    jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(grantedAccess('trusted', true));
+    pending.stashRoomAccess('reunion', grantedAccess('trusted', true));
     jest
       .spyOn(participants, 'listWaitingParticipants')
       .mockResolvedValue({ ok: true, value: [{ id: 'lobby-1', username: 'Ada' }] });
@@ -3725,38 +3682,55 @@ describe('la copie du lien', () => {
   });
 });
 
-describe("le jeton mis de côté par la salle d'attente", () => {
+describe("l'accès mis de côté", () => {
   /**
-   * Sur un salon non public, `fetchRoomAccess` ne rendra JAMAIS de jeton à un
-   * anonyme : meet n'inclut le bloc `livekit` que pour un salon public, un
-   * rôle, ou un compte authentifié sur un `trusted`. La séance doit donc
-   * partir du jeton que `request-entry` a délivré à l'admission, sans quoi la
-   * personne admise est renvoyée à la salle d'attente en boucle.
+   * La séance ne demande plus l'accès à personne : le serveur ne délivre de
+   * jeton qu'à une demande d'entrée, que le pré-join ou la salle d'attente a
+   * déjà faite. Elle part donc de ce qu'ils ont mis de côté, ou de rien.
    */
-  it("ouvre la séance SANS redemander l'accès", async () => {
-    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess');
-    jest.spyOn(pending, 'takeRoomAccess').mockReturnValue({
+  // Les deux lectures sont doublées SANS issue, et pas seulement espionnées : un
+  // espion nu appelle l'original, donc une séance qui se remettrait à demander
+  // l'accès enverrait une vraie requête depuis la suite de tests.
+  function spyRoomRequests(): { read: jest.SpyInstance; join: jest.SpyInstance } {
+    return {
+      read: jest.spyOn(rooms, 'fetchRoom').mockReturnValue(new Promise(() => undefined)),
+      join: jest.spyOn(rooms, 'joinRoom').mockReturnValue(new Promise(() => undefined)),
+    };
+  }
+
+  it('ouvre la séance avec cet accès, et le consomme', async () => {
+    const { read, join } = spyRoomRequests();
+    // Un jeton propre à ce test : c'est lui, et pas celui du `beforeEach`, que
+    // la séance doit recevoir.
+    const admitted: RoomAccess = {
       room: { id: null, slug: 'reunion', name: 'reunion', accessLevel: 'trusted' },
       livekitUrl: 'wss://livekit.linagora.com',
       token: 'jeton-admission',
       isAdministrable: false,
-    });
+    };
+    pending.stashRoomAccess('reunion', admitted);
 
     await renderCall();
 
-    await waitFor(() => expect(screen.getByTestId('call-header')).toBeTruthy());
-    expect(fetchAccess).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockConnect).toHaveBeenCalledWith(admitted));
+    expect(pending.takeRoomAccess('reunion')).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    expect(join).not.toHaveBeenCalled();
   });
 
-  // La polarité fausse : sans jeton mis de côté, le chemin d'avant reste
-  // celui qu'on emprunte. C'est lui que suit toute entrée directe, sur un
-  // salon public comme depuis le pré-join.
-  it("redemande l'accès quand rien n'a été mis de côté", async () => {
-    const fetchAccess = jest.spyOn(rooms, 'fetchRoomAccess').mockResolvedValue(GRANTED);
-    jest.spyOn(pending, 'takeRoomAccess').mockReturnValue(null);
+  // La polarité fausse. Une route ouverte sans passer par le pré-join — un
+  // retour arrière, un lien reconstruit, une application relancée — n'a rien
+  // dans le magasin, qui vit en mémoire. Elle repart au pré-join du même
+  // salon, qui sait demander l'entrée ; la séance, elle, ne sait plus.
+  it("renvoie au pré-join du même salon quand rien n'a été mis de côté", async () => {
+    const { read, join } = spyRoomRequests();
+    pending.clearPendingAccess();
 
     await renderCall();
 
-    await waitFor(() => expect(fetchAccess).toHaveBeenCalled());
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/room/reunion/prejoin'));
+    expect(mockConnect).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(join).not.toHaveBeenCalled();
   });
 });
