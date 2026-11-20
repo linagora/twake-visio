@@ -56,6 +56,7 @@ import { ReactionOverlay } from 'src/screens/room/reactionOverlay';
 import { RecordingIndicator } from 'src/screens/room/recordingIndicator';
 import { WaitingBanner } from 'src/screens/room/waitingBanner';
 import { rememberVisitEnd } from 'src/rooms/journal';
+import { readPreferences } from 'src/settings/preferences';
 import { keyboardMode } from 'src/ui/keyboard';
 import { tokens } from 'src/ui/tokens';
 
@@ -176,6 +177,14 @@ function toDisconnectMessage(reason: string): MessageKey {
   }
 }
 
+// Un paramètre d'entrée PRÉSENT décide : c'est le choix fait au pré-join, qui
+// pose toujours les deux. Absent, ce sont les Réglages qui décident — jamais
+// « allumé » par défaut, qui ferait parler sans le savoir quelqu'un ayant coupé
+// son micro à l'entrée, dès qu'une route arrive sans paramètre.
+function isOnAtEntry(param: string | undefined, offInSettings: boolean): boolean {
+  return param === undefined ? !offInSettings : param !== '0';
+}
+
 // `useWaitingParticipants` exige un compte, et les Hooks doivent s'exécuter à
 // chaque rendu, y compris quand personne n'est connecté. Ce repli ne sert
 // donc jamais de véritable requête, il ne fait que satisfaire le typage d'un
@@ -247,6 +256,17 @@ export function CallScreen(): React.ReactElement {
     camera?: string;
     mic?: string;
   }>();
+
+  // Figés au montage : ils disent l'état d'ENTRÉE. L'effet de connexion les
+  // lit, et il ne doit se relancer sur rien de ce qui bouge pendant la séance —
+  // ni une bascule, ni une relecture des Réglages.
+  const [entry] = useState(() => {
+    const settings = readPreferences();
+    return {
+      micOn: isOnAtEntry(mic, settings.micOffOnJoin),
+      cameraOn: isOnAtEntry(camera, settings.cameraOffOnJoin),
+    };
+  });
 
   // `useState` et non `useMemo` : React se réserve le droit de jeter un
   // `useMemo`, et une session jetée laisse derrière elle une Room vivante —
@@ -673,8 +693,8 @@ export function CallScreen(): React.ReactElement {
   // Ne dépend d'aucune des bascules : le nettoyage d'un effet s'exécute à
   // chacune de ses relances, et un effet de connexion qui dépendrait de l'état
   // du micro — désormais dans `CallControlBar` — couperait la séance à chaque
-  // appui sur le micro. C'est aussi pourquoi il lit les paramètres d'URL
-  // directement, et jamais la bascule.
+  // appui sur le micro. C'est aussi pourquoi il lit l'état d'entrée figé au
+  // montage, et jamais la bascule.
   useEffect(() => {
     // Nom distinct du `account` de plus haut : celui-ci vit dans la fermeture
     // de l'effet et ne doit rien à sa cadence de relance, alors que le premier
@@ -757,9 +777,9 @@ export function CallScreen(): React.ReactElement {
         await session.connect(result.value);
         if (cancelled || session.getState().status !== 'connected') return;
 
-        // Les choix faits au pré-écran arrivent par l'URL : entrer micro ouvert
+        // Le choix du pré-écran, ou à défaut les Réglages : entrer micro ouvert
         // quand la personne l'avait coupé la ferait parler sans le savoir.
-        await setMicrophoneEnabled(session.getRoom(), mic !== '0');
+        await setMicrophoneEnabled(session.getRoom(), entry.micOn);
 
         // **La caméra à EFFET, quand la plateforme la porte.**
         //
@@ -785,13 +805,13 @@ export function CallScreen(): React.ReactElement {
         // iOS depuis que le module Vision existe, et ce module n'a JAMAIS
         // tourné — il compile, c'est tout.
         let published = false;
-        if (camera !== '0' && areEffectsSupported()) {
+        if (entry.cameraOn && areEffectsSupported()) {
           published = await publishEffectCamera(session.getRoom())
             .then((track) => track !== null)
             .catch(() => false);
         }
         if (!published) {
-          await setCameraEnabled(session.getRoom(), camera !== '0');
+          await setCameraEnabled(session.getRoom(), entry.cameraOn);
         }
       })
       .catch(() => {
@@ -801,7 +821,7 @@ export function CallScreen(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [session, slug, camera, mic]);
+  }, [session, slug, entry]);
 
   // Le lien porte sur l'instance du VISITEUR, jamais sur une constante : une
   // personne connectée ailleurs — ou un invité entré par un autre serveur —
@@ -1268,8 +1288,8 @@ export function CallScreen(): React.ReactElement {
       <CallControlBar
         hidden={fullscreenTile !== null}
         room={session.getRoom()}
-        defaultMicOn={mic !== '0'}
-        defaultCameraOn={camera !== '0'}
+        defaultMicOn={entry.micOn}
+        defaultCameraOn={entry.cameraOn}
         onFacingChange={setFacing}
         // La barre ne connaît pas les six familles : elle n'en est qu'une, et
         // ne dit qu'« échec » ou « réussite » sur le changement de

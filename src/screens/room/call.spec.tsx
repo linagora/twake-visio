@@ -21,7 +21,9 @@ import type { CameraChoice } from 'src/call/devices';
 import * as effects from 'src/call/backgroundEffect';
 import * as media from 'src/call/media';
 import type { AccessLevel, CallState, RoomAccess } from 'src/call/types';
+import { resetPreferences, writePreference } from 'src/settings/preferences';
 import { CallScreen } from './call';
+import { BAR_SURFACE_COLOR } from './controlBar';
 
 // `getAllByTestId` rend un tableau ; `noUncheckedIndexedAccess` refuse d'y
 // indexer sans preuve que l'élément existe. Même garde que dans
@@ -382,9 +384,18 @@ async function receiveChat(
 let mockCallState: CallState = { status: 'idle' };
 const mockListeners = new Set<(state: CallState) => void>();
 
+// Les paramètres de la route, qu'un test peut amputer de `camera` ou de `mic` :
+// c'est la seule façon d'atteindre les Réglages, que la séance ne lit que pour
+// un périphérique que l'URL ne nomme pas.
+let mockParams: { slug: string; camera?: string; mic?: string } = {
+  slug: 'reunion',
+  camera: '1',
+  mic: '1',
+};
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace }),
-  useLocalSearchParams: () => ({ slug: 'reunion', camera: '1', mic: '1' }),
+  useLocalSearchParams: () => mockParams,
 }));
 // Interpolation rendue visible : sans elle, `t` rend la seule clé et un nombre
 // codé en dur dans une coquille serait indiscernable du nombre calculé par
@@ -494,6 +505,10 @@ beforeEach(() => {
   // `prejoin.spec.tsx`, retirer la déclaration ne rougissait alors RIEN.
   jest.mocked(jest.requireMock('expo-status-bar').StatusBar as jest.Mock).mockClear();
   mockReplace.mockReset();
+  mockParams = { slug: 'reunion', camera: '1', mic: '1' };
+  // Le vrai magasin, sur le double MMKV de `__mocks__/` : une installation
+  // neuve à chaque test, donc les défauts de `DEFAULT_PREFERENCES`.
+  resetPreferences();
   mockConnect.mockReset().mockResolvedValue(undefined);
   mockDisconnect.mockReset().mockResolvedValue(undefined);
   mockDispose.mockReset();
@@ -664,12 +679,53 @@ describe('CallScreen', () => {
     );
   });
 
-  it("applique les choix du pré-écran à l'entrée en séance", async () => {
-    await renderCall();
+  // Deux sources, et la première qui parle gagne : le paramètre posé par le
+  // pré-join, puis les Réglages. Chaque ligne oppose les deux sources, sans
+  // quoi un écran qui lirait la mauvaise passerait quand même : un paramètre
+  // présent contredit le Réglage, un paramètre absent laisse le Réglage
+  // décider dans les deux sens. « Allumé » n'est jamais un défaut — c'était
+  // celui d'avant, et il faisait parler quelqu'un qui avait coupé son micro
+  // dans les Réglages dès qu'une route arrivait sans paramètre.
+  //
+  // Deux sites lisent la décision : la séance, qui allume le périphérique, et
+  // la barre, qui en montre l'état. Chaque ligne observe les deux.
+  describe("les périphériques à l'entrée", () => {
+    const DANGER = tokens.color.danger;
 
-    await waitFor(() => {
-      expect(media.setMicrophoneEnabled).toHaveBeenCalledWith(mockRoom, true);
-      expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true);
+    it.each([
+      ['présent, allumé, contre le Réglage', { mic: '1' }, { micOffOnJoin: true }, true],
+      ['présent, coupé, contre le Réglage', { mic: '0' }, { micOffOnJoin: false }, false],
+      ['absent, le Réglage coupe', { mic: undefined }, { micOffOnJoin: true }, false],
+      ['absent, le Réglage allume', { mic: undefined }, { micOffOnJoin: false }, true],
+    ] as const)('micro — paramètre %s', async (_label, params, settings, on) => {
+      mockParams = { ...mockParams, ...params };
+      writePreference('micOffOnJoin', settings.micOffOnJoin);
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setMicrophoneEnabled).toHaveBeenCalledWith(mockRoom, on));
+      expect(media.setMicrophoneEnabled).not.toHaveBeenCalledWith(mockRoom, !on);
+      expect(screen.getByTestId('mic-toggle-container')).toHaveStyle({
+        backgroundColor: on ? BAR_SURFACE_COLOR : DANGER,
+      });
+    });
+
+    it.each([
+      ['présent, allumée, contre le Réglage', { camera: '1' }, { cameraOffOnJoin: true }, true],
+      ['présent, coupée, contre le Réglage', { camera: '0' }, { cameraOffOnJoin: false }, false],
+      ['absent, le Réglage coupe', { camera: undefined }, { cameraOffOnJoin: true }, false],
+      ['absent, le Réglage allume', { camera: undefined }, { cameraOffOnJoin: false }, true],
+    ] as const)('caméra — paramètre %s', async (_label, params, settings, on) => {
+      mockParams = { ...mockParams, ...params };
+      writePreference('cameraOffOnJoin', settings.cameraOffOnJoin);
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, on));
+      expect(media.setCameraEnabled).not.toHaveBeenCalledWith(mockRoom, !on);
+      expect(screen.getByTestId('camera-toggle-container')).toHaveStyle({
+        backgroundColor: on ? BAR_SURFACE_COLOR : DANGER,
+      });
     });
   });
 
@@ -723,6 +779,22 @@ describe('CallScreen', () => {
       await renderCall();
 
       await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, true));
+    });
+
+    // La polarité fausse de la même garde, par la voie que la séance ne
+    // connaissait pas : aucun paramètre, et les Réglages coupent la caméra.
+    // Publier la piste à effet ici allumerait une caméra que la personne a
+    // demandé d'éteindre.
+    it("ne publie AUCUNE piste à effet quand l'entrée veut la caméra coupée", async () => {
+      jest.spyOn(effects, 'areEffectsSupported').mockReturnValue(true);
+      const publish = jest.spyOn(effects, 'publishEffectCamera').mockResolvedValue({} as never);
+      mockParams = { slug: 'reunion', mic: '1' };
+      writePreference('cameraOffOnJoin', true);
+
+      await renderCall();
+
+      await waitFor(() => expect(media.setCameraEnabled).toHaveBeenCalledWith(mockRoom, false));
+      expect(publish).not.toHaveBeenCalled();
     });
 
     it('retombe sur le chemin ordinaire sans module natif', async () => {
