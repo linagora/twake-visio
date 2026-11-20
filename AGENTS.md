@@ -12,6 +12,8 @@ This file is the **single source of truth**. `CLAUDE.md` only points back here.
    Claude Code: `/plugin install twake-guidelines@twake-guidelines`.
 2. **This repo's own decisions** are below. On conflict, **this file wins here**.
 
+- Decisions: `docs/decisions.md`, mandatory. Search it before asking a question or proposing a change; record every decision there, in the commit that applies it (skill `twake-decisions`).
+
 ## This app is an OIDC app, not a Cozy Stack app
 
 `meet` authenticates through `lasuite.oidc_login`. There is no Cozy Stack behind it,
